@@ -8,7 +8,7 @@ bind_addresses:
 rtc:
   # UDP media port — must be port-forwarded on router
   port_range_start: 7882
-  port_range_end: 7882
+  port_range_end: 7883  # Must be > start; LiveKit panics on rand.Intn(0) when start == end
   # TCP fallback for users behind restrictive firewalls
   tcp_port: 7881
   # Auto-detect public IP via STUN so ICE candidates are correct.
@@ -19,13 +19,11 @@ rtc:
     - stun1.l.google.com:19302
     - stun2.l.google.com:19302
     - stun.cloudflare.com:3478
-  # Exclude virtual interfaces — with host networking LiveKit sees all host interfaces.
+  # Only use the real NIC (eno1). With host networking, LiveKit sees all host interfaces
+  # including many Docker bridge networks that would generate bogus STUN lookups.
   interfaces:
-    excludes:
-      - docker0
-      - br-*
-      - veth*
-      - lo
+    includes:
+      - eno1
 
 logging:
   level: debug  # TODO: switch back to info once voice/video is confirmed working
