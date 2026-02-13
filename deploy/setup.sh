@@ -56,7 +56,7 @@ sudo chown -R drocsid:drocsid "$DEPLOY_DIR"
 # ── Copy .env template ───────────────────────────────────
 if [ ! -f "${DEPLOY_DIR}/.env" ]; then
     sudo cp "${SCRIPT_DIR}/.env.example" "${DEPLOY_DIR}/.env"
-    sudo chown drocsid:drocsid "${DEPLOY_DIR}/.env"
+    sudo chown "${RUNNER_USER}:${RUNNER_USER}" "${DEPLOY_DIR}/.env"
     sudo chmod 600 "${DEPLOY_DIR}/.env"
     echo "  Copied .env.example to ${DEPLOY_DIR}/.env"
     echo "  >>> EDIT ${DEPLOY_DIR}/.env WITH REAL VALUES <<<"
