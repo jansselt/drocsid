@@ -50,6 +50,10 @@ echo "==> Copying binary and frontend..."
 cp "${REPO_DIR}/server/target/release/drocsid-server" "${DEPLOY_DIR}/drocsid-server"
 rsync -a --delete "${REPO_DIR}/app/dist/" "${DEPLOY_DIR}/web/"
 
+echo "==> Updating nginx config..."
+sudo cp "${REPO_DIR}/deploy/nginx/drocsid.conf" /etc/nginx/sites-available/drocsid
+sudo nginx -t
+
 echo "==> Starting drocsid-server..."
 sudo systemctl start drocsid-server
 sudo systemctl reload nginx
