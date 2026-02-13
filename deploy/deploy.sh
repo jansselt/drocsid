@@ -57,7 +57,7 @@ sudo systemctl reload nginx
 # ── Health Check ─────────────────────────────────────────
 echo "==> Waiting for server to start..."
 for i in $(seq 1 15); do
-    if curl -sf http://127.0.0.1:8080/api/v1/health > /dev/null 2>&1; then
+    if curl -sf http://127.0.0.1:9847/api/v1/health > /dev/null 2>&1; then
         echo "==> Health check passed!"
         exit 0
     fi
