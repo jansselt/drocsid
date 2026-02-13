@@ -27,6 +27,7 @@ pub fn router() -> Router<AppState> {
 
 fn api_routes() -> Router<AppState> {
     Router::new()
+        .route("/health", get(health_check))
         .nest("/auth", auth::routes())
         .nest("/users", user_routes())
         .nest(
@@ -102,6 +103,10 @@ async fn update_me(
         .ok_or(crate::error::ApiError::NotFound("User"))?;
 
     Ok(axum::Json(PublicUser::from(user_data)))
+}
+
+async fn health_check() -> impl IntoResponse {
+    axum::Json(serde_json::json!({ "status": "ok" }))
 }
 
 async fn gateway_upgrade(
