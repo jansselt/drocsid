@@ -14,7 +14,7 @@ export function GifPicker({ onSelect, onClose }: GifPickerProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
-  const searchTimeout = useRef<ReturnType<typeof setTimeout>>();
+  const searchTimeout = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const loadTrending = useCallback(async () => {
     setLoading(true);

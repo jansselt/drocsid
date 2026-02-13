@@ -15,7 +15,7 @@ export function AppLayout() {
   const setServers = useServerStore((s) => s.setServers);
   const activeServerId = useServerStore((s) => s.activeServerId);
   const [showSwitcher, setShowSwitcher] = useState(false);
-  const idleTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const isIdleRef = useRef(false);
 
   useEffect(() => {

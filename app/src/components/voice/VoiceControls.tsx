@@ -1,5 +1,4 @@
 import { useServerStore } from '../../stores/serverStore';
-import { useAuthStore } from '../../stores/authStore';
 import './VoiceControls.css';
 
 export function VoiceControls() {
@@ -10,8 +9,6 @@ export function VoiceControls() {
   const voiceToggleMute = useServerStore((s) => s.voiceToggleMute);
   const voiceToggleDeaf = useServerStore((s) => s.voiceToggleDeaf);
   const channels = useServerStore((s) => s.channels);
-  const currentUser = useAuthStore((s) => s.user);
-
   if (!voiceChannelId) return null;
 
   // Find channel name

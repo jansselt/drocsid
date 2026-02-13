@@ -38,7 +38,7 @@ cargo build --release --manifest-path "${REPO_DIR}/server/Cargo.toml"
 # ── Build Frontend ───────────────────────────────────────
 echo "==> Building frontend..."
 cd "${REPO_DIR}/app"
-npm ci --prefer-offline
+npm install --prefer-offline
 VITE_API_URL="${VITE_API_URL}" VITE_WS_URL="${VITE_WS_URL}" npm run build
 cd "$REPO_DIR"
 

@@ -8,7 +8,6 @@ export function FriendList() {
   const relationships = useServerStore((s) => s.relationships);
   const acceptFriend = useServerStore((s) => s.acceptFriend);
   const removeFriend = useServerStore((s) => s.removeFriend);
-  const blockUser = useServerStore((s) => s.blockUser);
   const sendFriendRequest = useServerStore((s) => s.sendFriendRequest);
   const openDm = useServerStore((s) => s.openDm);
 

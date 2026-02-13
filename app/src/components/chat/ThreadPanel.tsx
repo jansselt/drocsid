@@ -11,8 +11,6 @@ export function ThreadPanel({ threadId }: ThreadPanelProps) {
   const closeThread = useServerStore((s) => s.closeThread);
   const threadMetadata = useServerStore((s) => s.threadMetadata);
   const channels = useServerStore((s) => s.channels);
-  const servers = useServerStore((s) => s.servers);
-
   // Try to find thread channel name
   let threadName = 'Thread';
   for (const [, serverChannels] of channels) {

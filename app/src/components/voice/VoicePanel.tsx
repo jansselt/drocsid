@@ -8,7 +8,6 @@ import {
 } from '@livekit/components-react';
 import { Track } from 'livekit-client';
 import { useServerStore } from '../../stores/serverStore';
-import { useAuthStore } from '../../stores/authStore';
 import './VoicePanel.css';
 
 export function VoicePanel() {

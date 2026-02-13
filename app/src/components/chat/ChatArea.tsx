@@ -110,8 +110,6 @@ function VoicePanelCompact() {
   const voiceChannelId = useServerStore((s) => s.voiceChannelId);
   const voiceToken = useServerStore((s) => s.voiceToken);
   const voiceUrl = useServerStore((s) => s.voiceUrl);
-  const voiceLeave = useServerStore((s) => s.voiceLeave);
-
   if (!voiceToken || !voiceUrl || !voiceChannelId) return null;
 
   // We still need the LiveKitRoom for audio, but we render it minimally

@@ -13,6 +13,8 @@ export interface User {
   bot: boolean;
 }
 
+export type PublicUser = User;
+
 // ── Servers ────────────────────────────────────────────
 
 export interface Server {
