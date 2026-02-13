@@ -76,6 +76,8 @@ export function ServerSidebar() {
 
       <div style={{ flex: 1 }} />
 
+      <span style={{ fontSize: '0.6rem', color: '#72767d', textAlign: 'center', padding: '0 4px' }}>v0.1.0</span>
+
       <button
         className="server-icon logout-btn"
         onClick={logout}
