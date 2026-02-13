@@ -4,6 +4,8 @@
 # Usage:
 #   docker compose -f docker/docker-compose.prod.yml --env-file /opt/drocsid/.env up -d
 
+name: drocsid-prod
+
 services:
   # ── Data Stores ────────────────────────────────────────
   postgres:

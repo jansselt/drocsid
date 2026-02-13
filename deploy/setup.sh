@@ -51,7 +51,7 @@ fi
 # ── Create directories ───────────────────────────────────
 echo "==> Creating ${DEPLOY_DIR}..."
 sudo mkdir -p "${DEPLOY_DIR}/web"
-sudo chown -R drocsid:drocsid "$DEPLOY_DIR"
+sudo chown -R "${RUNNER_USER}:${RUNNER_USER}" "$DEPLOY_DIR"
 
 # ── Copy .env template ───────────────────────────────────
 if [ ! -f "${DEPLOY_DIR}/.env" ]; then
