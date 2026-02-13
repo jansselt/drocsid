@@ -1,0 +1,67 @@
+[package]
+name = "drocsid-server"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[dependencies]
+# Web framework
+axum = { version = "0.8", features = ["ws", "macros"] }
+axum-extra = { version = "0.10", features = ["typed-header"] }
+tower = { version = "0.5", features = ["timeout"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# IDs and time
+uuid = { version = "1", features = ["v7", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+# Cache
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
+
+# Auth
+argon2 = "0.5"
+jsonwebtoken = "9"
+rand = "0.9"
+sha2 = "0.10"
+
+# Permissions
+bitflags = "2"
+
+# Concurrency
+dashmap = "6"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# WebSocket
+futures-util = "0.3"
+
+# Object storage (MinIO/S3)
+aws-config = { version = "1", features = ["behavior-version-latest"] }
+aws-sdk-s3 = "1"
+aws-credential-types = "1"
+
+# Voice (LiveKit)
+livekit-api = "0.4"
+
+# HTTP client (GIF proxy)
+reqwest = { version = "0.12", features = ["json"] }
+urlencoding = "2"
+
+# Config
+config = "0.15"

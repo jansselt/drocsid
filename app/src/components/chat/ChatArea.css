@@ -1,0 +1,95 @@
+.chat-area-wrapper {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+}
+
+.chat-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+  min-width: 0;
+}
+
+.chat-header {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  padding: 0 1rem;
+  border-bottom: 1px solid var(--bg-secondary);
+  flex-shrink: 0;
+  gap: 0.375rem;
+}
+
+.chat-header-hash {
+  color: var(--text-muted);
+  font-size: 1.25rem;
+  font-weight: 500;
+}
+
+.chat-header-name {
+  font-weight: 600;
+  font-size: 0.9375rem;
+  color: var(--text-primary);
+}
+
+.chat-header-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--border);
+  margin: 0 0.5rem;
+}
+
+.chat-header-topic {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-header-action {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-header-action:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.chat-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 1.125rem;
+}
+
+/* ── Voice Compact Bar ───────────────────────────── */
+
+.voice-compact-bar {
+  flex-shrink: 0;
+  max-height: 300px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── Typing Indicator ─────────────────────────────── */
+
+.typing-indicator {
+  padding: 0 1rem 0.125rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  min-height: 1.125rem;
+  flex-shrink: 0;
+}

@@ -1,0 +1,24 @@
+# Rust
+/server/target/
+*.swp
+
+# Node
+/app/node_modules/
+/app/dist/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes
+docker/data/

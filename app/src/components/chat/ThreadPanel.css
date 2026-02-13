@@ -1,0 +1,54 @@
+.thread-panel {
+  width: 400px;
+  min-width: 400px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border);
+}
+
+.thread-header {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  padding: 0 1rem;
+  border-bottom: 1px solid var(--bg-darkest);
+  flex-shrink: 0;
+}
+
+.thread-header-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.thread-header-name {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-header-count {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+
+.thread-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.thread-close:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
