@@ -75,12 +75,11 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
 
   # ── Voice/Video ────────────────────────────────────────
+  # Host networking is required so LiveKit can discover its public IP via STUN
+  # and so ICE candidates use real interface IPs (not Docker bridge IPs).
   livekit:
     image: livekit/livekit-server:latest
-    ports:
-      - "127.0.0.1:7880:7880"
-      - "7881:7881"
-      - "7882:7882/udp"
+    network_mode: host
     environment:
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
     volumes:
