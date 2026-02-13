@@ -94,7 +94,7 @@ ${RUNNER_USER} ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop drocsid-server
 ${RUNNER_USER} ALL=(ALL) NOPASSWD: /usr/bin/systemctl start drocsid-server
 ${RUNNER_USER} ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart drocsid-server
 ${RUNNER_USER} ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload nginx
-${RUNNER_USER} ALL=(ALL) NOPASSWD: /usr/bin/cp * /etc/nginx/sites-available/drocsid
+${RUNNER_USER} ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/nginx/sites-available/drocsid
 ${RUNNER_USER} ALL=(ALL) NOPASSWD: /usr/sbin/nginx -t
 EOF
 sudo chmod 440 "$SUDOERS_FILE"

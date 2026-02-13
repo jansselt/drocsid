@@ -51,7 +51,7 @@ cp "${REPO_DIR}/server/target/release/drocsid-server" "${DEPLOY_DIR}/drocsid-ser
 rsync -a --delete "${REPO_DIR}/app/dist/" "${DEPLOY_DIR}/web/"
 
 echo "==> Updating nginx config..."
-sudo cp "${REPO_DIR}/deploy/nginx/drocsid.conf" /etc/nginx/sites-available/drocsid
+sudo tee /etc/nginx/sites-available/drocsid < "${REPO_DIR}/deploy/nginx/drocsid.conf" > /dev/null
 sudo nginx -t
 
 echo "==> Starting drocsid-server..."
