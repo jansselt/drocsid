@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Ensure cargo and node are on PATH (they may not be in the runner service env)
+for p in "$HOME/.cargo/bin" "$HOME/.nvm/versions/node"/*/bin; do
+    [ -d "$p" ] && export PATH="$p:$PATH"
+done
+# Also load nvm if available (sets up node version)
+[ -s "$HOME/.nvm/nvm.sh" ] && source "$HOME/.nvm/nvm.sh"
+
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DEPLOY_DIR="/opt/drocsid"
 ENV_FILE="${DEPLOY_DIR}/.env"

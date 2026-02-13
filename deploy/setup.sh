@@ -8,23 +8,36 @@ set -euo pipefail
 DEPLOY_DIR="/opt/drocsid"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# When run with sudo, user-installed tools (cargo, node) aren't on root's PATH.
+# Inherit the invoking user's PATH so we can find them.
+if [ -n "${SUDO_USER:-}" ]; then
+    REAL_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+    for p in "$REAL_HOME/.cargo/bin" "$REAL_HOME/.nvm/versions/node"/*/bin; do
+        [ -d "$p" ] && export PATH="$p:$PATH"
+    done
+fi
+
 echo "==> Drocsid Server Setup"
 echo ""
 
 # ── Check prerequisites ──────────────────────────────────
+MISSING=()
 for cmd in docker cargo node npm nginx curl rsync; do
     if ! command -v "$cmd" &> /dev/null; then
-        echo "ERROR: '$cmd' not found. Install it first."
-        echo ""
-        echo "Required software:"
-        echo "  - Docker + Docker Compose  (docker.com)"
-        echo "  - Rust toolchain           (rustup.rs)"
-        echo "  - Node.js >= 18 + npm      (nvm)"
-        echo "  - nginx                     (apt install nginx)"
-        echo "  - curl, rsync              (apt install curl rsync)"
-        exit 1
+        MISSING+=("$cmd")
     fi
 done
+if [ ${#MISSING[@]} -gt 0 ]; then
+    echo "ERROR: Missing commands: ${MISSING[*]}"
+    echo ""
+    echo "Required software:"
+    echo "  - Docker + Docker Compose  (docker.com)"
+    echo "  - Rust toolchain           (rustup.rs)"
+    echo "  - Node.js >= 18 + npm      (nvm)"
+    echo "  - nginx                     (apt install nginx)"
+    echo "  - curl, rsync              (apt install curl rsync)"
+    exit 1
+fi
 echo "  All prerequisites found."
 
 # ── Create system user ───────────────────────────────────
