@@ -78,13 +78,13 @@ services:
   # Host networking is required so LiveKit can discover its public IP via STUN
   # and so ICE candidates use real interface IPs (not Docker bridge IPs).
   livekit:
-    image: livekit/livekit-server:latest
+    image: livekit/livekit-server:v1.9.11
     network_mode: host
     environment:
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
     volumes:
       - ./livekit.yaml:/etc/livekit.yaml:ro
-    command: --config /etc/livekit.yaml --node-ip ${LIVEKIT_NODE_IP}
+    command: --config /etc/livekit.yaml
     restart: unless-stopped
 
 volumes:
