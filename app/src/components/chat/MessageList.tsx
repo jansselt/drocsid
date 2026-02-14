@@ -151,9 +151,10 @@ export function MessageList({ channelId }: MessageListProps) {
   };
 
   const shouldShowHeader = (msg: Message, index: number): boolean => {
-    if (index === 0) return true;
-    const prev = messages[index - 1];
-    if (prev.author_id !== msg.author_id) return true;
+    const arrayIndex = index - firstItemIndex;
+    if (arrayIndex <= 0) return true;
+    const prev = messages[arrayIndex - 1];
+    if (!prev || prev.author_id !== msg.author_id) return true;
     const diff = new Date(msg.created_at).getTime() - new Date(prev.created_at).getTime();
     return diff > 5 * 60 * 1000;
   };
