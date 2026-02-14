@@ -13,6 +13,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup PATH
+        run: |
+          for p in "$HOME/.cargo/bin" "$HOME/.nvm/versions/node"/*/bin; do
+            [ -d "$p" ] && echo "$p" >> "$GITHUB_PATH"
+          done
+
       - name: Install npm dependencies
         working-directory: app
         run: npm ci
