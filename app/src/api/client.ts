@@ -3,6 +3,7 @@ import type {
   UploadUrlResponse, RelationshipWithUser, SearchResult, ThreadMetadata, User,
   VoiceTokenResponse, VoiceState, Invite, InviteResolve, Ban, AuditLogEntry,
   Webhook, GifSearchResponse, ServerMemberWithUser, RegistrationCode,
+  NotificationPreference, NotificationLevel,
 } from '../types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1';
@@ -637,4 +638,27 @@ export async function createRegistrationCode(
 
 export async function deleteRegistrationCode(code: string): Promise<void> {
   return request(`/admin/registration-codes/${code}`, { method: 'DELETE' });
+}
+
+// ── Notification Preferences ──────────────────────────
+
+export async function getNotificationPreferences(): Promise<NotificationPreference[]> {
+  return request('/users/@me/notification-preferences');
+}
+
+export async function setNotificationPreference(
+  targetId: string,
+  targetType: 'channel' | 'server',
+  notificationLevel: NotificationLevel,
+  muted: boolean,
+): Promise<NotificationPreference> {
+  return request('/users/@me/notification-preferences', {
+    method: 'PUT',
+    body: JSON.stringify({
+      target_id: targetId,
+      target_type: targetType,
+      notification_level: notificationLevel,
+      muted,
+    }),
+  });
 }

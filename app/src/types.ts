@@ -67,6 +67,17 @@ export interface ReadState {
   mention_count: number;
 }
 
+// ── Notification Preferences ────────────────────────────
+
+export type NotificationLevel = 'all' | 'mentions' | 'nothing';
+
+export interface NotificationPreference {
+  target_id: string;
+  target_type: 'channel' | 'server';
+  notification_level: NotificationLevel;
+  muted: boolean;
+}
+
 // ── Messages ───────────────────────────────────────────
 
 export interface Message {
@@ -190,6 +201,7 @@ export interface ReadyPayload {
   user: User;
   servers: Server[];
   read_states: ReadState[];
+  notification_preferences?: NotificationPreference[];
 }
 
 export interface MessageAckEvent {

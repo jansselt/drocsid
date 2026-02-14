@@ -1810,3 +1810,53 @@ pub async fn update_channel_last_message(
         .await?;
     Ok(())
 }
+
+// ── Notification Preferences ──────────────────────────
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
+pub struct NotificationPreference {
+    pub target_id: Uuid,
+    pub target_type: String,
+    pub notification_level: String,
+    pub muted: bool,
+}
+
+pub async fn get_notification_preferences(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Vec<NotificationPreference>, sqlx::Error> {
+    sqlx::query_as::<_, NotificationPreference>(
+        "SELECT target_id, target_type, notification_level, muted FROM notification_preferences WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn upsert_notification_preference(
+    pool: &PgPool,
+    user_id: Uuid,
+    target_id: Uuid,
+    target_type: &str,
+    notification_level: &str,
+    muted: bool,
+) -> Result<NotificationPreference, sqlx::Error> {
+    sqlx::query_as::<_, NotificationPreference>(
+        r#"
+        INSERT INTO notification_preferences (user_id, target_id, target_type, notification_level, muted, updated_at)
+        VALUES ($1, $2, $3, $4, $5, now())
+        ON CONFLICT (user_id, target_id) DO UPDATE SET
+            notification_level = $4,
+            muted = $5,
+            updated_at = now()
+        RETURNING target_id, target_type, notification_level, muted
+        "#,
+    )
+    .bind(user_id)
+    .bind(target_id)
+    .bind(target_type)
+    .bind(notification_level)
+    .bind(muted)
+    .fetch_one(pool)
+    .await
+}

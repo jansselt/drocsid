@@ -2,12 +2,14 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import { gateway } from '../../api/gateway';
 import { initAudio } from '../../utils/notificationSounds';
+import { requestNotificationPermission } from '../../utils/browserNotifications';
 import { ServerSidebar } from './ServerSidebar';
 import { ChannelSidebar } from './ChannelSidebar';
 import { ChatArea } from '../chat/ChatArea';
 import { MemberSidebar } from './MemberSidebar';
 import { QuickSwitcher } from '../common/QuickSwitcher';
 import { BugReportModal } from '../feedback/BugReportModal';
+import { KeyboardShortcutsDialog } from '../common/KeyboardShortcutsDialog';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 import { useFaviconBadge } from '../../hooks/useFaviconBadge';
 import './AppLayout.css';
@@ -18,6 +20,7 @@ export function AppLayout() {
   const initGatewayHandlers = useServerStore((s) => s.initGatewayHandlers);
   const setServers = useServerStore((s) => s.setServers);
   const setReadStates = useServerStore((s) => s.setReadStates);
+  const setNotificationPrefs = useServerStore((s) => s.setNotificationPrefs);
   const restoreNavigation = useServerStore((s) => s.restoreNavigation);
   const activeServerId = useServerStore((s) => s.activeServerId);
   const showChannelSidebar = useServerStore((s) => s.showChannelSidebar);
@@ -25,6 +28,7 @@ export function AppLayout() {
   const toggleChannelSidebar = useServerStore((s) => s.toggleChannelSidebar);
   const toggleMemberSidebar = useServerStore((s) => s.toggleMemberSidebar);
   const [showSwitcher, setShowSwitcher] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const [bugReport, setBugReport] = useState<{ open: boolean; prefill: string }>({ open: false, prefill: '' });
   const idleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const isIdleRef = useRef(false);
@@ -39,6 +43,9 @@ export function AppLayout() {
       if (data.read_states) {
         setReadStates(data.read_states);
       }
+      if (data.notification_preferences) {
+        setNotificationPrefs(data.notification_preferences);
+      }
       restoreNavigation();
     };
 
@@ -49,12 +56,13 @@ export function AppLayout() {
       gateway.onReady = null;
       cleanup();
     };
-  }, [initGatewayHandlers, setServers, setReadStates, restoreNavigation]);
+  }, [initGatewayHandlers, setServers, setReadStates, setNotificationPrefs, restoreNavigation]);
 
   // Unlock audio context on first user interaction (browser autoplay policy)
   useEffect(() => {
     const unlock = () => {
       initAudio();
+      requestNotificationPermission();
       document.removeEventListener('click', unlock);
       document.removeEventListener('keydown', unlock);
     };
@@ -73,7 +81,10 @@ export function AppLayout() {
         e.preventDefault();
         setShowSwitcher((prev) => !prev);
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
+      if ((e.ctrlKey || e.metaKey) && e.key === '?') {
+        e.preventDefault();
+        setShowShortcuts((prev) => !prev);
+      } else if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
         e.preventDefault();
         toggleChannelSidebar();
       } else if ((e.ctrlKey || e.metaKey) && e.key === 'b' && !e.shiftKey) {
@@ -150,6 +161,9 @@ export function AppLayout() {
           prefill={bugReport.prefill}
           onClose={() => setBugReport({ open: false, prefill: '' })}
         />
+      )}
+      {showShortcuts && (
+        <KeyboardShortcutsDialog onClose={() => setShowShortcuts(false)} />
       )}
     </div>
   );

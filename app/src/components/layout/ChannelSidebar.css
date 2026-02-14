@@ -263,6 +263,33 @@
   color: #fff;
 }
 
+.channel-context-item.active {
+  color: var(--accent);
+}
+
+.channel-context-item.active:hover {
+  color: #fff;
+}
+
+.channel-context-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 0.25rem 0;
+}
+
+.channel-context-label {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.channel-item.muted .channel-name {
+  opacity: 0.4;
+}
+
 /* Channel inline edit */
 .channel-item.editing {
   display: flex;

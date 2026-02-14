@@ -10,6 +10,12 @@ import {
   getNotificationVolume,
   setNotificationVolume,
 } from '../../utils/notificationSounds';
+import {
+  getBrowserNotificationsEnabled,
+  setBrowserNotificationsEnabled,
+  getPermissionState,
+  requestNotificationPermission,
+} from '../../utils/browserNotifications';
 import * as api from '../../api/client';
 import type { RegistrationCode } from '../../types';
 import './UserSettings.css';
@@ -352,10 +358,22 @@ export function UserSettings({ onClose }: UserSettingsProps) {
 
 function NotificationSettings() {
   const [volume, setVolume] = useState(() => Math.round(getNotificationVolume() * 100));
+  const [browserEnabled, setBrowserEnabled] = useState(() => getBrowserNotificationsEnabled());
+  const [permState, setPermState] = useState(() => getPermissionState());
 
   const handleVolumeChange = (val: number) => {
     setVolume(val);
     setNotificationVolume(val / 100);
+  };
+
+  const handleBrowserToggle = async (enabled: boolean) => {
+    if (enabled && permState !== 'granted') {
+      const result = await requestNotificationPermission();
+      setPermState(result === 'unsupported' ? 'unsupported' : result);
+      if (result !== 'granted') return;
+    }
+    setBrowserEnabled(enabled);
+    setBrowserNotificationsEnabled(enabled);
   };
 
   return (
@@ -372,6 +390,29 @@ function NotificationSettings() {
         />
         <span className="profile-field-hint">{volume}%</span>
       </div>
+
+      <h3>Browser Notifications</h3>
+      <p style={{ color: 'var(--text-muted)', marginBottom: '0.75rem', fontSize: '0.85rem' }}>
+        Show desktop notifications for mentions and DMs when the tab is not focused.
+      </p>
+      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={browserEnabled}
+          onChange={(e) => handleBrowserToggle(e.target.checked)}
+        />
+        Enable browser notifications
+      </label>
+      {permState === 'denied' && (
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '0.5rem' }}>
+          Notifications are blocked by your browser. Allow them in your browser&apos;s site settings.
+        </p>
+      )}
+      {permState === 'unsupported' && (
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '0.5rem' }}>
+          Your browser does not support desktop notifications.
+        </p>
+      )}
 
       <h3>Test Sounds</h3>
       <p style={{ color: 'var(--text-muted)', marginBottom: '0.75rem', fontSize: '0.85rem' }}>

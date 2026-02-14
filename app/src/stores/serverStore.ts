@@ -29,6 +29,8 @@ import type {
   PresenceUpdateEvent,
   ServerMemberWithUser,
   ServerMemberAddEvent,
+  NotificationPreference,
+  NotificationLevel,
 } from '../types';
 import * as api from '../api/client';
 import { gateway } from '../api/gateway';
@@ -39,6 +41,7 @@ import {
   playVoiceJoinSound,
   playVoiceLeaveSound,
 } from '../utils/notificationSounds';
+import { showBrowserNotification } from '../utils/browserNotifications';
 
 type ViewMode = 'servers' | 'home';
 
@@ -90,6 +93,9 @@ interface ServerState {
 
   // Read states (unread tracking)
   readStates: Map<string, ReadState>; // channel_id -> ReadState
+
+  // Notification preferences
+  notificationPrefs: Map<string, NotificationPreference>; // target_id -> pref
 
   // Voice
   voiceChannelId: string | null; // channel we're connected to
@@ -167,6 +173,15 @@ interface ServerState {
   setReadStates: (readStates: ReadState[]) => void;
   ackChannel: (channelId: string) => void;
 
+  // Notification preference actions
+  setNotificationPrefs: (prefs: NotificationPreference[]) => void;
+  updateNotificationPref: (
+    targetId: string,
+    targetType: 'channel' | 'server',
+    level: NotificationLevel,
+    muted: boolean,
+  ) => Promise<void>;
+
   toggleChannelSidebar: () => void;
   toggleMemberSidebar: () => void;
 
@@ -190,6 +205,7 @@ export const useServerStore = create<ServerState>((set, get) => ({
   showChannelSidebar: JSON.parse(localStorage.getItem('drocsid_show_channel_sidebar') ?? 'true'),
   showMemberSidebar: JSON.parse(localStorage.getItem('drocsid_show_member_sidebar') ?? 'true'),
   readStates: new Map(),
+  notificationPrefs: new Map(),
   voiceChannelId: null,
   voiceToken: null,
   voiceUrl: null,
@@ -316,7 +332,7 @@ export const useServerStore = create<ServerState>((set, get) => ({
       });
     }
 
-    // Notification sounds — only for messages from other users
+    // Notification sounds & browser notifications — only for messages from other users
     const currentUser = useAuthStore.getState().user;
     if (currentUser && message.author_id !== currentUser.id) {
       const state = get();
@@ -324,12 +340,73 @@ export const useServerStore = create<ServerState>((set, get) => ({
       const content = message.content ?? '';
       const isMention =
         content.includes(`@${currentUser.username}`) ||
-        content.includes(`<@${currentUser.id}>`);
+        content.includes(`<@${currentUser.id}>`) ||
+        content.includes('@everyone') ||
+        content.includes('@here');
 
-      if (isMention) {
-        playMentionSound();
-      } else if (isDm) {
-        playMessageSound();
+      const authorName =
+        message.author?.display_name || message.author?.username || 'Someone';
+      const preview =
+        content.length > 100 ? content.slice(0, 100) + '...' : content;
+
+      // Find server_id for navigation
+      let serverId: string | null = null;
+      for (const [sid, serverChannels] of state.channels) {
+        if (serverChannels.some((c) => c.id === message.channel_id)) {
+          serverId = sid;
+          break;
+        }
+      }
+
+      // Check notification preferences (channel > server > default 'all')
+      const channelPref = state.notificationPrefs.get(message.channel_id);
+      const serverPref = serverId
+        ? state.notificationPrefs.get(serverId)
+        : undefined;
+      const effectivePref = channelPref || serverPref;
+      const isMuted = effectivePref?.muted ?? false;
+      const level = effectivePref?.notification_level ?? 'all';
+
+      // DND suppresses all notifications
+      const myPresence = state.presences.get(currentUser.id);
+      const isDnd = myPresence === 'dnd';
+
+      // Determine if we should notify
+      const shouldNotify =
+        !isDnd &&
+        !isMuted &&
+        (level === 'all' ||
+          (level === 'mentions' && (isMention || isDm)));
+
+      if (shouldNotify) {
+        if (isMention) {
+          playMentionSound();
+          showBrowserNotification(
+            `${authorName} mentioned you`,
+            preview,
+            () => {
+              if (serverId) {
+                get().setActiveServer(serverId);
+                get().setActiveChannel(message.channel_id);
+              } else if (isDm) {
+                get().setView('home');
+                get().setActiveDmChannel(message.channel_id);
+              }
+            },
+            `mention-${message.channel_id}`,
+          );
+        } else if (isDm) {
+          playMessageSound();
+          showBrowserNotification(
+            authorName,
+            preview,
+            () => {
+              get().setView('home');
+              get().setActiveDmChannel(message.channel_id);
+            },
+            `dm-${message.channel_id}`,
+          );
+        }
       }
     }
 
@@ -833,6 +910,37 @@ export const useServerStore = create<ServerState>((set, get) => ({
 
     // Fire and forget API call
     api.ackChannel(channelId, latestMessageId).catch(() => {});
+  },
+
+  setNotificationPrefs: (prefs) => {
+    set(() => {
+      const notificationPrefs = new Map<string, NotificationPreference>();
+      for (const p of prefs) {
+        notificationPrefs.set(p.target_id, p);
+      }
+      return { notificationPrefs };
+    });
+  },
+
+  updateNotificationPref: async (targetId, targetType, level, muted) => {
+    // Optimistic update
+    set((state) => {
+      const notificationPrefs = new Map(state.notificationPrefs);
+      notificationPrefs.set(targetId, {
+        target_id: targetId,
+        target_type: targetType,
+        notification_level: level,
+        muted,
+      });
+      return { notificationPrefs };
+    });
+    try {
+      await api.setNotificationPreference(targetId, targetType, level, muted);
+    } catch {
+      // Revert on failure
+      const prefs = await api.getNotificationPreferences();
+      get().setNotificationPrefs(prefs);
+    }
   },
 
   toggleChannelSidebar: () => {

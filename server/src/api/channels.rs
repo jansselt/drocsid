@@ -313,6 +313,7 @@ async fn send_message(
     // Parse mentions and increment mention counts
     let mentioned_user_ids = parse_mentions(
         &state.db,
+        &state.gateway,
         &body.content,
         user.user_id,
         channel.server_id,
@@ -1064,15 +1065,38 @@ static RE_MENTION_ID: LazyLock<Regex> =
 static RE_MENTION_NAME: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"@(\w{2,32})").unwrap());
 
-/// Parse `<@uuid>` and `@username` mentions from message content.
+/// Parse `<@uuid>`, `@username`, `@everyone`, and `@here` mentions from message content.
 /// Returns a deduplicated list of mentioned user IDs (excluding the author).
 async fn parse_mentions(
     pool: &sqlx::PgPool,
+    gateway: &crate::gateway::GatewayState,
     content: &str,
     author_id: Uuid,
     server_id: Option<Uuid>,
 ) -> Vec<Uuid> {
     let mut mentioned: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
+
+    // @everyone and @here only apply in server channels
+    if let Some(sid) = server_id {
+        if content.contains("@everyone") {
+            if let Ok(members) = queries::get_server_members(pool, sid).await {
+                for m in &members {
+                    if m.user_id != author_id {
+                        mentioned.insert(m.user_id);
+                    }
+                }
+            }
+            return mentioned.into_iter().collect();
+        }
+
+        if content.contains("@here") {
+            for uid in gateway.get_online_server_user_ids(sid) {
+                if uid != author_id {
+                    mentioned.insert(uid);
+                }
+            }
+        }
+    }
 
     // Direct ID mentions: <@uuid>
     for cap in RE_MENTION_ID.captures_iter(content) {
@@ -1083,9 +1107,12 @@ async fn parse_mentions(
         }
     }
 
-    // Username mentions: @username
+    // Username mentions: @username (skip @everyone and @here)
     for cap in RE_MENTION_NAME.captures_iter(content) {
         let username = &cap[1];
+        if username == "everyone" || username == "here" {
+            continue;
+        }
         if let Ok(Some(user)) = queries::get_user_by_username(pool, username).await {
             if user.id != author_id {
                 mentioned.insert(user.id);

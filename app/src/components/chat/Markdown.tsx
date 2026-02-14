@@ -101,10 +101,16 @@ function tokenize(text: string): Token[] {
       continue;
     }
 
-    // Mention: <@userId> or @username
+    // Mention: <@userId>, @everyone, @here, or @username
     match = remaining.match(/^<@([a-f0-9-]+)>/);
     if (match) {
       tokens.push({ type: 'mention', text: match[1], href: 'id' });
+      remaining = remaining.slice(match[0].length);
+      continue;
+    }
+    match = remaining.match(/^@(everyone|here)\b/);
+    if (match) {
+      tokens.push({ type: 'mention', text: match[1], href: 'special' });
       remaining = remaining.slice(match[0].length);
       continue;
     }
@@ -186,6 +192,13 @@ export function Markdown({ content }: MarkdownProps) {
               </a>
             );
           case 'mention': {
+            if (token.href === 'special') {
+              return (
+                <span key={i} className="md-mention md-mention-me">
+                  @{token.text}
+                </span>
+              );
+            }
             let displayName: string;
             let isMe = false;
             if (token.href === 'id') {

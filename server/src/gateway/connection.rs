@@ -135,12 +135,16 @@ async fn handle_identify(
     // Get read states for unread tracking
     let read_states = queries::get_user_read_states(&state.db, uid).await.unwrap_or_default();
 
+    // Get notification preferences
+    let notification_preferences = queries::get_notification_preferences(&state.db, uid).await.unwrap_or_default();
+
     // Send Ready
     let ready = ReadyPayload {
         session_id,
         user: PublicUser::from(user),
         servers,
         read_states,
+        notification_preferences,
     };
 
     let seq = state.gateway.next_seq(session_id).unwrap_or(1);

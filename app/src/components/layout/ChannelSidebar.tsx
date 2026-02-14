@@ -306,6 +306,11 @@ function ChannelItem({
   const [editName, setEditName] = useState(name);
   const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const notifPref = useServerStore((s) => s.notificationPrefs.get(channelId));
+  const updateNotificationPref = useServerStore((s) => s.updateNotificationPref);
+
+  const isMuted = notifPref?.muted ?? false;
+  const notifLevel = notifPref?.notification_level ?? 'all';
 
   useEffect(() => {
     if (!menu) return;
@@ -326,7 +331,6 @@ function ChannelItem({
   }, [editing]);
 
   const handleContextMenu = (e: React.MouseEvent) => {
-    if (!canManage) return;
     e.preventDefault();
     setMenu({ x: e.clientX, y: e.clientY });
   };
@@ -382,7 +386,7 @@ function ChannelItem({
   return (
     <>
       <button
-        className={`channel-item ${isActive ? 'active' : ''}${isUnread && !isActive ? ' unread' : ''}`}
+        className={`channel-item ${isActive ? 'active' : ''}${isUnread && !isActive ? ' unread' : ''}${isMuted ? ' muted' : ''}`}
         onClick={onClick}
         onContextMenu={handleContextMenu}
       >
@@ -405,18 +409,50 @@ function ChannelItem({
             className="channel-context-item"
             onClick={() => {
               setMenu(null);
-              setEditName(name);
-              setEditing(true);
+              updateNotificationPref(channelId, 'channel', notifLevel, !isMuted);
             }}
           >
-            Edit Channel
+            {isMuted ? 'Unmute Channel' : 'Mute Channel'}
           </button>
-          <button
-            className="channel-context-item danger"
-            onClick={handleDelete}
-          >
-            Delete Channel
-          </button>
+          <div className="channel-context-divider" />
+          <div className="channel-context-label">Notifications</div>
+          {(['all', 'mentions', 'nothing'] as const).map((level) => (
+            <button
+              key={level}
+              className={`channel-context-item${notifLevel === level ? ' active' : ''}`}
+              onClick={() => {
+                setMenu(null);
+                updateNotificationPref(channelId, 'channel', level, isMuted);
+              }}
+            >
+              {level === 'all'
+                ? 'All Messages'
+                : level === 'mentions'
+                  ? 'Mentions Only'
+                  : 'Nothing'}
+            </button>
+          ))}
+          {canManage && (
+            <>
+              <div className="channel-context-divider" />
+              <button
+                className="channel-context-item"
+                onClick={() => {
+                  setMenu(null);
+                  setEditName(name);
+                  setEditing(true);
+                }}
+              >
+                Edit Channel
+              </button>
+              <button
+                className="channel-context-item danger"
+                onClick={handleDelete}
+              >
+                Delete Channel
+              </button>
+            </>
+          )}
         </div>
       )}
     </>

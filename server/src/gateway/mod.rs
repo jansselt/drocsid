@@ -407,4 +407,24 @@ impl GatewayState {
     pub fn is_online(&self, user_id: Uuid) -> bool {
         self.user_sessions.contains_key(&user_id)
     }
+
+    /// Get user IDs who are "here" (online/idle/dnd) for a given server.
+    /// Excludes offline and invisible users.
+    pub fn get_online_server_user_ids(&self, server_id: Uuid) -> Vec<Uuid> {
+        let mut result = Vec::new();
+        // Iterate all users who have this server cached
+        for entry in self.user_servers.iter() {
+            let user_id = *entry.key();
+            if !entry.value().contains(&server_id) {
+                continue;
+            }
+            if let Some(presence) = self.presences.get(&user_id) {
+                match presence.status.as_str() {
+                    "online" | "idle" | "dnd" => result.push(user_id),
+                    _ => {} // invisible, offline — skip
+                }
+            }
+        }
+        result
+    }
 }

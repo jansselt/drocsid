@@ -57,6 +57,10 @@ fn user_routes() -> Router<AppState> {
     Router::new()
         .route("/@me", get(get_me).patch(update_me).delete(delete_me))
         .route("/@me/avatar", post(request_avatar_upload))
+        .route(
+            "/@me/notification-preferences",
+            get(get_notification_prefs).put(set_notification_pref),
+        )
         .route("/search", get(search_users))
 }
 
@@ -253,6 +257,56 @@ async fn search_users(
     let users = queries::search_users_by_username(&state.db, q, 20).await?;
     let public: Vec<PublicUser> = users.into_iter().map(PublicUser::from).collect();
     Ok(axum::Json(public))
+}
+
+async fn get_notification_prefs(
+    State(state): State<AppState>,
+    user: crate::api::auth::AuthUser,
+) -> Result<impl IntoResponse, crate::error::ApiError> {
+    use crate::db::queries;
+    let prefs = queries::get_notification_preferences(&state.db, user.user_id).await?;
+    Ok(axum::Json(prefs))
+}
+
+#[derive(serde::Deserialize)]
+struct SetNotificationPrefRequest {
+    target_id: uuid::Uuid,
+    target_type: String,
+    notification_level: String,
+    muted: bool,
+}
+
+async fn set_notification_pref(
+    State(state): State<AppState>,
+    user: crate::api::auth::AuthUser,
+    axum::Json(body): axum::Json<SetNotificationPrefRequest>,
+) -> Result<impl IntoResponse, crate::error::ApiError> {
+    use crate::db::queries;
+
+    if !matches!(body.target_type.as_str(), "channel" | "server") {
+        return Err(crate::error::ApiError::InvalidInput(
+            "target_type must be 'channel' or 'server'".into(),
+        ));
+    }
+    if !matches!(
+        body.notification_level.as_str(),
+        "all" | "mentions" | "nothing"
+    ) {
+        return Err(crate::error::ApiError::InvalidInput(
+            "notification_level must be 'all', 'mentions', or 'nothing'".into(),
+        ));
+    }
+
+    let pref = queries::upsert_notification_preference(
+        &state.db,
+        user.user_id,
+        body.target_id,
+        &body.target_type,
+        &body.notification_level,
+        body.muted,
+    )
+    .await?;
+    Ok(axum::Json(pref))
 }
 
 async fn health_check() -> impl IntoResponse {
