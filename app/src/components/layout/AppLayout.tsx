@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import { gateway } from '../../api/gateway';
+import { initAudio } from '../../utils/notificationSounds';
 import { ServerSidebar } from './ServerSidebar';
 import { ChannelSidebar } from './ChannelSidebar';
 import { ChatArea } from '../chat/ChatArea';
@@ -40,6 +41,21 @@ export function AppLayout() {
       cleanup();
     };
   }, [initGatewayHandlers, setServers, restoreNavigation]);
+
+  // Unlock audio context on first user interaction (browser autoplay policy)
+  useEffect(() => {
+    const unlock = () => {
+      initAudio();
+      document.removeEventListener('click', unlock);
+      document.removeEventListener('keydown', unlock);
+    };
+    document.addEventListener('click', unlock);
+    document.addEventListener('keydown', unlock);
+    return () => {
+      document.removeEventListener('click', unlock);
+      document.removeEventListener('keydown', unlock);
+    };
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {

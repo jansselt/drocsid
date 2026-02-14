@@ -2,6 +2,14 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { useServerStore } from '../../stores/serverStore';
 import { useThemeStore, themeNames, themeLabels, applyThemeToDOM, type ThemeName } from '../../stores/themeStore';
+import {
+  playMessageSound,
+  playMentionSound,
+  playVoiceJoinSound,
+  playVoiceLeaveSound,
+  getNotificationVolume,
+  setNotificationVolume,
+} from '../../utils/notificationSounds';
 import * as api from '../../api/client';
 import type { RegistrationCode } from '../../types';
 import './UserSettings.css';
@@ -32,7 +40,7 @@ export function UserSettings({ onClose }: UserSettingsProps) {
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'appearance' | 'voice' | 'admin'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'appearance' | 'notifications' | 'voice' | 'admin'>('profile');
 
   // Profile form state
   const [displayName, setDisplayName] = useState(user?.display_name || '');
@@ -161,6 +169,12 @@ export function UserSettings({ onClose }: UserSettingsProps) {
               onClick={() => setActiveTab('appearance')}
             >
               Appearance
+            </button>
+            <button
+              className={`settings-nav-item ${activeTab === 'notifications' ? 'active' : ''}`}
+              onClick={() => setActiveTab('notifications')}
+            >
+              Notifications
             </button>
             <button
               className={`settings-nav-item ${activeTab === 'voice' ? 'active' : ''}`}
@@ -326,10 +340,56 @@ export function UserSettings({ onClose }: UserSettingsProps) {
               </div>
             )}
 
+            {activeTab === 'notifications' && <NotificationSettings />}
             {activeTab === 'voice' && <VoiceVideoSettings />}
             {activeTab === 'admin' && <AdminPanel />}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function NotificationSettings() {
+  const [volume, setVolume] = useState(() => Math.round(getNotificationVolume() * 100));
+
+  const handleVolumeChange = (val: number) => {
+    setVolume(val);
+    setNotificationVolume(val / 100);
+  };
+
+  return (
+    <div className="voice-video-settings">
+      <h3>Notification Sounds</h3>
+      <div className="profile-field">
+        <label>Volume</label>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          value={volume}
+          onChange={(e) => handleVolumeChange(Number(e.target.value))}
+        />
+        <span className="profile-field-hint">{volume}%</span>
+      </div>
+
+      <h3>Test Sounds</h3>
+      <p style={{ color: 'var(--text-muted)', marginBottom: '0.75rem', fontSize: '0.85rem' }}>
+        Click to preview each notification sound.
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        <button className="profile-avatar-upload-btn" onClick={playMessageSound}>
+          Message Sound
+        </button>
+        <button className="profile-avatar-upload-btn" onClick={playMentionSound}>
+          Mention Sound
+        </button>
+        <button className="profile-avatar-upload-btn" onClick={playVoiceJoinSound}>
+          Voice Join Sound
+        </button>
+        <button className="profile-avatar-upload-btn" onClick={playVoiceLeaveSound}>
+          Voice Leave Sound
+        </button>
       </div>
     </div>
   );

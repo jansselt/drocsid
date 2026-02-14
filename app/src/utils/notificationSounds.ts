@@ -1,34 +1,73 @@
 // Notification sound system using Web Audio API
 // Generates short tones programmatically — no external audio files needed.
+//
+// IMPORTANT: Call initAudio() from a user gesture (click/keydown) to unlock
+// audio playback. Browsers suspend AudioContext until a user gesture occurs.
 
 let audioCtx: AudioContext | null = null;
 
-function getAudioContext(): AudioContext {
-  if (!audioCtx) {
-    audioCtx = new AudioContext();
+/**
+ * Initialize and unlock the audio context. Must be called from a user gesture
+ * handler (click, keydown, etc.) to satisfy browser autoplay policies.
+ * Safe to call multiple times — only the first successful call matters.
+ */
+export function initAudio(): void {
+  try {
+    if (!audioCtx) {
+      audioCtx = new AudioContext();
+    }
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+  } catch (e) {
+    console.warn('[notificationSounds] Failed to initialize AudioContext:', e);
   }
-  // Resume if suspended (browsers require user gesture first)
+}
+
+function getAudioContext(): AudioContext | null {
+  if (!audioCtx) {
+    // Lazy fallback — but context will likely be suspended without user gesture
+    try {
+      audioCtx = new AudioContext();
+    } catch {
+      return null;
+    }
+  }
   if (audioCtx.state === 'suspended') {
     audioCtx.resume();
   }
   return audioCtx;
 }
 
+let notificationVolume = 0.5;
+
+export function setNotificationVolume(vol: number) {
+  notificationVolume = Math.max(0, Math.min(1, vol));
+}
+
+export function getNotificationVolume(): number {
+  return notificationVolume;
+}
+
 function playTone(
   frequency: number,
   duration: number,
   type: OscillatorType = 'sine',
-  volume = 0.3,
 ) {
   try {
     const ctx = getAudioContext();
+    if (!ctx || ctx.state !== 'running') return;
+
+    const vol = notificationVolume;
+    if (vol === 0) return;
+
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
     osc.type = type;
     osc.frequency.setValueAtTime(frequency, ctx.currentTime);
 
-    gain.gain.setValueAtTime(volume, ctx.currentTime);
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
 
     osc.connect(gain);
@@ -36,8 +75,8 @@ function playTone(
 
     osc.start(ctx.currentTime);
     osc.stop(ctx.currentTime + duration);
-  } catch {
-    // Audio not available — silently ignore
+  } catch (e) {
+    console.warn('[notificationSounds] playTone failed:', e);
   }
 }
 
