@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { useServerStore } from '../../stores/serverStore';
 import { useAuthStore } from '../../stores/authStore';
@@ -31,7 +31,6 @@ export function MessageList({ channelId }: MessageListProps) {
   const [editContent, setEditContent] = useState('');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [emojiPickerForId, setEmojiPickerForId] = useState<string | null>(null);
-  const [atBottom, setAtBottom] = useState(true);
   const isLoadingMore = useRef(false);
   const prevMessageCount = useRef(messages.length);
 
@@ -177,7 +176,6 @@ export function MessageList({ channelId }: MessageListProps) {
       startReached={handleStartReached}
       initialTopMostItemIndex={messages.length - 1}
       followOutput={(isAtBottom) => isAtBottom ? 'smooth' : false}
-      atBottomStateChange={setAtBottom}
       atBottomThreshold={150}
       increaseViewportBy={{ top: 200, bottom: 0 }}
       itemContent={(index, msg) => {
