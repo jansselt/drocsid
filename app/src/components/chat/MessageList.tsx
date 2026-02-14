@@ -47,6 +47,11 @@ export function MessageList({ channelId }: MessageListProps) {
     setEmojiPickerForId(null);
     setHoveredId(null);
     setShowScrollBtn(false);
+  }, [channelId]);
+
+  // Reset scroll refs on channel switch — must be useLayoutEffect so it runs
+  // BEFORE the scroll layout effect below (both are synchronous, ordered by position)
+  useLayoutEffect(() => {
     needsInitialScroll.current = true;
     atBottomRef.current = true;
   }, [channelId]);
@@ -58,7 +63,7 @@ export function MessageList({ channelId }: MessageListProps) {
       const el = scrollRef.current;
       if (el) el.scrollTop = el.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, channelId]);
 
   // Track whether user is near the bottom + show/hide scroll button
   const handleScroll = useCallback(() => {
