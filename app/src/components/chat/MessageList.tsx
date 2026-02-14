@@ -52,16 +52,31 @@ export function MessageList({ channelId }: MessageListProps) {
   // Reset scroll refs on channel switch — must be useLayoutEffect so it runs
   // BEFORE the scroll layout effect below (both are synchronous, ordered by position)
   useLayoutEffect(() => {
+    console.log('[SCROLL] reset layout effect — channelId changed:', channelId);
     needsInitialScroll.current = true;
     atBottomRef.current = true;
   }, [channelId]);
 
   // Initial scroll: useLayoutEffect ensures we scroll before paint, avoiding flash
   useLayoutEffect(() => {
+    const el = scrollRef.current;
+    console.log('[SCROLL] scroll layout effect —', {
+      needsInitialScroll: needsInitialScroll.current,
+      msgCount: messages.length,
+      scrollRef: !!el,
+      scrollHeight: el?.scrollHeight,
+      scrollTop: el?.scrollTop,
+      clientHeight: el?.clientHeight,
+      channelId,
+    });
     if (needsInitialScroll.current && messages.length > 0) {
       needsInitialScroll.current = false;
-      const el = scrollRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
+      if (el) {
+        el.scrollTop = el.scrollHeight;
+        console.log('[SCROLL] scrolled to bottom —', { newScrollTop: el.scrollTop, scrollHeight: el.scrollHeight });
+      } else {
+        console.warn('[SCROLL] scrollRef is NULL — cannot scroll!');
+      }
     }
   }, [messages, channelId]);
 
