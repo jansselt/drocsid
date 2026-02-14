@@ -1,4 +1,6 @@
 import { useMemo } from 'react';
+import { useServerStore } from '../../stores/serverStore';
+import { useAuthStore } from '../../stores/authStore';
 import { SHORTCODE_MAP } from './EmojiPicker';
 import './Markdown.css';
 
@@ -6,8 +8,10 @@ interface MarkdownProps {
   content: string;
 }
 
+type TokenType = 'text' | 'bold' | 'italic' | 'bolditalic' | 'code' | 'codeblock' | 'link' | 'image' | 'youtube' | 'mention' | 'br';
+
 interface Token {
-  type: 'text' | 'bold' | 'italic' | 'bolditalic' | 'code' | 'codeblock' | 'link' | 'image' | 'youtube' | 'br';
+  type: TokenType;
   text: string;
   lang?: string;
   href?: string;
@@ -97,6 +101,20 @@ function tokenize(text: string): Token[] {
       continue;
     }
 
+    // Mention: <@userId> or @username
+    match = remaining.match(/^<@([a-f0-9-]+)>/);
+    if (match) {
+      tokens.push({ type: 'mention', text: match[1], href: 'id' });
+      remaining = remaining.slice(match[0].length);
+      continue;
+    }
+    match = remaining.match(/^@(\w{2,32})/);
+    if (match) {
+      tokens.push({ type: 'mention', text: match[1], href: 'name' });
+      remaining = remaining.slice(match[0].length);
+      continue;
+    }
+
     // Newline
     if (remaining[0] === '\n') {
       tokens.push({ type: 'br', text: '\n' });
@@ -104,8 +122,8 @@ function tokenize(text: string): Token[] {
       continue;
     }
 
-    // Plain text: consume until next special char
-    match = remaining.match(/^[^*`\nhttps:]+/);
+    // Plain text: consume until next special char or @
+    match = remaining.match(/^[^*`\n@https:]+/);
     if (match) {
       tokens.push({ type: 'text', text: match[0] });
       remaining = remaining.slice(match[0].length);
@@ -122,6 +140,8 @@ function tokenize(text: string): Token[] {
 
 export function Markdown({ content }: MarkdownProps) {
   const tokens = useMemo(() => tokenize(content), [content]);
+  const users = useServerStore((s) => s.users);
+  const currentUserId = useAuthStore((s) => s.user?.id);
 
   return (
     <span className="markdown">
@@ -165,6 +185,25 @@ export function Markdown({ content }: MarkdownProps) {
                 {token.text}
               </a>
             );
+          case 'mention': {
+            let displayName: string;
+            let isMe = false;
+            if (token.href === 'id') {
+              const user = users.get(token.text);
+              displayName = user ? (user.display_name || user.username) : 'Unknown User';
+              isMe = token.text === currentUserId;
+            } else {
+              displayName = token.text;
+              // Check if this username matches the current user
+              const currentUser = [...users.values()].find((u) => u.username === token.text);
+              isMe = currentUser?.id === currentUserId;
+            }
+            return (
+              <span key={i} className={`md-mention${isMe ? ' md-mention-me' : ''}`}>
+                @{displayName}
+              </span>
+            );
+          }
           case 'br':
             return <br key={i} />;
           default:

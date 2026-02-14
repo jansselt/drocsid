@@ -59,3 +59,20 @@
   border: none;
   border-radius: 8px;
 }
+
+.md-mention {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  color: var(--accent-hover);
+  padding: 0 0.125rem;
+  border-radius: 3px;
+  font-weight: 500;
+  cursor: default;
+}
+
+.md-mention:hover {
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.md-mention-me {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}

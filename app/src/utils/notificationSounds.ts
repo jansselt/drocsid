@@ -39,10 +39,19 @@ function getAudioContext(): AudioContext | null {
   return audioCtx;
 }
 
-let notificationVolume = 0.5;
+const VOLUME_KEY = 'drocsid:notification-volume';
+
+let notificationVolume = (() => {
+  try {
+    const stored = localStorage.getItem(VOLUME_KEY);
+    if (stored !== null) return Math.max(0, Math.min(1, parseFloat(stored)));
+  } catch { /* localStorage unavailable */ }
+  return 0.5;
+})();
 
 export function setNotificationVolume(vol: number) {
   notificationVolume = Math.max(0, Math.min(1, vol));
+  try { localStorage.setItem(VOLUME_KEY, String(notificationVolume)); } catch { /* */ }
 }
 
 export function getNotificationVolume(): number {
