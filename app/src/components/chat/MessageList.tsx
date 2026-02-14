@@ -41,12 +41,15 @@ export function MessageList({ channelId }: MessageListProps) {
     setHoveredId(null);
   }, [channelId]);
 
-  const getAuthorName = (msg: Message): string => {
-    if (msg.author) return msg.author.display_name || msg.author.username;
-    const cached = users.get(msg.author_id);
-    if (cached) return cached.display_name || cached.username;
-    return 'Unknown User';
+  const getAuthor = (msg: Message): { name: string; avatar_url: string | null } => {
+    const user = msg.author ?? users.get(msg.author_id);
+    return {
+      name: user?.display_name || user?.username || 'Unknown User',
+      avatar_url: user?.avatar_url ?? null,
+    };
   };
+
+  const getAuthorName = (msg: Message): string => getAuthor(msg).name;
 
   const formatTime = (iso: string): string => {
     const date = new Date(iso);
@@ -227,7 +230,11 @@ export function MessageList({ channelId }: MessageListProps) {
             {showHeader && (
               <div className="message-header">
                 <div className="message-avatar">
-                  {getAuthorName(msg).charAt(0).toUpperCase()}
+                  {getAuthor(msg).avatar_url ? (
+                    <img src={getAuthor(msg).avatar_url!} alt="" />
+                  ) : (
+                    getAuthorName(msg).charAt(0).toUpperCase()
+                  )}
                 </div>
                 <div className="message-meta">
                   <span className={`message-author ${isOwn ? 'own' : ''}`}>

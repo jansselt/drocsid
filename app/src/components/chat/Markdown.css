@@ -48,3 +48,14 @@
   border-radius: 8px;
   cursor: pointer;
 }
+
+.md-embed {
+  margin: 0.375rem 0;
+}
+
+.md-youtube {
+  width: 400px;
+  height: 225px;
+  border: none;
+  border-radius: 8px;
+}

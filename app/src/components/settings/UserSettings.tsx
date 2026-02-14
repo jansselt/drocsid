@@ -1,5 +1,6 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuthStore } from '../../stores/authStore';
+import { useServerStore } from '../../stores/serverStore';
 import { useThemeStore, themeNames, themeLabels, applyThemeToDOM, type ThemeName } from '../../stores/themeStore';
 import * as api from '../../api/client';
 import './UserSettings.css';
@@ -21,7 +22,7 @@ export function UserSettings({ onClose }: UserSettingsProps) {
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'appearance'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'appearance' | 'voice'>('profile');
 
   // Profile form state
   const [displayName, setDisplayName] = useState(user?.display_name || '');
@@ -78,6 +79,12 @@ export function UserSettings({ onClose }: UserSettingsProps) {
       // Auto-save avatar immediately
       const updated = await api.updateMe({ avatar_url: file_url });
       useAuthStore.setState({ user: updated });
+      // Also update serverStore users cache so messages/voice/sidebar re-render
+      useServerStore.setState((state) => {
+        const users = new Map(state.users);
+        users.set(updated.id, updated);
+        return { users };
+      });
     } catch {
       // Error handled silently
     }
@@ -123,6 +130,12 @@ export function UserSettings({ onClose }: UserSettingsProps) {
               onClick={() => setActiveTab('appearance')}
             >
               Appearance
+            </button>
+            <button
+              className={`settings-nav-item ${activeTab === 'voice' ? 'active' : ''}`}
+              onClick={() => setActiveTab('voice')}
+            >
+              Voice &amp; Video
             </button>
           </div>
 
@@ -230,8 +243,215 @@ export function UserSettings({ onClose }: UserSettingsProps) {
                 </div>
               </div>
             )}
+
+            {activeTab === 'voice' && <VoiceVideoSettings />}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function VoiceVideoSettings() {
+  const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([]);
+  const [audioOutputs, setAudioOutputs] = useState<MediaDeviceInfo[]>([]);
+  const [videoInputs, setVideoInputs] = useState<MediaDeviceInfo[]>([]);
+  const [selectedMic, setSelectedMic] = useState('');
+  const [selectedSpeaker, setSelectedSpeaker] = useState('');
+  const [selectedCamera, setSelectedCamera] = useState('');
+  const [micVolume, setMicVolume] = useState(100);
+  const [speakerVolume, setSpeakerVolume] = useState(100);
+  const [micTesting, setMicTesting] = useState(false);
+  const [micLevel, setMicLevel] = useState(0);
+  const [cameraPreview, setCameraPreview] = useState(false);
+
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const animFrameRef = useRef<number>(0);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+
+  const loadDevices = useCallback(async () => {
+    try {
+      // Request permission first so device labels are available
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true }).catch(
+        () => navigator.mediaDevices.getUserMedia({ audio: true }),
+      );
+      stream?.getTracks().forEach((t) => t.stop());
+
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      setAudioInputs(devices.filter((d) => d.kind === 'audioinput'));
+      setAudioOutputs(devices.filter((d) => d.kind === 'audiooutput'));
+      setVideoInputs(devices.filter((d) => d.kind === 'videoinput'));
+    } catch {
+      // Permission denied — show whatever labels we can
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      setAudioInputs(devices.filter((d) => d.kind === 'audioinput'));
+      setAudioOutputs(devices.filter((d) => d.kind === 'audiooutput'));
+      setVideoInputs(devices.filter((d) => d.kind === 'videoinput'));
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDevices();
+    return () => {
+      stopMicTest();
+      stopCameraPreview();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const startMicTest = async () => {
+    try {
+      const constraints: MediaStreamConstraints = {
+        audio: selectedMic ? { deviceId: { exact: selectedMic } } : true,
+      };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      micStreamRef.current = stream;
+
+      const ctx = new AudioContext();
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+
+      setMicTesting(true);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+
+      const tick = () => {
+        analyser.getByteFrequencyData(data);
+        const avg = data.reduce((a, b) => a + b, 0) / data.length;
+        setMicLevel(Math.min(100, (avg / 128) * 100 * (micVolume / 100)));
+        animFrameRef.current = requestAnimationFrame(tick);
+      };
+      tick();
+    } catch {
+      // Mic access denied
+    }
+  };
+
+  const stopMicTest = () => {
+    micStreamRef.current?.getTracks().forEach((t) => t.stop());
+    micStreamRef.current = null;
+    cancelAnimationFrame(animFrameRef.current);
+    analyserRef.current = null;
+    setMicTesting(false);
+    setMicLevel(0);
+  };
+
+  const startCameraPreview = async () => {
+    try {
+      const constraints: MediaStreamConstraints = {
+        video: selectedCamera ? { deviceId: { exact: selectedCamera } } : true,
+      };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      cameraStreamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      setCameraPreview(true);
+    } catch {
+      // Camera access denied
+    }
+  };
+
+  const stopCameraPreview = () => {
+    cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
+    cameraStreamRef.current = null;
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setCameraPreview(false);
+  };
+
+  return (
+    <div className="voice-video-settings">
+      <h3>Input Device</h3>
+      <div className="profile-field">
+        <label>Microphone</label>
+        <select value={selectedMic} onChange={(e) => setSelectedMic(e.target.value)}>
+          <option value="">Default</option>
+          {audioInputs.map((d) => (
+            <option key={d.deviceId} value={d.deviceId}>
+              {d.label || `Microphone ${d.deviceId.slice(0, 8)}`}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="profile-field">
+        <label>Input Volume</label>
+        <input
+          type="range"
+          min={0}
+          max={200}
+          value={micVolume}
+          onChange={(e) => setMicVolume(Number(e.target.value))}
+        />
+        <span className="profile-field-hint">{micVolume}%</span>
+      </div>
+      <div className="vv-mic-test">
+        <button
+          className="profile-avatar-upload-btn"
+          onClick={micTesting ? stopMicTest : startMicTest}
+        >
+          {micTesting ? 'Stop Test' : 'Test Microphone'}
+        </button>
+        {micTesting && (
+          <div className="vv-meter">
+            <div className="vv-meter-fill" style={{ width: `${micLevel}%` }} />
+          </div>
+        )}
+      </div>
+
+      <h3>Output Device</h3>
+      <div className="profile-field">
+        <label>Speaker</label>
+        <select value={selectedSpeaker} onChange={(e) => setSelectedSpeaker(e.target.value)}>
+          <option value="">Default</option>
+          {audioOutputs.map((d) => (
+            <option key={d.deviceId} value={d.deviceId}>
+              {d.label || `Speaker ${d.deviceId.slice(0, 8)}`}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="profile-field">
+        <label>Output Volume</label>
+        <input
+          type="range"
+          min={0}
+          max={200}
+          value={speakerVolume}
+          onChange={(e) => setSpeakerVolume(Number(e.target.value))}
+        />
+        <span className="profile-field-hint">{speakerVolume}%</span>
+      </div>
+
+      <h3>Video</h3>
+      <div className="profile-field">
+        <label>Camera</label>
+        <select value={selectedCamera} onChange={(e) => setSelectedCamera(e.target.value)}>
+          <option value="">Default</option>
+          {videoInputs.map((d) => (
+            <option key={d.deviceId} value={d.deviceId}>
+              {d.label || `Camera ${d.deviceId.slice(0, 8)}`}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="vv-camera-section">
+        <button
+          className="profile-avatar-upload-btn"
+          onClick={cameraPreview ? stopCameraPreview : startCameraPreview}
+        >
+          {cameraPreview ? 'Stop Preview' : 'Preview Camera'}
+        </button>
+        {cameraPreview && (
+          <div className="vv-camera-preview">
+            <video ref={videoRef} autoPlay muted playsInline />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -30,6 +30,13 @@ import type {
 } from '../types';
 import * as api from '../api/client';
 import { gateway } from '../api/gateway';
+import { useAuthStore } from './authStore';
+import {
+  playMessageSound,
+  playMentionSound,
+  playVoiceJoinSound,
+  playVoiceLeaveSound,
+} from '../utils/notificationSounds';
 
 type ViewMode = 'servers' | 'home';
 
@@ -284,6 +291,23 @@ export const useServerStore = create<ServerState>((set, get) => ({
         users.set(message.author!.id, message.author!);
         return { users };
       });
+    }
+
+    // Notification sounds — only for messages from other users
+    const currentUser = useAuthStore.getState().user;
+    if (currentUser && message.author_id !== currentUser.id) {
+      const state = get();
+      const isDm = state.dmChannels.some((c) => c.id === message.channel_id);
+      const content = message.content ?? '';
+      const isMention =
+        content.includes(`@${currentUser.username}`) ||
+        content.includes(`<@${currentUser.id}>`);
+
+      if (isMention) {
+        playMentionSound();
+      } else if (isDm) {
+        playMessageSound();
+      }
     }
 
     set((state) => {
@@ -951,6 +975,22 @@ export const useServerStore = create<ServerState>((set, get) => ({
         }
         case 'VOICE_STATE_UPDATE': {
           const ev = data as VoiceStateUpdateEvent;
+
+          // Play join/leave sounds for other users in our voice channel
+          const currentUser = useAuthStore.getState().user;
+          const myVoiceChannel = get().voiceChannelId;
+          if (currentUser && ev.user_id !== currentUser.id && myVoiceChannel) {
+            // Was user previously in our channel?
+            const wasInOurChannel = (get().voiceStates.get(myVoiceChannel) || [])
+              .some((s) => s.user_id === ev.user_id);
+
+            if (ev.channel_id === myVoiceChannel && !wasInOurChannel) {
+              playVoiceJoinSound();
+            } else if (ev.channel_id !== myVoiceChannel && wasInOurChannel) {
+              playVoiceLeaveSound();
+            }
+          }
+
           set((state) => {
             const voiceStates = new Map(state.voiceStates);
 

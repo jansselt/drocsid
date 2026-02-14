@@ -201,3 +201,81 @@
   font-weight: 500;
   color: var(--text-primary);
 }
+
+/* Voice & Video tab */
+
+.voice-video-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.voice-video-settings h3 {
+  margin: 8px 0 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.voice-video-settings h3:first-child {
+  margin-top: 0;
+}
+
+.voice-video-settings select {
+  padding: 8px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-family: inherit;
+  width: 100%;
+}
+
+.voice-video-settings input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.vv-mic-test {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.vv-meter {
+  flex: 1;
+  height: 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.vv-meter-fill {
+  height: 100%;
+  background: var(--success, #3ba55c);
+  border-radius: 4px;
+  transition: width 0.05s;
+}
+
+.vv-camera-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.vv-camera-preview {
+  width: 320px;
+  aspect-ratio: 16 / 9;
+  background: var(--bg-darkest);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.vv-camera-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}

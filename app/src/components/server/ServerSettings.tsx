@@ -186,6 +186,12 @@ export function ServerSettings({ serverId, onClose }: ServerSettingsProps) {
                         const { file_url } = await api.uploadServerIcon(serverId, file);
                         setServerIconUrl(file_url);
                         await api.updateServer(serverId, { icon_url: file_url });
+                        // Update local servers array so sidebar icon re-renders
+                        useServerStore.setState((state) => ({
+                          servers: state.servers.map((s) =>
+                            s.id === serverId ? { ...s, icon_url: file_url } : s,
+                          ),
+                        }));
                       } catch {
                         // Error handled silently
                       }

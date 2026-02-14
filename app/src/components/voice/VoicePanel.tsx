@@ -142,7 +142,11 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
           return (
             <div key={p.identity} className={`voice-participant ${isSpeaking ? 'speaking' : ''}`}>
               <div className={`voice-participant-avatar ${isSpeaking ? 'speaking' : ''}`}>
-                {(user?.username || p.name || '?').charAt(0).toUpperCase()}
+                {user?.avatar_url ? (
+                  <img src={user.avatar_url} alt="" />
+                ) : (
+                  (user?.username || p.name || '?').charAt(0).toUpperCase()
+                )}
               </div>
               <span className="voice-participant-name">
                 {user?.username || p.name || p.identity}

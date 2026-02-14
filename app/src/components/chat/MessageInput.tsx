@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import { GifPicker } from './GifPicker';
+import { EmojiPicker } from './EmojiPicker';
 import * as api from '../../api/client';
 import './MessageInput.css';
 
@@ -14,11 +15,23 @@ interface PendingUpload {
   progress: 'pending' | 'uploading' | 'done' | 'error';
 }
 
+// Slash commands that transform into text
+const SLASH_COMMANDS: Record<string, string | null> = {
+  '/shrug':     '¯\\_(ツ)_/¯',
+  '/tableflip': '(╯°□°)╯︵ ┻━┻',
+  '/unflip':    '┬─┬ ノ( ゜-゜ノ)',
+  '/lenny':     '( ͡° ͜ʖ ͡°)',
+  '/disapprove': 'ಠ_ಠ',
+  '/sparkles':  '✨',
+  '/gif':       null, // special: opens GIF picker
+};
+
 export function MessageInput({ channelId }: MessageInputProps) {
   const [content, setContent] = useState('');
   const [uploads, setUploads] = useState<PendingUpload[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [showGifs, setShowGifs] = useState(false);
+  const [showEmojis, setShowEmojis] = useState(false);
   const sendMessage = useServerStore((s) => s.sendMessage);
   const sendTypingAction = useServerStore((s) => s.sendTyping);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -31,8 +44,27 @@ export function MessageInput({ channelId }: MessageInputProps) {
   }, [channelId]);
 
   const handleSubmit = async () => {
-    const trimmed = content.trim();
+    let trimmed = content.trim();
     if (!trimmed && uploads.length === 0) return;
+
+    // Process slash commands
+    if (trimmed.startsWith('/')) {
+      const spaceIdx = trimmed.indexOf(' ');
+      const cmd = spaceIdx > 0 ? trimmed.slice(0, spaceIdx) : trimmed;
+      const rest = spaceIdx > 0 ? trimmed.slice(spaceIdx + 1).trim() : '';
+
+      if (cmd in SLASH_COMMANDS) {
+        const replacement = SLASH_COMMANDS[cmd];
+        if (cmd === '/gif') {
+          setContent('');
+          setShowGifs(true);
+          return;
+        }
+        if (replacement !== null) {
+          trimmed = rest ? `${rest} ${replacement}` : replacement;
+        }
+      }
+    }
 
     // Upload any pending files first
     for (let i = 0; i < uploads.length; i++) {
@@ -125,6 +157,13 @@ export function MessageInput({ channelId }: MessageInputProps) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  // Slash command suggestions
+  const slashSuggestions = content.startsWith('/')
+    ? Object.keys(SLASH_COMMANDS).filter((cmd) =>
+        cmd.startsWith(content.split(' ')[0].toLowerCase()),
+      )
+    : [];
+
   return (
     <div
       className={`message-input-wrapper ${isDragging ? 'dragging' : ''}`}
@@ -154,6 +193,27 @@ export function MessageInput({ channelId }: MessageInputProps) {
                 <span className="upload-status error">Failed</span>
               )}
             </div>
+          ))}
+        </div>
+      )}
+
+      {slashSuggestions.length > 0 && (
+        <div className="slash-suggestions">
+          {slashSuggestions.map((cmd) => (
+            <button
+              key={cmd}
+              className="slash-suggestion"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setContent(cmd + ' ');
+                inputRef.current?.focus();
+              }}
+            >
+              <span className="slash-cmd-name">{cmd}</span>
+              <span className="slash-cmd-desc">
+                {SLASH_COMMANDS[cmd] === null ? 'Open GIF picker' : SLASH_COMMANDS[cmd]}
+              </span>
+            </button>
           ))}
         </div>
       )}
@@ -198,6 +258,13 @@ export function MessageInput({ channelId }: MessageInputProps) {
         >
           GIF
         </button>
+        <button
+          className="gif-btn"
+          onClick={() => setShowEmojis(!showEmojis)}
+          title="Emoji"
+        >
+          {'\u{1F600}'}
+        </button>
       </div>
 
       {showGifs && (
@@ -207,6 +274,16 @@ export function MessageInput({ channelId }: MessageInputProps) {
             setShowGifs(false);
           }}
           onClose={() => setShowGifs(false)}
+        />
+      )}
+
+      {showEmojis && (
+        <EmojiPicker
+          onSelect={(emoji) => {
+            setContent((prev) => prev + emoji);
+            inputRef.current?.focus();
+          }}
+          onClose={() => setShowEmojis(false)}
         />
       )}
     </div>

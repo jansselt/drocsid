@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { SHORTCODE_MAP } from './EmojiPicker';
 import './Markdown.css';
 
 interface MarkdownProps {
@@ -6,10 +7,16 @@ interface MarkdownProps {
 }
 
 interface Token {
-  type: 'text' | 'bold' | 'italic' | 'bolditalic' | 'code' | 'codeblock' | 'link' | 'image' | 'br';
+  type: 'text' | 'bold' | 'italic' | 'bolditalic' | 'code' | 'codeblock' | 'link' | 'image' | 'youtube' | 'br';
   text: string;
   lang?: string;
   href?: string;
+}
+
+function getYouTubeId(url: string): string | null {
+  // youtube.com/watch?v=ID, youtu.be/ID, youtube.com/embed/ID, youtube.com/shorts/ID
+  let m = url.match(/(?:youtube\.com\/(?:watch\?.*v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/);
+  return m ? m[1] : null;
 }
 
 function tokenize(text: string): Token[] {
@@ -17,10 +24,16 @@ function tokenize(text: string): Token[] {
   let remaining = text;
 
   while (remaining.length > 0) {
-    // Code block: ```lang\ncode```
-    let match = remaining.match(/^```(\w*)\n?([\s\S]*?)```/);
+    // Code block: ```lang\ncode``` (multi-line) or ```code``` (single-line)
+    let match = remaining.match(/^```(\w+)\n([\s\S]*?)```/);
     if (match) {
-      tokens.push({ type: 'codeblock', text: match[2], lang: match[1] || undefined });
+      tokens.push({ type: 'codeblock', text: match[2], lang: match[1] });
+      remaining = remaining.slice(match[0].length);
+      continue;
+    }
+    match = remaining.match(/^```([\s\S]*?)```/);
+    if (match) {
+      tokens.push({ type: 'codeblock', text: match[1] });
       remaining = remaining.slice(match[0].length);
       continue;
     }
@@ -57,13 +70,29 @@ function tokenize(text: string): Token[] {
       continue;
     }
 
-    // URL: auto-linked, embedded as image if path ends with image extension
+    // URL: auto-linked, embedded as image or YouTube if applicable
     match = remaining.match(/^(https?:\/\/[^\s<]+)/);
     if (match) {
       const url = match[1];
       const pathPart = url.split('?')[0];
       const isImage = /\.(gif|png|jpe?g|webp)$/i.test(pathPart);
-      tokens.push({ type: isImage ? 'image' : 'link', text: url, href: url });
+      const ytId = getYouTubeId(url);
+
+      if (ytId) {
+        tokens.push({ type: 'youtube', text: ytId, href: url });
+      } else if (isImage) {
+        tokens.push({ type: 'image', text: url, href: url });
+      } else {
+        tokens.push({ type: 'link', text: url, href: url });
+      }
+      remaining = remaining.slice(match[0].length);
+      continue;
+    }
+
+    // Emoji shortcode: :name:
+    match = remaining.match(/^:([a-z0-9_]+):/);
+    if (match && SHORTCODE_MAP.has(match[1])) {
+      tokens.push({ type: 'text', text: SHORTCODE_MAP.get(match[1])! });
       remaining = remaining.slice(match[0].length);
       continue;
     }
@@ -76,7 +105,7 @@ function tokenize(text: string): Token[] {
     }
 
     // Plain text: consume until next special char
-    match = remaining.match(/^[^*`\nhttps]+/);
+    match = remaining.match(/^[^*`\nhttps:]+/);
     if (match) {
       tokens.push({ type: 'text', text: match[0] });
       remaining = remaining.slice(match[0].length);
@@ -117,6 +146,18 @@ export function Markdown({ content }: MarkdownProps) {
               <a key={i} className="md-image-link" href={token.href} target="_blank" rel="noopener noreferrer">
                 <img className="md-embedded-image" src={token.href} alt="" loading="lazy" />
               </a>
+            );
+          case 'youtube':
+            return (
+              <div key={i} className="md-embed">
+                <iframe
+                  className="md-youtube"
+                  src={`https://www.youtube-nocookie.com/embed/${token.text}`}
+                  title="YouTube"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              </div>
             );
           case 'link':
             return (
