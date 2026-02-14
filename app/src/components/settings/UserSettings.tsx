@@ -73,12 +73,7 @@ export function UserSettings({ onClose }: UserSettingsProps) {
 
     setUploading(true);
     try {
-      const { upload_url, file_url } = await api.requestAvatarUploadUrl(
-        file.name,
-        file.type,
-        file.size,
-      );
-      await api.uploadFile(upload_url, file);
+      const { file_url } = await api.uploadAvatar(file);
       setAvatarUrl(file_url);
       // Auto-save avatar immediately
       const updated = await api.updateMe({ avatar_url: file_url });

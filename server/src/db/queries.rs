@@ -919,6 +919,26 @@ pub async fn get_message_reactions(
     .await
 }
 
+pub async fn get_reactions_for_messages(
+    pool: &PgPool,
+    message_ids: &[Uuid],
+) -> Result<Vec<Reaction>, sqlx::Error> {
+    if message_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    sqlx::query_as::<_, Reaction>(
+        r#"
+        SELECT message_id, user_id, emoji_name, emoji_id, created_at
+        FROM reactions
+        WHERE message_id = ANY($1)
+        ORDER BY created_at
+        "#,
+    )
+    .bind(message_ids)
+    .fetch_all(pool)
+    .await
+}
+
 // ── Relationships ────────────────────────────────────
 
 pub async fn create_relationship(

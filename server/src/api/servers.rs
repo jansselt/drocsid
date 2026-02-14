@@ -11,7 +11,6 @@ use crate::services::permissions as perm_service;
 use crate::state::AppState;
 use crate::types::entities::{
     ChannelType, CreateChannelRequest, CreateServerRequest, PublicUser, ServerMemberWithUser,
-    UploadRequest,
 };
 use crate::types::permissions::Permissions;
 
@@ -418,7 +417,7 @@ async fn request_icon_upload(
     State(state): State<AppState>,
     user: AuthUser,
     Path(server_id): Path<Uuid>,
-    Json(body): Json<UploadRequest>,
+    multipart: axum::extract::Multipart,
 ) -> Result<impl IntoResponse, ApiError> {
     let server = queries::get_server_by_id(&state.db, server_id)
         .await?
@@ -447,40 +446,19 @@ async fn request_icon_upload(
         .as_ref()
         .ok_or_else(|| ApiError::InvalidInput("File uploads not configured".into()))?;
 
-    if body.size_bytes > 5 * 1024 * 1024 {
-        return Err(ApiError::InvalidInput(
-            "Icon too large (max 5 MB)".into(),
-        ));
-    }
+    let (filename, content_type, data) =
+        crate::services::uploads::extract_multipart_file(multipart, 5 * 1024 * 1024).await?;
 
-    if !body.content_type.starts_with("image/") {
+    if !content_type.starts_with("image/") {
         return Err(ApiError::InvalidInput(
             "Icon must be an image".into(),
         ));
     }
 
-    let object_key = format!("avatars/servers/{}/{}", server_id, body.filename);
+    let object_key = format!("avatars/servers/{}/{}", server_id, filename);
+    let file_url =
+        crate::services::uploads::upload_to_s3(s3, s3_config, &object_key, &content_type, data)
+            .await?;
 
-    let presigned = s3
-        .put_object()
-        .bucket(&s3_config.bucket)
-        .key(&object_key)
-        .content_type(&body.content_type)
-        .content_length(body.size_bytes)
-        .presigned(
-            aws_sdk_s3::presigning::PresigningConfig::builder()
-                .expires_in(std::time::Duration::from_secs(600))
-                .build()
-                .map_err(|e| ApiError::Internal(e.into()))?,
-        )
-        .await
-        .map_err(|e| ApiError::Internal(e.into()))?;
-
-    let file_url = format!("{}/{}", s3_config.public_url.trim_end_matches('/'), object_key);
-
-    Ok(Json(crate::types::entities::UploadUrlResponse {
-        upload_url: presigned.uri().to_string(),
-        file_url,
-        attachment_id: String::new(),
-    }))
+    Ok(Json(serde_json::json!({ "file_url": file_url })))
 }

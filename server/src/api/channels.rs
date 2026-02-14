@@ -13,7 +13,7 @@ use crate::state::AppState;
 use crate::types::entities::{
     AuditAction, ChannelType, CreateThreadRequest, EditMessageRequest, MessageQuery, PublicUser,
     ReactionGroup, SendMessageRequest, SetChannelOverrideRequest, UpdateChannelRequest,
-    UploadRequest, UploadUrlResponse,
+    UploadUrlResponse,
 };
 use crate::types::events::{
     ChannelOverrideUpdateEvent, MessageCreateEvent, MessageDeleteEvent, MessagePinEvent,
@@ -225,7 +225,47 @@ async fn get_messages(
     let messages =
         queries::get_messages(&state.db, channel_id, query.before, query.after, limit).await?;
 
-    Ok(Json(messages))
+    // Batch-load reactions for all messages
+    let message_ids: Vec<Uuid> = messages.iter().map(|m| m.id).collect();
+    let all_reactions =
+        queries::get_reactions_for_messages(&state.db, &message_ids).await?;
+
+    // Build reaction groups per message
+    let mut reaction_map: std::collections::HashMap<Uuid, Vec<ReactionGroup>> =
+        std::collections::HashMap::new();
+    for reaction in &all_reactions {
+        let groups = reaction_map.entry(reaction.message_id).or_default();
+        if let Some(group) = groups.iter_mut().find(|g| g.emoji_name == reaction.emoji_name) {
+            group.count += 1;
+            if reaction.user_id == user.user_id {
+                group.me = true;
+            }
+        } else {
+            groups.push(ReactionGroup {
+                emoji_name: reaction.emoji_name.clone(),
+                emoji_id: reaction.emoji_id,
+                count: 1,
+                me: reaction.user_id == user.user_id,
+            });
+        }
+    }
+
+    let result: Vec<serde_json::Value> = messages
+        .iter()
+        .map(|msg| {
+            let mut val = serde_json::to_value(msg).unwrap();
+            val.as_object_mut().unwrap().insert(
+                "reactions".to_string(),
+                serde_json::to_value(
+                    reaction_map.get(&msg.id).unwrap_or(&Vec::new()),
+                )
+                .unwrap(),
+            );
+            val
+        })
+        .collect();
+
+    Ok(Json(result))
 }
 
 async fn send_message(
@@ -638,13 +678,13 @@ async fn get_pinned_messages(
     Ok(Json(messages))
 }
 
-// ── File Upload (S3 presigned URL) ───────────────────
+// ── File Upload ──────────────────────────────────────
 
 async fn request_upload(
     State(state): State<AppState>,
     user: AuthUser,
     Path(channel_id): Path<Uuid>,
-    Json(body): Json<UploadRequest>,
+    multipart: axum::extract::Multipart,
 ) -> Result<impl IntoResponse, ApiError> {
     resolve_channel_with_perm(
         &state,
@@ -664,39 +704,21 @@ async fn request_upload(
         .as_ref()
         .ok_or_else(|| ApiError::InvalidInput("File uploads not configured".into()))?;
 
-    // Max 25 MB
-    if body.size_bytes > 25 * 1024 * 1024 {
-        return Err(ApiError::InvalidInput(
-            "File too large (max 25 MB)".into(),
-        ));
-    }
+    let (filename, content_type, data) =
+        crate::services::uploads::extract_multipart_file(multipart, 25 * 1024 * 1024).await?;
 
     let attachment_id = Uuid::now_v7();
     let object_key = format!(
         "attachments/{}/{}/{}",
-        channel_id, attachment_id, body.filename
+        channel_id, attachment_id, filename
     );
 
-    // Generate presigned PUT URL
-    let presigned = s3
-        .put_object()
-        .bucket(&s3_config.bucket)
-        .key(&object_key)
-        .content_type(&body.content_type)
-        .content_length(body.size_bytes)
-        .presigned(
-            aws_sdk_s3::presigning::PresigningConfig::builder()
-                .expires_in(std::time::Duration::from_secs(600))
-                .build()
-                .map_err(|e| ApiError::Internal(e.into()))?,
-        )
-        .await
-        .map_err(|e| ApiError::Internal(e.into()))?;
-
-    let file_url = format!("{}/{}", s3_config.public_url.trim_end_matches('/'), object_key);
+    let file_url =
+        crate::services::uploads::upload_to_s3(s3, s3_config, &object_key, &content_type, data)
+            .await?;
 
     Ok(Json(UploadUrlResponse {
-        upload_url: presigned.uri().to_string(),
+        upload_url: String::new(),
         file_url,
         attachment_id: attachment_id.to_string(),
     }))

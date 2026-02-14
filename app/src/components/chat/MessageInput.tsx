@@ -44,13 +44,7 @@ export function MessageInput({ channelId }: MessageInputProps) {
       );
 
       try {
-        const { upload_url, file_url } = await api.requestUploadUrl(
-          channelId,
-          upload.file.name,
-          upload.file.type || 'application/octet-stream',
-          upload.file.size,
-        );
-        await api.uploadFile(upload_url, upload.file);
+        const { file_url } = await api.uploadChannelFile(channelId, upload.file);
 
         // Include file URL in message content
         const fileMsg = trimmed

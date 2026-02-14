@@ -183,10 +183,7 @@ export function ServerSettings({ serverId, onClose }: ServerSettingsProps) {
                       if (!file || !file.type.startsWith('image/') || file.size > 5 * 1024 * 1024) return;
                       setUploadingIcon(true);
                       try {
-                        const { upload_url, file_url } = await api.requestServerIconUploadUrl(
-                          serverId, file.name, file.type, file.size,
-                        );
-                        await api.uploadFile(upload_url, file);
+                        const { file_url } = await api.uploadServerIcon(serverId, file);
                         setServerIconUrl(file_url);
                         await api.updateServer(serverId, { icon_url: file_url });
                       } catch {

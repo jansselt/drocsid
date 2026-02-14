@@ -61,6 +61,8 @@ export interface Message {
   created_at: string;
   // Populated by MESSAGE_CREATE event
   author?: User;
+  // Populated by get_messages API response
+  reactions?: ReactionGroup[];
 }
 
 // ── Server Members ─────────────────────────────────────

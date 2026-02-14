@@ -239,7 +239,13 @@ export const useServerStore = create<ServerState>((set, get) => ({
     set((state) => {
       const messages = new Map(state.messages);
       messages.set(channelId, msgs);
-      return { messages };
+      const reactions = new Map(state.reactions);
+      for (const msg of msgs) {
+        if (msg.reactions && msg.reactions.length > 0) {
+          reactions.set(msg.id, msg.reactions);
+        }
+      }
+      return { messages, reactions };
     });
   },
 
@@ -256,7 +262,13 @@ export const useServerStore = create<ServerState>((set, get) => ({
       const messages = new Map(state.messages);
       const current = messages.get(channelId) || [];
       messages.set(channelId, [...older, ...current]);
-      return { messages };
+      const reactions = new Map(state.reactions);
+      for (const msg of older) {
+        if (msg.reactions && msg.reactions.length > 0) {
+          reactions.set(msg.id, msg.reactions);
+        }
+      }
+      return { messages, reactions };
     });
     return true;
   },

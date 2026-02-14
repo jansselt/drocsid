@@ -38,8 +38,9 @@ async function request<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
+  const isFormData = options.body instanceof FormData;
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(options.headers as Record<string, string> || {}),
   };
 
@@ -167,15 +168,12 @@ export async function updateMe(data: {
   return request('/users/@me', { method: 'PATCH', body: JSON.stringify(data) });
 }
 
-export async function requestAvatarUploadUrl(
-  filename: string,
-  contentType: string,
-  sizeBytes: number,
-): Promise<UploadUrlResponse> {
-  return request('/users/@me/avatar', {
-    method: 'POST',
-    body: JSON.stringify({ filename, content_type: contentType, size_bytes: sizeBytes }),
-  });
+export async function uploadAvatar(
+  file: File,
+): Promise<{ file_url: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return request('/users/@me/avatar', { method: 'POST', body: formData });
 }
 
 export async function updateServer(
@@ -188,16 +186,13 @@ export async function updateServer(
   });
 }
 
-export async function requestServerIconUploadUrl(
+export async function uploadServerIcon(
   serverId: string,
-  filename: string,
-  contentType: string,
-  sizeBytes: number,
-): Promise<UploadUrlResponse> {
-  return request(`/servers/${serverId}/icon`, {
-    method: 'POST',
-    body: JSON.stringify({ filename, content_type: contentType, size_bytes: sizeBytes }),
-  });
+  file: File,
+): Promise<{ file_url: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return request(`/servers/${serverId}/icon`, { method: 'POST', body: formData });
 }
 
 export async function joinServer(serverId: string): Promise<void> {
@@ -303,27 +298,13 @@ export async function getPinnedMessages(channelId: string): Promise<Message[]> {
 
 // ── File Upload ───────────────────────────────────────
 
-export async function requestUploadUrl(
+export async function uploadChannelFile(
   channelId: string,
-  filename: string,
-  contentType: string,
-  sizeBytes: number,
+  file: File,
 ): Promise<UploadUrlResponse> {
-  return request(`/channels/${channelId}/upload`, {
-    method: 'POST',
-    body: JSON.stringify({ filename, content_type: contentType, size_bytes: sizeBytes }),
-  });
-}
-
-export async function uploadFile(uploadUrl: string, file: File): Promise<void> {
-  const response = await fetch(uploadUrl, {
-    method: 'PUT',
-    headers: { 'Content-Type': file.type },
-    body: file,
-  });
-  if (!response.ok) {
-    throw new Error(`Upload failed: ${response.status}`);
-  }
+  const formData = new FormData();
+  formData.append('file', file);
+  return request(`/channels/${channelId}/upload`, { method: 'POST', body: formData });
 }
 
 // ── Roles ─────────────────────────────────────────────
