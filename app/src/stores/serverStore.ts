@@ -81,6 +81,7 @@ interface ServerState {
   voiceSelfMute: boolean;
   voiceSelfDeaf: boolean;
   voiceStates: Map<string, VoiceState[]>; // channel_id -> voice states
+  speakingUsers: Set<string>; // user_ids currently speaking (from LiveKit)
 
   // Actions
   setView: (view: ViewMode) => void;
@@ -141,6 +142,7 @@ interface ServerState {
   voiceToggleMute: () => Promise<void>;
   voiceToggleDeaf: () => Promise<void>;
   loadVoiceStates: (channelId: string) => Promise<void>;
+  setSpeakingUsers: (userIds: Set<string>) => void;
 
   initGatewayHandlers: () => () => void;
 }
@@ -163,6 +165,7 @@ export const useServerStore = create<ServerState>((set, get) => ({
   voiceSelfMute: false,
   voiceSelfDeaf: false,
   voiceStates: new Map(),
+  speakingUsers: new Set(),
   members: new Map(),
   presences: new Map(),
   dmChannels: [],
@@ -614,6 +617,8 @@ export const useServerStore = create<ServerState>((set, get) => ({
     set({ voiceSelfDeaf: newDeaf, voiceSelfMute: newMute });
     await api.voiceUpdateState(channelId, newMute, newDeaf).catch(() => {});
   },
+
+  setSpeakingUsers: (userIds) => set({ speakingUsers: userIds }),
 
   loadVoiceStates: async (channelId) => {
     try {

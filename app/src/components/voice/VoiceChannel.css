@@ -71,6 +71,12 @@
   font-size: 0.625rem;
   font-weight: 600;
   flex-shrink: 0;
+  border: 2px solid transparent;
+  transition: border-color 0.15s;
+}
+
+.voice-user-avatar.speaking {
+  border-color: var(--success, #3ba55c);
 }
 
 .voice-user-name {
@@ -78,6 +84,10 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
+}
+
+.voice-user.speaking .voice-user-name {
+  color: var(--success, #3ba55c);
 }
 
 .voice-user-status {

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import {
   LiveKitRoom,
   RoomAudioRenderer,
@@ -52,6 +53,28 @@ function VoicePanelContent({ channelName }: { channelName: string }) {
   const voiceSelfMute = useServerStore((s) => s.voiceSelfMute);
   const voiceSelfDeaf = useServerStore((s) => s.voiceSelfDeaf);
   const users = useServerStore((s) => s.users);
+  const setSpeakingUsers = useServerStore((s) => s.setSpeakingUsers);
+
+  // Sync speaking state to store so sidebar can show it
+  const speakingRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const speaking = new Set<string>();
+      for (const p of participants) {
+        if (p.isSpeaking) speaking.add(p.identity);
+      }
+      // Only update if changed
+      const prev = speakingRef.current;
+      if (speaking.size !== prev.size || [...speaking].some((id) => !prev.has(id))) {
+        speakingRef.current = speaking;
+        setSpeakingUsers(speaking);
+      }
+    }, 100);
+    return () => {
+      clearInterval(interval);
+      setSpeakingUsers(new Set());
+    };
+  }, [participants, setSpeakingUsers]);
 
   // Get video tracks for screen sharing
   const screenShareTracks = useTracks([Track.Source.ScreenShare]);

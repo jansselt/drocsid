@@ -28,8 +28,8 @@
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 0.5rem;
   padding: 0.5rem;
-  flex: 1;
-  min-height: 0;
+  flex-shrink: 0;
+  max-height: 60%;
   overflow-y: auto;
 }
 

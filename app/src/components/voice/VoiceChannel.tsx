@@ -16,6 +16,8 @@ export function VoiceChannel({ channelId, channelName }: VoiceChannelProps) {
   const users = useServerStore((s) => s.users);
   const currentUser = useAuthStore((s) => s.user);
 
+  const speakingUsers = useServerStore((s) => s.speakingUsers);
+
   const isConnected = voiceChannelId === channelId;
   const channelVoiceStates = voiceStates.get(channelId) || [];
 
@@ -46,9 +48,10 @@ export function VoiceChannel({ channelId, channelName }: VoiceChannelProps) {
           {channelVoiceStates.map((vs) => {
             const user = users.get(vs.user_id);
             const isMe = vs.user_id === currentUser?.id;
+            const isSpeaking = speakingUsers.has(vs.user_id);
             return (
-              <div key={vs.user_id} className={`voice-user ${isMe ? 'me' : ''}`}>
-                <div className="voice-user-avatar">
+              <div key={vs.user_id} className={`voice-user ${isMe ? 'me' : ''} ${isSpeaking ? 'speaking' : ''}`}>
+                <div className={`voice-user-avatar ${isSpeaking ? 'speaking' : ''}`}>
                   {(user?.username || '?').charAt(0).toUpperCase()}
                 </div>
                 <span className="voice-user-name">
