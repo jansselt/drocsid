@@ -125,3 +125,32 @@
   background: var(--accent);
   color: #fff;
 }
+
+.member-context-separator {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 0.25rem 0;
+}
+
+.member-role-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.member-role-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.role-color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.role-check {
+  margin-left: auto;
+  font-size: 0.75rem;
+}

@@ -29,6 +29,7 @@ import type {
   PresenceUpdateEvent,
   ServerMemberWithUser,
   ServerMemberAddEvent,
+  MemberRoleUpdateEvent,
   NotificationPreference,
   NotificationLevel,
 } from '../types';
@@ -1243,6 +1244,23 @@ export const useServerStore = create<ServerState>((set, get) => ({
               existing.filter((r) => r.id !== role_id),
             );
             return { roles };
+          });
+          break;
+        }
+        case 'MEMBER_ROLE_UPDATE': {
+          const ev = data as MemberRoleUpdateEvent;
+          set((state) => {
+            const members = new Map(state.members);
+            const existing = members.get(ev.server_id);
+            if (existing) {
+              members.set(
+                ev.server_id,
+                existing.map((m) =>
+                  m.user_id === ev.user_id ? { ...m, role_ids: ev.role_ids } : m,
+                ),
+              );
+            }
+            return { members };
           });
           break;
         }

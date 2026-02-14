@@ -185,7 +185,8 @@
   font-family: inherit;
 }
 
-.slash-suggestion:hover {
+.slash-suggestion:hover,
+.slash-suggestion.active {
   background: var(--bg-hover);
 }
 
@@ -201,4 +202,27 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── Mention avatar in suggestions ───────────────── */
+
+.mention-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.mention-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }

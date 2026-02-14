@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import { GifPicker } from './GifPicker';
 import { EmojiPicker } from './EmojiPicker';
@@ -35,7 +35,11 @@ export function MessageInput({ channelId }: MessageInputProps) {
   const [showEmojis, setShowEmojis] = useState(false);
   const sendMessage = useServerStore((s) => s.sendMessage);
   const sendTypingAction = useServerStore((s) => s.sendTyping);
+  const activeServerId = useServerStore((s) => s.activeServerId);
+  const members = useServerStore((s) => activeServerId ? s.members.get(activeServerId) : undefined);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [mentionQuery, setMentionQuery] = useState<{ query: string; startPos: number } | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastTypingRef = useRef(0);
 
@@ -170,6 +174,40 @@ export function MessageInput({ channelId }: MessageInputProps) {
       )
     : [];
 
+  // Mention suggestions - filtered member list
+  const mentionSuggestions = useMemo(() => {
+    if (!mentionQuery || !members) return [];
+    const q = mentionQuery.query.toLowerCase();
+    return members.filter((m) => {
+      const name = m.nickname || m.user.display_name || m.user.username;
+      return name.toLowerCase().includes(q) || m.user.username.toLowerCase().includes(q);
+    }).slice(0, 10);
+  }, [mentionQuery, members]);
+
+  // Detect @mention trigger from cursor position
+  const updateMentionQuery = useCallback((text: string, cursorPos: number) => {
+    // Look backwards from cursor for an unmatched @
+    const before = text.slice(0, cursorPos);
+    const atIdx = before.lastIndexOf('@');
+    if (atIdx === -1) { setMentionQuery(null); return; }
+    // @ must be at start or after a space/newline
+    if (atIdx > 0 && !/\s/.test(before[atIdx - 1])) { setMentionQuery(null); return; }
+    const query = before.slice(atIdx + 1);
+    // No spaces in mention query (user hasn't finished typing the name)
+    if (/\s/.test(query)) { setMentionQuery(null); return; }
+    setMentionQuery({ query, startPos: atIdx });
+    setMentionIndex(0);
+  }, []);
+
+  const insertMention = useCallback((userId: string, _displayName: string) => {
+    if (!mentionQuery) return;
+    const before = content.slice(0, mentionQuery.startPos);
+    const after = content.slice(mentionQuery.startPos + mentionQuery.query.length + 1);
+    setContent(before + `<@${userId}> ` + after);
+    setMentionQuery(null);
+    inputRef.current?.focus();
+  }, [mentionQuery, content]);
+
   return (
     <div
       className={`message-input-wrapper ${isDragging ? 'dragging' : ''}`}
@@ -224,6 +262,36 @@ export function MessageInput({ channelId }: MessageInputProps) {
         </div>
       )}
 
+      {mentionSuggestions.length > 0 && (
+        <div className="slash-suggestions">
+          {mentionSuggestions.map((m, i) => {
+            const name = m.nickname || m.user.display_name || m.user.username;
+            return (
+              <button
+                key={m.user_id}
+                className={`slash-suggestion ${i === mentionIndex ? 'active' : ''}`}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  insertMention(m.user_id, name);
+                }}
+              >
+                <span className="mention-avatar">
+                  {m.user.avatar_url ? (
+                    <img src={m.user.avatar_url} alt="" />
+                  ) : (
+                    name[0].toUpperCase()
+                  )}
+                </span>
+                <span className="slash-cmd-name">{name}</span>
+                {m.user.username !== name && (
+                  <span className="slash-cmd-desc">{m.user.username}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <div className="message-input-container">
         <button
           className="upload-btn"
@@ -245,6 +313,7 @@ export function MessageInput({ channelId }: MessageInputProps) {
           value={content}
           onChange={(e) => {
             setContent(e.target.value);
+            updateMentionQuery(e.target.value, e.target.selectionStart ?? e.target.value.length);
             // Send typing indicator (throttled to every 5s)
             const now = Date.now();
             if (now - lastTypingRef.current > 5000 && e.target.value.trim()) {
@@ -252,7 +321,32 @@ export function MessageInput({ channelId }: MessageInputProps) {
               sendTypingAction(channelId);
             }
           }}
-          onKeyDown={handleKeyDown}
+          onKeyDown={(e) => {
+            // Handle mention keyboard nav
+            if (mentionSuggestions.length > 0) {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setMentionIndex((i) => Math.min(i + 1, mentionSuggestions.length - 1));
+                return;
+              }
+              if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setMentionIndex((i) => Math.max(i - 1, 0));
+                return;
+              }
+              if (e.key === 'Tab' || e.key === 'Enter') {
+                e.preventDefault();
+                const m = mentionSuggestions[mentionIndex];
+                insertMention(m.user_id, m.nickname || m.user.display_name || m.user.username);
+                return;
+              }
+              if (e.key === 'Escape') {
+                setMentionQuery(null);
+                return;
+              }
+            }
+            handleKeyDown(e);
+          }}
           placeholder="Send a message..."
           rows={1}
           maxLength={4000}

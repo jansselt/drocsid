@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import { useAuthStore } from '../../stores/authStore';
 import { StatusIndicator } from '../common/StatusIndicator';
+import * as api from '../../api/client';
 import type { ServerMemberWithUser } from '../../types';
 import './MemberSidebar.css';
 
@@ -107,7 +108,12 @@ function MemberItem({ member }: { member: ServerMemberWithUser & { status: strin
   const isOffline = member.status === 'offline';
   const openDm = useServerStore((s) => s.openDm);
   const currentUserId = useAuthStore((s) => s.user?.id);
+  const activeServerId = useServerStore((s) => s.activeServerId);
+  const servers = useServerStore((s) => s.servers);
+  const roles = useServerStore((s) => activeServerId ? s.roles.get(activeServerId) : undefined);
+  const isOwner = servers.find((s) => s.id === activeServerId)?.owner_id === currentUserId;
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [showRoles, setShowRoles] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -115,6 +121,7 @@ function MemberItem({ member }: { member: ServerMemberWithUser & { status: strin
     const handleClick = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setMenu(null);
+        setShowRoles(false);
       }
     };
     document.addEventListener('mousedown', handleClick);
@@ -125,7 +132,25 @@ function MemberItem({ member }: { member: ServerMemberWithUser & { status: strin
     if (member.user_id === currentUserId) return;
     e.preventDefault();
     setMenu({ x: e.clientX, y: e.clientY });
+    setShowRoles(false);
   };
+
+  const toggleRole = async (roleId: string) => {
+    if (!activeServerId) return;
+    const hasRole = member.role_ids.includes(roleId);
+    try {
+      if (hasRole) {
+        await api.removeRole(activeServerId, member.user_id, roleId);
+      } else {
+        await api.assignRole(activeServerId, member.user_id, roleId);
+      }
+    } catch (err) {
+      console.error('Failed to update role:', err);
+    }
+  };
+
+  // Non-default roles for the submenu
+  const assignableRoles = (roles || []).filter((r) => !r.is_default).sort((a, b) => b.position - a.position);
 
   return (
     <>
@@ -170,6 +195,38 @@ function MemberItem({ member }: { member: ServerMemberWithUser & { status: strin
           >
             Message
           </button>
+          {isOwner && assignableRoles.length > 0 && (
+            <>
+              <div className="member-context-separator" />
+              <button
+                className="member-context-item"
+                onClick={() => setShowRoles(!showRoles)}
+              >
+                Roles {showRoles ? '\u25B4' : '\u25BE'}
+              </button>
+              {showRoles && (
+                <div className="member-role-list">
+                  {assignableRoles.map((role) => {
+                    const has = member.role_ids.includes(role.id);
+                    return (
+                      <button
+                        key={role.id}
+                        className={`member-context-item member-role-item ${has ? 'checked' : ''}`}
+                        onClick={() => toggleRole(role.id)}
+                      >
+                        <span
+                          className="role-color-dot"
+                          style={{ background: role.color ? `#${role.color.toString(16).padStart(6, '0')}` : 'var(--text-muted)' }}
+                        />
+                        {role.name}
+                        {has && <span className="role-check">{'\u2713'}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
     </>
