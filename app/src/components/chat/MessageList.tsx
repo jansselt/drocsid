@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { useServerStore } from '../../stores/serverStore';
 import { useAuthStore } from '../../stores/authStore';
@@ -33,6 +33,7 @@ export function MessageList({ channelId }: MessageListProps) {
   const [emojiPickerForId, setEmojiPickerForId] = useState<string | null>(null);
   const [atBottom, setAtBottom] = useState(true);
   const isLoadingMore = useRef(false);
+  const prevMessageCount = useRef(messages.length);
 
   // Cancel editing on channel switch
   useEffect(() => {
@@ -40,6 +41,19 @@ export function MessageList({ channelId }: MessageListProps) {
     setEmojiPickerForId(null);
     setHoveredId(null);
   }, [channelId]);
+
+  // Scroll to bottom when the current user sends a message
+  useEffect(() => {
+    if (messages.length > prevMessageCount.current) {
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg && lastMsg.author_id === currentUser?.id) {
+        requestAnimationFrame(() => {
+          virtuosoRef.current?.scrollToIndex({ index: messages.length - 1, behavior: 'smooth' });
+        });
+      }
+    }
+    prevMessageCount.current = messages.length;
+  }, [messages.length, messages, currentUser?.id]);
 
   const getAuthor = (msg: Message): { name: string; avatar_url: string | null } => {
     const user = msg.author ?? users.get(msg.author_id);
@@ -162,7 +176,7 @@ export function MessageList({ channelId }: MessageListProps) {
       data={messages}
       startReached={handleStartReached}
       initialTopMostItemIndex={messages.length - 1}
-      followOutput={atBottom ? 'auto' : false}
+      followOutput={(isAtBottom) => isAtBottom ? 'smooth' : false}
       atBottomStateChange={setAtBottom}
       atBottomThreshold={150}
       increaseViewportBy={{ top: 200, bottom: 0 }}
