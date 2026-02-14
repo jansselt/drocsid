@@ -15,6 +15,10 @@ export function AppLayout() {
   const setServers = useServerStore((s) => s.setServers);
   const restoreNavigation = useServerStore((s) => s.restoreNavigation);
   const activeServerId = useServerStore((s) => s.activeServerId);
+  const showChannelSidebar = useServerStore((s) => s.showChannelSidebar);
+  const showMemberSidebar = useServerStore((s) => s.showMemberSidebar);
+  const toggleChannelSidebar = useServerStore((s) => s.toggleChannelSidebar);
+  const toggleMemberSidebar = useServerStore((s) => s.toggleMemberSidebar);
   const [showSwitcher, setShowSwitcher] = useState(false);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const isIdleRef = useRef(false);
@@ -35,17 +39,24 @@ export function AppLayout() {
     };
   }, [initGatewayHandlers, setServers, restoreNavigation]);
 
-  // Ctrl+K quick switcher
+  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault();
         setShowSwitcher((prev) => !prev);
       }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'b' && e.shiftKey) {
+        e.preventDefault();
+        toggleChannelSidebar();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'b' && !e.shiftKey) {
+        e.preventDefault();
+        toggleMemberSidebar();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [toggleChannelSidebar, toggleMemberSidebar]);
 
   // Idle detection: go idle after 5 minutes of no focus/activity
   useEffect(() => {
@@ -92,9 +103,9 @@ export function AppLayout() {
   return (
     <div className="app-layout">
       <ServerSidebar />
-      <ChannelSidebar />
+      {showChannelSidebar && <ChannelSidebar />}
       <ChatArea />
-      {activeServerId && <MemberSidebar />}
+      {activeServerId && showMemberSidebar && <MemberSidebar />}
       {showSwitcher && <QuickSwitcher onClose={() => setShowSwitcher(false)} />}
     </div>
   );

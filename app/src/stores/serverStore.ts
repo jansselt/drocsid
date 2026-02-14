@@ -82,6 +82,10 @@ interface ServerState {
   members: Map<string, ServerMemberWithUser[]>; // server_id -> enriched members
   presences: Map<string, string>; // user_id -> status (online/idle/dnd/offline)
 
+  // UI: sidebar visibility
+  showChannelSidebar: boolean;
+  showMemberSidebar: boolean;
+
   // Voice
   voiceChannelId: string | null; // channel we're connected to
   voiceToken: string | null;
@@ -118,6 +122,7 @@ interface ServerState {
   // DM actions
   loadDmChannels: () => Promise<void>;
   openDm: (recipientId: string) => Promise<void>;
+  createGroupDm: (recipientIds: string[], name?: string) => Promise<void>;
   closeDm: (channelId: string) => Promise<void>;
   setActiveDmChannel: (channelId: string) => void;
 
@@ -153,6 +158,9 @@ interface ServerState {
   loadVoiceStates: (channelId: string) => Promise<void>;
   setSpeakingUsers: (userIds: Set<string>) => void;
 
+  toggleChannelSidebar: () => void;
+  toggleMemberSidebar: () => void;
+
   restoreNavigation: () => void;
 
   initGatewayHandlers: () => () => void;
@@ -170,6 +178,8 @@ export const useServerStore = create<ServerState>((set, get) => ({
   messages: new Map(),
   reactions: new Map(),
   users: new Map(),
+  showChannelSidebar: JSON.parse(localStorage.getItem('drocsid_show_channel_sidebar') ?? 'true'),
+  showMemberSidebar: JSON.parse(localStorage.getItem('drocsid_show_member_sidebar') ?? 'true'),
   voiceChannelId: null,
   voiceToken: null,
   voiceUrl: null,
@@ -473,6 +483,37 @@ export const useServerStore = create<ServerState>((set, get) => ({
     }
   },
 
+  createGroupDm: async (recipientIds, name) => {
+    const channel = await api.createGroupDm(recipientIds, name);
+    set((state) => {
+      const dmChannels = state.dmChannels.some((c) => c.id === channel.id)
+        ? state.dmChannels
+        : [channel, ...state.dmChannels];
+      return {
+        dmChannels,
+        view: 'home' as ViewMode,
+        activeServerId: null,
+        activeChannelId: channel.id,
+        activeThreadId: null,
+      };
+    });
+    get().loadMessages(channel.id);
+    try {
+      const recipients = await api.getDmRecipients(channel.id);
+      set((state) => {
+        const dmRecipients = new Map(state.dmRecipients);
+        dmRecipients.set(channel.id, recipients);
+        const users = new Map(state.users);
+        for (const r of recipients) {
+          users.set(r.id, r);
+        }
+        return { dmRecipients, users };
+      });
+    } catch {
+      // ignore
+    }
+  },
+
   closeDm: async (channelId) => {
     try {
       await api.closeDm(channelId);
@@ -693,6 +734,22 @@ export const useServerStore = create<ServerState>((set, get) => ({
     } catch {
       // ignore
     }
+  },
+
+  toggleChannelSidebar: () => {
+    set((state) => {
+      const next = !state.showChannelSidebar;
+      localStorage.setItem('drocsid_show_channel_sidebar', JSON.stringify(next));
+      return { showChannelSidebar: next };
+    });
+  },
+
+  toggleMemberSidebar: () => {
+    set((state) => {
+      const next = !state.showMemberSidebar;
+      localStorage.setItem('drocsid_show_member_sidebar', JSON.stringify(next));
+      return { showMemberSidebar: next };
+    });
   },
 
   restoreNavigation: () => {
@@ -1065,7 +1122,23 @@ export const useServerStore = create<ServerState>((set, get) => ({
               return state;
             }
             presences.set(ev.user_id, ev.status);
-            return { presences };
+
+            // Update custom_status on the cached User object
+            const users = new Map(state.users);
+            const existingUser = users.get(ev.user_id);
+            if (existingUser) {
+              users.set(ev.user_id, { ...existingUser, custom_status: ev.custom_status ?? null });
+            }
+
+            // Also update the auth store user if it's us
+            if (ev.user_id === myId) {
+              const authUser = useAuthStore.getState().user;
+              if (authUser) {
+                useAuthStore.setState({ user: { ...authUser, custom_status: ev.custom_status ?? null } });
+              }
+            }
+
+            return { presences, users };
           });
           break;
         }

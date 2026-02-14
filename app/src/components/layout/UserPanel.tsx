@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { useServerStore } from '../../stores/serverStore';
 import { StatusIndicator } from '../common/StatusIndicator';
+import * as api from '../../api/client';
 import './UserPanel.css';
 
 const STATUS_OPTIONS = [
@@ -20,15 +21,34 @@ export function UserPanel({ onOpenSettings }: UserPanelProps) {
   const presences = useServerStore((s) => s.presences);
   const updateMyStatus = useServerStore((s) => s.updateMyStatus);
   const [showPicker, setShowPicker] = useState(false);
+  const [customStatusInput, setCustomStatusInput] = useState('');
 
   if (!user) return null;
 
   const myStatus = presences.get(user.id) || 'online';
   const displayName = user.display_name || user.username;
 
+  const handleOpenPicker = () => {
+    if (!showPicker) {
+      setCustomStatusInput(user.custom_status || '');
+    }
+    setShowPicker(!showPicker);
+  };
+
+  const saveCustomStatus = () => {
+    api.updateMe({ custom_status: customStatusInput });
+    setShowPicker(false);
+  };
+
+  const clearCustomStatus = () => {
+    api.updateMe({ custom_status: '' });
+    setCustomStatusInput('');
+    setShowPicker(false);
+  };
+
   return (
     <div className="user-panel">
-      <div className="user-panel-info" onClick={() => setShowPicker(!showPicker)}>
+      <div className="user-panel-info" onClick={handleOpenPicker}>
         <div className="user-panel-avatar-wrapper">
           <div className="user-panel-avatar">
             {user.avatar_url ? (
@@ -41,7 +61,9 @@ export function UserPanel({ onOpenSettings }: UserPanelProps) {
         </div>
         <div className="user-panel-text">
           <span className="user-panel-name">{displayName}</span>
-          <span className="user-panel-status">{myStatus === 'dnd' ? 'Do Not Disturb' : myStatus === 'invisible' ? 'Invisible' : myStatus}</span>
+          <span className="user-panel-status">
+            {user.custom_status || (myStatus === 'dnd' ? 'Do Not Disturb' : myStatus === 'invisible' ? 'Invisible' : myStatus)}
+          </span>
         </div>
       </div>
 
@@ -73,6 +95,34 @@ export function UserPanel({ onOpenSettings }: UserPanelProps) {
               <span>{opt.label}</span>
             </button>
           ))}
+          <div className="status-picker-divider" />
+          <div className="status-picker-custom">
+            <label className="status-picker-custom-label">Custom Status</label>
+            <div className="status-picker-custom-row">
+              <input
+                type="text"
+                className="status-picker-custom-input"
+                placeholder="Set a custom status..."
+                value={customStatusInput}
+                onChange={(e) => setCustomStatusInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') saveCustomStatus();
+                  if (e.key === 'Escape') setShowPicker(false);
+                }}
+                maxLength={128}
+                autoFocus
+              />
+              {user.custom_status && (
+                <button
+                  className="status-picker-custom-clear"
+                  onClick={clearCustomStatus}
+                  title="Clear custom status"
+                >
+                  &times;
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -7,6 +7,7 @@ import { InviteModal } from '../server/InviteModal';
 import { CreateChannelModal } from '../channel/CreateChannelModal';
 import { UserSettings } from '../settings/UserSettings';
 import { FriendList } from '../dm/FriendList';
+import { CreateGroupDmModal } from '../dm/CreateGroupDmModal';
 import { VoiceChannel } from '../voice/VoiceChannel';
 import { VoiceControls } from '../voice/VoiceControls';
 import { UserPanel } from './UserPanel';
@@ -32,6 +33,7 @@ export function ChannelSidebar() {
   const [showCreateChannel, setShowCreateChannel] = useState<'text' | 'voice' | null>(null);
   const [showUserSettings, setShowUserSettings] = useState(false);
   const [homeTab, setHomeTab] = useState<HomeTab>('dms');
+  const [showCreateGroupDm, setShowCreateGroupDm] = useState(false);
 
   // ── Home view (DMs + Friends) ──────────────────────
   if (view === 'home') {
@@ -40,6 +42,13 @@ export function ChannelSidebar() {
       <div className="channel-sidebar">
         <div className="channel-header">
           <span className="channel-header-text">Direct Messages</span>
+          <button
+            className="channel-header-settings"
+            onClick={() => setShowCreateGroupDm(true)}
+            title="New Group DM"
+          >
+            +
+          </button>
         </div>
 
         <div className="home-tabs">
@@ -105,6 +114,9 @@ export function ChannelSidebar() {
 
       {showUserSettings && (
         <UserSettings onClose={() => setShowUserSettings(false)} />
+      )}
+      {showCreateGroupDm && (
+        <CreateGroupDmModal onClose={() => setShowCreateGroupDm(false)} />
       )}
     </>
     );

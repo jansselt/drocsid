@@ -91,6 +91,9 @@
   font-size: 0.6875rem;
   color: var(--text-muted);
   text-transform: capitalize;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Status picker dropdown */
@@ -129,5 +132,61 @@
 
 .status-picker-item.active {
   background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.status-picker-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0.25rem 0.5rem;
+}
+
+.status-picker-custom {
+  padding: 0.375rem 0.625rem;
+}
+
+.status-picker-custom-label {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 0.375rem;
+  display: block;
+}
+
+.status-picker-custom-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.status-picker-custom-input {
+  flex: 1;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.375rem 0.5rem;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  outline: none;
+  min-width: 0;
+}
+
+.status-picker-custom-input:focus {
+  border-color: var(--accent);
+}
+
+.status-picker-custom-clear {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 2px 4px;
+  flex-shrink: 0;
+}
+
+.status-picker-custom-clear:hover {
   color: var(--text-primary);
 }

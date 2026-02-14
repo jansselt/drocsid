@@ -341,13 +341,26 @@ impl GatewayState {
             return;
         }
 
-        if let Some(mut presence) = self.presences.get_mut(&user_id) {
+        let custom_status = if let Some(mut presence) = self.presences.get_mut(&user_id) {
             presence.status = status.to_string();
-        }
+            presence.custom_status.clone()
+        } else {
+            None
+        };
 
         // Invisible users appear offline to others
         let broadcast_status = if status == "invisible" { "offline" } else { status };
-        self.broadcast_presence(user_id, broadcast_status, None);
+        self.broadcast_presence(user_id, broadcast_status, custom_status);
+    }
+
+    /// Update a user's custom status and broadcast to all shared servers
+    pub fn update_custom_status(&self, user_id: Uuid, custom_status: Option<String>) {
+        if let Some(mut presence) = self.presences.get_mut(&user_id) {
+            presence.custom_status = custom_status.clone();
+        }
+
+        let status = self.get_presence(user_id);
+        self.broadcast_presence(user_id, &status, custom_status);
     }
 
     /// Get a user's public presence status (returns "offline" if not connected or invisible)

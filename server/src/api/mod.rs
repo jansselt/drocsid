@@ -103,7 +103,9 @@ async fn update_me(
     }
 
     if let Some(ref custom_status) = body.custom_status {
-        queries::update_user_custom_status(&state.db, user.user_id, Some(custom_status)).await?;
+        let cs = if custom_status.is_empty() { None } else { Some(custom_status.as_str()) };
+        queries::update_user_custom_status(&state.db, user.user_id, cs).await?;
+        state.gateway.update_custom_status(user.user_id, cs.map(|s| s.to_string()));
     }
 
     // Profile fields
