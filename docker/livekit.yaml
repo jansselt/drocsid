@@ -26,4 +26,4 @@ rtc:
       - eno1
 
 logging:
-  level: debug  # TODO: switch back to info once voice/video is confirmed working
+  level: info
