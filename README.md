@@ -19,6 +19,8 @@ A self-hosted Discord alternative built with Rust and React. Designed for commun
 - **Bans & kicks** with audit log
 - **Webhooks** for external integrations
 - **GIF search** via Giphy (bring your own API key)
+- **Password reset** via email (Resend API)
+- **Desktop app** via Tauri v2 with system tray and native notifications
 - **User presence** (online/idle/dnd/offline) with automatic idle detection
 - **Member sidebar** grouped by hoisted roles with status indicators
 - **Quick switcher** (Ctrl+K) to jump between servers, channels, and DMs
@@ -36,10 +38,11 @@ drocsid/
 │       ├── services/# Auth, permissions
 │       └── types/   # Entities, events, permissions
 ├── app/             # React frontend (Vite + TypeScript)
-│   └── src/
-│       ├── api/     # REST client + gateway connection
-│       ├── stores/  # Zustand state management
-│       └── components/
+│   ├── src/
+│   │   ├── api/     # REST client + gateway connection
+│   │   ├── stores/  # Zustand state management
+│   │   └── components/
+│   └── src-tauri/   # Tauri v2 desktop app (Rust)
 ├── migrations/      # PostgreSQL migrations
 ├── config/          # TOML configuration
 └── docker/          # Docker Compose for infrastructure
@@ -224,6 +227,31 @@ secret_key = "minioadmin"
 public_url = "http://localhost:9000/drocsid-uploads"
 ```
 
+### Optional: Email (password reset)
+
+Password reset emails are sent via [Resend](https://resend.com/). To enable:
+
+1. Create an account at [resend.com](https://resend.com/)
+2. Add and verify your domain at [resend.com/domains](https://resend.com/domains) (Resend will provide DNS records to add — if you use Cloudflare, it can auto-configure them)
+3. Get your API key from [resend.com/api-keys](https://resend.com/api-keys)
+4. Add the config:
+
+```toml
+[email]
+resend_api_key = "re_your_api_key_here"
+from_address = "YourApp <noreply@yourdomain.com>"
+reset_token_ttl_secs = 1800  # optional, default 30 minutes
+```
+
+Or via environment variables:
+
+```bash
+DROCSID__EMAIL__RESEND_API_KEY=re_your_api_key_here
+DROCSID__EMAIL__FROM_ADDRESS="YourApp <noreply@yourdomain.com>"
+```
+
+The `from_address` domain must match a verified domain in Resend. Without this configuration, the password reset feature is disabled and the endpoint returns a 500 error.
+
 ### Optional: GIF integration
 
 Get a free API key from [Giphy Developers](https://developers.giphy.com/) and add it:
@@ -259,6 +287,55 @@ To override, create `app/.env.local`:
 VITE_API_URL=http://your-server:8080/api/v1
 VITE_WS_URL=ws://your-server:8080
 ```
+
+## Desktop App (Tauri)
+
+Drocsid includes a Tauri v2 desktop application that wraps the web frontend with system tray support and native notifications.
+
+### Building locally
+
+```bash
+cd app
+npm install
+npm run tauri -- build
+```
+
+The built packages will be in `app/src-tauri/target/release/bundle/`:
+- `rpm/Drocsid-*.x86_64.rpm` (Fedora/RHEL)
+- `deb/Drocsid_*_amd64.deb` (Debian/Ubuntu)
+
+Install with your package manager:
+
+```bash
+# Fedora/RHEL
+sudo dnf install app/src-tauri/target/release/bundle/rpm/Drocsid-*.x86_64.rpm
+
+# Debian/Ubuntu
+sudo dpkg -i app/src-tauri/target/release/bundle/deb/Drocsid_*_amd64.deb
+```
+
+### System dependencies (Linux)
+
+Building Tauri on Linux requires these development libraries:
+
+```bash
+# Debian/Ubuntu
+sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf pkg-config
+
+# Fedora
+sudo dnf install gtk3-devel webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel patchelf pkg-config
+```
+
+### CI/CD
+
+The `build-desktop.yml` workflow automatically builds the desktop app:
+
+- **Every push to `main`**: creates/updates a rolling `latest` prerelease on GitHub Releases
+- **Version tags** (e.g., `git tag v0.1.0 && git push --tags`): creates a proper versioned release
+
+Users can download the latest RPM or deb from the [Releases](../../releases) page.
+
+**Self-hosted runner setup**: The runner machine needs the system dependencies listed above installed manually (the workflow verifies they're present but does not install them).
 
 ## Development
 
@@ -335,7 +412,8 @@ The `-v` flag removes the persistent volumes (database, redis, file storage).
 | `api/relationships.rs` | Friend requests, blocks |
 | `api/search.rs` | Full-text message search |
 | `gateway/` | WebSocket connection lifecycle, event dispatch, presence, voice state |
-| `services/auth.rs` | JWT generation/validation, password hashing |
+| `services/auth.rs` | JWT generation/validation, password hashing, password reset |
+| `services/email.rs` | Transactional email via Resend API |
 | `services/permissions.rs` | Bitfield permission computation with channel overrides |
 | `types/` | All shared types: entities, events, permission flags |
 
