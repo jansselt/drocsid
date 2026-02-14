@@ -55,7 +55,7 @@ fn api_routes() -> Router<AppState> {
 
 fn user_routes() -> Router<AppState> {
     Router::new()
-        .route("/@me", get(get_me).patch(update_me))
+        .route("/@me", get(get_me).patch(update_me).delete(delete_me))
         .route("/@me/avatar", post(request_avatar_upload))
         .route("/search", get(search_users))
 }
@@ -151,6 +151,51 @@ async fn update_me(
         .ok_or(crate::error::ApiError::NotFound("User"))?;
 
     Ok(axum::Json(user_data))
+}
+
+#[derive(serde::Deserialize)]
+struct DeleteAccountRequest {
+    password: String,
+}
+
+async fn delete_me(
+    State(state): State<AppState>,
+    user: crate::api::auth::AuthUser,
+    axum::Json(body): axum::Json<DeleteAccountRequest>,
+) -> Result<impl IntoResponse, crate::error::ApiError> {
+    use crate::db::queries;
+
+    // Verify password
+    let user_data = queries::get_user_by_id(&state.db, user.user_id)
+        .await?
+        .ok_or(crate::error::ApiError::NotFound("User"))?;
+    let password_hash = user_data
+        .password_hash
+        .as_ref()
+        .ok_or(crate::error::ApiError::Unauthorized)?;
+
+    use argon2::{Argon2, PasswordHash, PasswordVerifier};
+    let parsed_hash = PasswordHash::new(password_hash)
+        .map_err(|e| anyhow::anyhow!("Invalid hash: {}", e))?;
+    Argon2::default()
+        .verify_password(body.password.as_bytes(), &parsed_hash)
+        .map_err(|_| crate::error::ApiError::InvalidInput("Incorrect password".into()))?;
+
+    // Delete all servers owned by this user
+    let servers = queries::get_user_servers(&state.db, user.user_id).await?;
+    for server in &servers {
+        if server.owner_id == user.user_id {
+            queries::delete_server(&state.db, server.id).await?;
+        }
+    }
+
+    // Delete user (cascades handle sessions, memberships, relationships, etc.)
+    queries::delete_user(&state.db, user.user_id).await?;
+
+    // Disconnect from gateway
+    state.gateway.disconnect_user(user.user_id);
+
+    Ok(axum::Json(serde_json::json!({ "deleted": true })))
 }
 
 async fn request_avatar_upload(

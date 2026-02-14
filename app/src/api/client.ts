@@ -602,6 +602,15 @@ export async function gifTrending(limit = 25, offset = 0): Promise<GifSearchResp
   return request(`/gif/trending?${params}`);
 }
 
+// ── Account Deletion ──────────────────────────────
+
+export async function deleteAccount(password: string): Promise<void> {
+  return request('/users/@me', {
+    method: 'DELETE',
+    body: JSON.stringify({ password }),
+  });
+}
+
 // ── Admin: Registration Codes ─────────────────────
 
 export async function getRegistrationCodes(): Promise<RegistrationCode[]> {

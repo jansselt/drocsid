@@ -116,6 +116,15 @@ impl GatewayState {
         }
     }
 
+    /// Disconnect all sessions for a user (used during account deletion)
+    pub fn disconnect_user(&self, user_id: Uuid) {
+        if let Some((_, sessions)) = self.user_sessions.remove(&user_id) {
+            for session_id in sessions {
+                self.remove_connection(session_id);
+            }
+        }
+    }
+
     pub fn subscribe_to_server(&self, session_id: Uuid, server_id: Uuid) {
         self.server_subscriptions
             .entry(server_id)

@@ -79,6 +79,14 @@ pub async fn get_user_by_email(pool: &PgPool, email: &str) -> Result<Option<User
     .await
 }
 
+pub async fn delete_user(pool: &PgPool, user_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM users WHERE id = $1")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 // ── Sessions ───────────────────────────────────────────
 
 pub async fn create_session(

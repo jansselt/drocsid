@@ -40,6 +40,10 @@ export function UserSettings({ onClose }: UserSettingsProps) {
   const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || '');
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [deleting, setDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!user) return null;
@@ -101,6 +105,23 @@ export function UserSettings({ onClose }: UserSettingsProps) {
     setUploading(false);
     // Reset file input
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!deletePassword) {
+      setDeleteError('Password is required');
+      return;
+    }
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await api.deleteAccount(deletePassword);
+      useAuthStore.getState().logout();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete account';
+      setDeleteError(msg);
+      setDeleting(false);
+    }
   };
 
   const handleThemeChange = async (name: ThemeName) => {
@@ -224,6 +245,49 @@ export function UserSettings({ onClose }: UserSettingsProps) {
                     </button>
                   </div>
                 )}
+
+                <div className="danger-zone">
+                  <h3>Danger Zone</h3>
+                  {!showDeleteConfirm ? (
+                    <button
+                      className="delete-account-btn"
+                      onClick={() => setShowDeleteConfirm(true)}
+                    >
+                      Delete Account
+                    </button>
+                  ) : (
+                    <div className="delete-confirm">
+                      <p>This will permanently delete your account, messages will be preserved but shown as deleted user. Enter your password to confirm.</p>
+                      <input
+                        type="password"
+                        placeholder="Enter your password"
+                        value={deletePassword}
+                        onChange={(e) => setDeletePassword(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleDeleteAccount(); }}
+                      />
+                      {deleteError && <span className="delete-error">{deleteError}</span>}
+                      <div className="delete-confirm-actions">
+                        <button
+                          className="delete-confirm-btn"
+                          onClick={handleDeleteAccount}
+                          disabled={deleting}
+                        >
+                          {deleting ? 'Deleting...' : 'Permanently Delete'}
+                        </button>
+                        <button
+                          className="profile-reset-btn"
+                          onClick={() => {
+                            setShowDeleteConfirm(false);
+                            setDeletePassword('');
+                            setDeleteError('');
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
