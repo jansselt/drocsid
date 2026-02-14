@@ -57,18 +57,13 @@ function tokenize(text: string): Token[] {
       continue;
     }
 
-    // Image URL: https://....(gif|png|jpg|jpeg|webp) (with optional query params)
-    match = remaining.match(/^(https?:\/\/[^\s<]+\.(?:gif|png|jpe?g|webp)(?:\?[^\s<]*)?)/i);
-    if (match) {
-      tokens.push({ type: 'image', text: match[1], href: match[1] });
-      remaining = remaining.slice(match[0].length);
-      continue;
-    }
-
-    // Link: https://... (auto-linked)
+    // URL: auto-linked, embedded as image if path ends with image extension
     match = remaining.match(/^(https?:\/\/[^\s<]+)/);
     if (match) {
-      tokens.push({ type: 'link', text: match[1], href: match[1] });
+      const url = match[1];
+      const pathPart = url.split('?')[0];
+      const isImage = /\.(gif|png|jpe?g|webp)$/i.test(pathPart);
+      tokens.push({ type: isImage ? 'image' : 'link', text: url, href: url });
       remaining = remaining.slice(match[0].length);
       continue;
     }

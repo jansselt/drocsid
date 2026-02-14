@@ -159,8 +159,9 @@ export function MessageList({ channelId }: MessageListProps) {
       data={messages}
       startReached={handleStartReached}
       initialTopMostItemIndex={messages.length - 1}
-      followOutput={atBottom ? 'smooth' : false}
+      followOutput={atBottom ? 'auto' : false}
       atBottomStateChange={setAtBottom}
+      atBottomThreshold={150}
       increaseViewportBy={{ top: 200, bottom: 0 }}
       itemContent={(index, msg) => {
         const showHeader = shouldShowHeader(msg, index);
