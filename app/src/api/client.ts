@@ -409,6 +409,12 @@ export async function getDmRecipients(channelId: string): Promise<User[]> {
   return request(`/dms/${channelId}/recipients`);
 }
 
+// ── User Search ─────────────────────────────────────
+
+export async function searchUsers(query: string): Promise<User[]> {
+  return request(`/users/search?q=${encodeURIComponent(query)}`);
+}
+
 // ── Relationships ────────────────────────────────────
 
 export async function getRelationships(): Promise<RelationshipWithUser[]> {

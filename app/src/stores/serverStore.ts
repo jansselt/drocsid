@@ -26,6 +26,7 @@ import type {
   VoiceStateUpdateEvent,
   PresenceUpdateEvent,
   ServerMemberWithUser,
+  ServerMemberAddEvent,
 } from '../types';
 import * as api from '../api/client';
 import { gateway } from '../api/gateway';
@@ -713,6 +714,32 @@ export const useServerStore = create<ServerState>((set, get) => ({
         case 'SERVER_CREATE':
           get().addServer(data as Server);
           break;
+        case 'SERVER_MEMBER_ADD': {
+          const ev = data as ServerMemberAddEvent;
+          set((state) => {
+            // Cache the user
+            const users = new Map(state.users);
+            users.set(ev.user.id, ev.user);
+
+            // Add to members list if loaded for this server
+            const members = new Map(state.members);
+            const existing = members.get(ev.server_id);
+            if (existing && !existing.some((m) => m.user_id === ev.member.user_id)) {
+              members.set(ev.server_id, [
+                ...existing,
+                {
+                  ...ev.member,
+                  user: ev.user,
+                  status: 'online',
+                  role_ids: [],
+                },
+              ]);
+            }
+
+            return { users, members };
+          });
+          break;
+        }
         case 'SERVER_DELETE': {
           const { id } = data as { id: string };
           get().removeServer(id);

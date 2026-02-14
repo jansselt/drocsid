@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useServerStore } from '../../stores/serverStore';
+import * as api from '../../api/client';
+import type { User } from '../../types';
 import './FriendList.css';
 
 type FriendTab = 'all' | 'pending' | 'blocked' | 'add';
@@ -14,6 +16,33 @@ export function FriendList() {
   const [tab, setTab] = useState<FriendTab>('all');
   const [addInput, setAddInput] = useState('');
   const [addStatus, setAddStatus] = useState('');
+  const [searchResults, setSearchResults] = useState<User[]>([]);
+  const [searching, setSearching] = useState(false);
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  // Debounced user search
+  useEffect(() => {
+    if (tab !== 'add') return;
+    const q = addInput.trim();
+    if (q.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const results = await api.searchUsers(q);
+        setSearchResults(results);
+      } catch {
+        setSearchResults([]);
+      }
+      setSearching(false);
+    }, 300);
+
+    return () => clearTimeout(searchTimeout.current);
+  }, [addInput, tab]);
 
   const friends = relationships.filter((r) => r.rel_type === 'friend');
   const pending = relationships.filter(
@@ -21,12 +50,12 @@ export function FriendList() {
   );
   const blocked = relationships.filter((r) => r.rel_type === 'blocked');
 
-  const handleAdd = async () => {
-    if (!addInput.trim()) return;
+  const handleAdd = async (userId: string) => {
     try {
-      await sendFriendRequest(addInput.trim());
+      await sendFriendRequest(userId);
       setAddStatus('Friend request sent!');
       setAddInput('');
+      setSearchResults([]);
       setTimeout(() => setAddStatus(''), 3000);
     } catch (e) {
       setAddStatus((e as Error).message || 'Failed to send request');
@@ -52,18 +81,38 @@ export function FriendList() {
 
       {tab === 'add' && (
         <div className="add-friend-section">
-          <p className="add-friend-hint">Enter a user ID to send a friend request.</p>
+          <p className="add-friend-hint">Search for a user by username to add as a friend.</p>
           <div className="add-friend-input-row">
             <input
               type="text"
-              placeholder="User ID"
+              placeholder="Enter a username..."
               value={addInput}
               onChange={(e) => setAddInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
             />
-            <button onClick={handleAdd}>Send Request</button>
           </div>
           {addStatus && <p className="add-friend-status">{addStatus}</p>}
+          {searching && <div className="friend-empty">Searching...</div>}
+          {!searching && searchResults.length > 0 && (
+            <div className="friend-section">
+              {searchResults.map((u) => (
+                <div key={u.id} className="friend-row">
+                  <div className="friend-avatar">{u.username.slice(0, 1).toUpperCase()}</div>
+                  <div className="friend-info">
+                    <span className="friend-name">{u.display_name || u.username}</span>
+                    <span className="friend-status">{u.username}</span>
+                  </div>
+                  <div className="friend-actions">
+                    <button className="friend-action-btn accept" title="Send Friend Request" onClick={() => handleAdd(u.id)}>
+                      Send Request
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {!searching && addInput.trim().length >= 2 && searchResults.length === 0 && (
+            <div className="friend-empty">No users found.</div>
+          )}
         </div>
       )}
 

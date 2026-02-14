@@ -974,6 +974,27 @@ pub async fn get_user_by_username(
     .await
 }
 
+pub async fn search_users_by_username(
+    pool: &PgPool,
+    query: &str,
+    limit: i64,
+) -> Result<Vec<User>, sqlx::Error> {
+    let pattern = format!("{}%", query);
+    sqlx::query_as::<_, User>(
+        r#"
+        SELECT id, instance_id, username, display_name, email, password_hash,
+               avatar_url, bio, status, custom_status, theme_preference, bot, created_at, updated_at
+        FROM users WHERE username ILIKE $1
+        ORDER BY username
+        LIMIT $2
+        "#,
+    )
+    .bind(&pattern)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+}
+
 // ── DM Channels ──────────────────────────────────────
 
 pub async fn add_dm_member(

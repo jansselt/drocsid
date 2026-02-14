@@ -214,10 +214,11 @@ async fn use_invite(
     let member = queries::add_server_member(&state.db, server_id, user.user_id).await?;
     queries::increment_invite_uses(&state.db, &code).await?;
 
-    // Subscribe gateway sessions
+    // Subscribe gateway sessions and update presence cache
     state
         .gateway
         .subscribe_to_server_for_user(user.user_id, server_id);
+    state.gateway.add_user_server(user.user_id, server_id);
 
     let user_data = queries::get_user_by_id(&state.db, user.user_id)
         .await?
@@ -239,6 +240,19 @@ async fn use_invite(
     state
         .gateway
         .dispatch_to_user(user.user_id, "SERVER_CREATE", &server);
+
+    // Broadcast presence to the new server so existing members see the joiner's status
+    if state.gateway.is_online(user.user_id) {
+        let status = state.gateway.get_presence(user.user_id);
+        let presence_event = crate::types::events::PresenceUpdateEvent {
+            user_id: user.user_id,
+            status,
+            custom_status: None,
+        };
+        state
+            .gateway
+            .broadcast_to_server(server_id, "PRESENCE_UPDATE", &presence_event, None);
+    }
 
     Ok(Json(server))
 }

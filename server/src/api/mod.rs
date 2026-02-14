@@ -55,6 +55,7 @@ fn user_routes() -> Router<AppState> {
     Router::new()
         .route("/@me", get(get_me).patch(update_me))
         .route("/@me/avatar", post(request_avatar_upload))
+        .route("/search", get(search_users))
 }
 
 async fn get_me(
@@ -197,6 +198,29 @@ async fn request_avatar_upload(
         file_url,
         attachment_id: String::new(),
     }))
+}
+
+#[derive(serde::Deserialize)]
+struct SearchUsersQuery {
+    q: String,
+}
+
+async fn search_users(
+    State(state): State<AppState>,
+    _user: crate::api::auth::AuthUser,
+    axum::extract::Query(params): axum::extract::Query<SearchUsersQuery>,
+) -> Result<impl IntoResponse, crate::error::ApiError> {
+    use crate::db::queries;
+    use crate::types::entities::PublicUser;
+
+    let q = params.q.trim();
+    if q.is_empty() || q.len() > 32 {
+        return Ok(axum::Json(Vec::<PublicUser>::new()));
+    }
+
+    let users = queries::search_users_by_username(&state.db, q, 20).await?;
+    let public: Vec<PublicUser> = users.into_iter().map(PublicUser::from).collect();
+    Ok(axum::Json(public))
 }
 
 async fn health_check() -> impl IntoResponse {
