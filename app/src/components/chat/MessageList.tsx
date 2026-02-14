@@ -35,6 +35,7 @@ export function MessageList({ channelId }: MessageListProps) {
   const atBottomRef = useRef(true);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const needsInitialScroll = useRef(true);
+  const initialScrollGrace = useRef(false);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
     const el = scrollRef.current;
@@ -52,33 +53,41 @@ export function MessageList({ channelId }: MessageListProps) {
   // Reset scroll refs on channel switch — must be useLayoutEffect so it runs
   // BEFORE the scroll layout effect below (both are synchronous, ordered by position)
   useLayoutEffect(() => {
-    console.log('[SCROLL] reset layout effect — channelId changed:', channelId);
     needsInitialScroll.current = true;
+    initialScrollGrace.current = false;
     atBottomRef.current = true;
   }, [channelId]);
 
   // Initial scroll: useLayoutEffect ensures we scroll before paint, avoiding flash
   useLayoutEffect(() => {
-    const el = scrollRef.current;
-    console.log('[SCROLL] scroll layout effect —', {
-      needsInitialScroll: needsInitialScroll.current,
-      msgCount: messages.length,
-      scrollRef: !!el,
-      scrollHeight: el?.scrollHeight,
-      scrollTop: el?.scrollTop,
-      clientHeight: el?.clientHeight,
-      channelId,
-    });
     if (needsInitialScroll.current && messages.length > 0) {
       needsInitialScroll.current = false;
-      if (el) {
-        el.scrollTop = el.scrollHeight;
-        console.log('[SCROLL] scrolled to bottom —', { newScrollTop: el.scrollTop, scrollHeight: el.scrollHeight });
-      } else {
-        console.warn('[SCROLL] scrollRef is NULL — cannot scroll!');
-      }
+      initialScrollGrace.current = true;
+      const el = scrollRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
     }
   }, [messages, channelId]);
+
+  // Re-scroll when images/embeds load after initial scroll (they change scrollHeight)
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const graceTimeout = setTimeout(() => { initialScrollGrace.current = false; }, 5000);
+
+    const handleLoad = () => {
+      if (initialScrollGrace.current) {
+        el.scrollTop = el.scrollHeight;
+      }
+    };
+
+    // Capture phase catches load events from descendant img/iframe elements
+    el.addEventListener('load', handleLoad, true);
+    return () => {
+      clearTimeout(graceTimeout);
+      el.removeEventListener('load', handleLoad, true);
+    };
+  }, [channelId]);
 
   // Track whether user is near the bottom + show/hide scroll button
   const handleScroll = useCallback(() => {
