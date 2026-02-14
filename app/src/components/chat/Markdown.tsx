@@ -6,7 +6,7 @@ interface MarkdownProps {
 }
 
 interface Token {
-  type: 'text' | 'bold' | 'italic' | 'bolditalic' | 'code' | 'codeblock' | 'link' | 'br';
+  type: 'text' | 'bold' | 'italic' | 'bolditalic' | 'code' | 'codeblock' | 'link' | 'image' | 'br';
   text: string;
   lang?: string;
   href?: string;
@@ -53,6 +53,14 @@ function tokenize(text: string): Token[] {
     match = remaining.match(/^\*(.+?)\*/);
     if (match) {
       tokens.push({ type: 'italic', text: match[1] });
+      remaining = remaining.slice(match[0].length);
+      continue;
+    }
+
+    // Image URL: https://....(gif|png|jpg|jpeg|webp) (with optional query params)
+    match = remaining.match(/^(https?:\/\/[^\s<]+\.(?:gif|png|jpe?g|webp)(?:\?[^\s<]*)?)/i);
+    if (match) {
+      tokens.push({ type: 'image', text: match[1], href: match[1] });
       remaining = remaining.slice(match[0].length);
       continue;
     }
@@ -108,6 +116,12 @@ export function Markdown({ content }: MarkdownProps) {
               <pre key={i} className="md-code-block">
                 <code>{token.text}</code>
               </pre>
+            );
+          case 'image':
+            return (
+              <a key={i} className="md-image-link" href={token.href} target="_blank" rel="noopener noreferrer">
+                <img className="md-embedded-image" src={token.href} alt="" loading="lazy" />
+              </a>
             );
           case 'link':
             return (

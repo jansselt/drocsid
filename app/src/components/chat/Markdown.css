@@ -36,3 +36,15 @@
 .md-link:hover {
   text-decoration: underline;
 }
+
+.md-image-link {
+  display: block;
+  margin: 0.25rem 0;
+}
+
+.md-embedded-image {
+  max-width: 400px;
+  max-height: 300px;
+  border-radius: 8px;
+  cursor: pointer;
+}
