@@ -57,6 +57,13 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
+            // Open devtools in debug builds
+            if cfg!(debug_assertions) {
+                if let Some(window) = app.get_webview_window("main") {
+                    window.open_devtools();
+                }
+            }
+
             match setup_tray(app) {
                 Ok(()) => {}
                 Err(e) => {
