@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { useServerStore } from '../../stores/serverStore';
 import { useAuthStore } from '../../stores/authStore';
 import type { Message, ReactionGroup } from '../../types';
@@ -11,6 +12,7 @@ interface MessageListProps {
 
 const EMOJI_QUICK_PICKS = ['\u{1F44D}', '\u{2764}\u{FE0F}', '\u{1F602}', '\u{1F44E}', '\u{1F389}', '\u{1F440}'];
 const EMPTY_MESSAGES: Message[] = [];
+const START_INDEX = 100_000;
 
 export function MessageList({ channelId }: MessageListProps) {
   const messages = useServerStore((s) => s.messages.get(channelId) ?? EMPTY_MESSAGES);
@@ -25,22 +27,18 @@ export function MessageList({ channelId }: MessageListProps) {
   const unpinMessage = useServerStore((s) => s.unpinMessage);
   const loadMoreMessages = useServerStore((s) => s.loadMoreMessages);
 
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const scrollContainerRef = useRef<HTMLElement | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [emojiPickerForId, setEmojiPickerForId] = useState<string | null>(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const [firstItemIndex, setFirstItemIndex] = useState(START_INDEX);
   const isLoadingMore = useRef(false);
   const atBottomRef = useRef(true);
-  const sentinelRef = useRef<HTMLDivElement>(null);
-  const needsInitialScroll = useRef(true);
   const initialScrollGrace = useRef(false);
-
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
-    const el = scrollRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior });
-  }, []);
+  const prevChannelRef = useRef(channelId);
 
   // Reset state on channel switch
   useEffect(() => {
@@ -48,36 +46,31 @@ export function MessageList({ channelId }: MessageListProps) {
     setEmojiPickerForId(null);
     setHoveredId(null);
     setShowScrollBtn(false);
-  }, [channelId]);
-
-  // Reset scroll refs on channel switch — must be useLayoutEffect so it runs
-  // BEFORE the scroll layout effect below (both are synchronous, ordered by position)
-  useLayoutEffect(() => {
-    needsInitialScroll.current = true;
-    initialScrollGrace.current = false;
+    setFirstItemIndex(START_INDEX);
+    isLoadingMore.current = false;
     atBottomRef.current = true;
+    initialScrollGrace.current = false;
+    prevChannelRef.current = channelId;
   }, [channelId]);
 
-  // Initial scroll: useLayoutEffect ensures we scroll before paint, avoiding flash
-  useLayoutEffect(() => {
-    if (needsInitialScroll.current && messages.length > 0) {
-      needsInitialScroll.current = false;
-      initialScrollGrace.current = true;
-      const el = scrollRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-    }
-  }, [messages, channelId]);
-
-  // Re-scroll when images/embeds load after initial scroll (they change scrollHeight)
+  // Re-scroll when images/embeds load after initial render (they change scrollHeight).
+  // Virtuoso's followOutput handles most cases, but async media loads can still cause
+  // the content height to change after the initial scroll.
   useEffect(() => {
-    const el = scrollRef.current;
+    const el = scrollContainerRef.current;
     if (!el) return;
 
-    const graceTimeout = setTimeout(() => { initialScrollGrace.current = false; }, 5000);
+    initialScrollGrace.current = true;
+    const graceTimeout = setTimeout(() => {
+      initialScrollGrace.current = false;
+    }, 5000);
 
     const handleLoad = () => {
-      if (initialScrollGrace.current) {
-        el.scrollTop = el.scrollHeight;
+      if (initialScrollGrace.current && atBottomRef.current) {
+        virtuosoRef.current?.scrollToIndex({
+          index: messages.length - 1,
+          align: 'end',
+        });
       }
     };
 
@@ -87,58 +80,61 @@ export function MessageList({ channelId }: MessageListProps) {
       clearTimeout(graceTimeout);
       el.removeEventListener('load', handleLoad, true);
     };
-  }, [channelId]);
+  }, [channelId, messages.length]);
 
-  // Track whether user is near the bottom + show/hide scroll button
-  const handleScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    atBottomRef.current = distFromBottom < 150;
-    setShowScrollBtn(distFromBottom > 300);
+  // Auto-scroll for own messages even when scrolled up
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg?.author_id === currentUser?.id && !atBottomRef.current) {
+      virtuosoRef.current?.scrollToIndex({
+        index: messages.length - 1,
+        behavior: 'smooth',
+        align: 'end',
+      });
+    }
+  }, [messages.length, messages, currentUser?.id]);
+
+  // Virtuoso callbacks
+  const handleAtBottomChange = useCallback((atBottom: boolean) => {
+    atBottomRef.current = atBottom;
+    setShowScrollBtn(!atBottom);
   }, []);
 
-  // Auto-scroll when new messages arrive (after initial load)
-  useEffect(() => {
-    if (messages.length === 0 || needsInitialScroll.current) return;
-    const lastMsg = messages[messages.length - 1];
-    const isOwn = lastMsg?.author_id === currentUser?.id;
-    // Always scroll for own messages, otherwise only if already at bottom
-    if (isOwn || atBottomRef.current) {
-      requestAnimationFrame(() => scrollToBottom('smooth'));
-    }
-  }, [messages.length, messages, currentUser?.id, scrollToBottom]);
-
-  // IntersectionObserver for infinite scroll (load older messages)
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    const container = scrollRef.current;
-    if (!sentinel || !container) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && !isLoadingMore.current && messages.length > 0) {
-          isLoadingMore.current = true;
-          const prevHeight = container.scrollHeight;
-          loadMoreMessages(channelId).then(() => {
-            // Preserve scroll position after prepending older messages
-            requestAnimationFrame(() => {
-              const newHeight = container.scrollHeight;
-              container.scrollTop += newHeight - prevHeight;
-              isLoadingMore.current = false;
-            });
-          }).catch(() => {
-            isLoadingMore.current = false;
-          });
+  const handleStartReached = useCallback(() => {
+    if (isLoadingMore.current || messages.length === 0) return;
+    isLoadingMore.current = true;
+    const prevCount = messages.length;
+    loadMoreMessages(channelId)
+      .then((hasMore) => {
+        if (hasMore !== false) {
+          // Messages were prepended — adjust firstItemIndex
+          const newCount = useServerStore.getState().messages.get(channelId)?.length ?? 0;
+          const added = newCount - prevCount;
+          if (added > 0) {
+            setFirstItemIndex((prev) => prev - added);
+          }
         }
-      },
-      { root: container, threshold: 0 },
-    );
-
-    observer.observe(sentinel);
-    return () => observer.disconnect();
+        isLoadingMore.current = false;
+      })
+      .catch(() => {
+        isLoadingMore.current = false;
+      });
   }, [channelId, loadMoreMessages, messages.length]);
 
+  const scrollerRefCallback = useCallback((el: HTMLElement | Window | null) => {
+    scrollContainerRef.current = el as HTMLElement;
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    virtuosoRef.current?.scrollToIndex({
+      index: messages.length - 1,
+      behavior: 'smooth',
+      align: 'end',
+    });
+  }, [messages.length]);
+
+  // Helper functions
   const getAuthor = (msg: Message): { name: string; avatar_url: string | null } => {
     const user = msg.author ?? users.get(msg.author_id);
     return {
@@ -233,10 +229,145 @@ export function MessageList({ channelId }: MessageListProps) {
     }
   }, [channelId, pinMessage, unpinMessage]);
 
+  const itemContent = useCallback(
+    (index: number, msg: Message) => {
+      const showHeader = shouldShowHeader(msg, index);
+      const isOwn = msg.author_id === currentUser?.id;
+      const isEditing = editingId === msg.id;
+      const isHovered = hoveredId === msg.id;
+      const msgReactions = reactions.get(msg.id) || [];
+
+      return (
+        <div
+          className={`message ${showHeader ? 'with-header' : 'compact'} ${isEditing ? 'editing' : ''}`}
+          onMouseEnter={() => setHoveredId(msg.id)}
+          onMouseLeave={() => {
+            setHoveredId(null);
+            if (emojiPickerForId === msg.id) setEmojiPickerForId(null);
+          }}
+        >
+          {isHovered && !isEditing && (
+            <div className="message-actions">
+              <button
+                className="message-action-btn"
+                title="Add reaction"
+                onClick={() => setEmojiPickerForId(emojiPickerForId === msg.id ? null : msg.id)}
+              >
+                +
+              </button>
+              {msg.pinned ? (
+                <button className="message-action-btn" title="Unpin" onClick={() => handlePin(msg.id, true)}>
+                  Unpin
+                </button>
+              ) : (
+                <button className="message-action-btn" title="Pin" onClick={() => handlePin(msg.id, false)}>
+                  Pin
+                </button>
+              )}
+              {isOwn && (
+                <button className="message-action-btn" title="Edit" onClick={() => startEditing(msg)}>
+                  Edit
+                </button>
+              )}
+              {isOwn && (
+                <button className="message-action-btn danger" title="Delete" onClick={() => handleDelete(msg.id)}>
+                  Del
+                </button>
+              )}
+            </div>
+          )}
+
+          {emojiPickerForId === msg.id && (
+            <div className="emoji-quick-picker">
+              {EMOJI_QUICK_PICKS.map((emoji) => (
+                <button
+                  key={emoji}
+                  className="emoji-pick-btn"
+                  onClick={() => handleReaction(msg.id, emoji)}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {showHeader && (
+            <div className="message-header">
+              <div className="message-avatar">
+                {getAuthor(msg).avatar_url ? (
+                  <img src={getAuthor(msg).avatar_url!} alt="" />
+                ) : (
+                  getAuthorName(msg).charAt(0).toUpperCase()
+                )}
+              </div>
+              <div className="message-meta">
+                <span className={`message-author ${isOwn ? 'own' : ''}`}>
+                  {getAuthorName(msg)}
+                </span>
+                <span className="message-timestamp">
+                  {formatTime(msg.created_at)}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {isEditing ? (
+            <div className="message-edit-wrapper">
+              <textarea
+                className="message-edit-input"
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                onKeyDown={handleEditKeyDown}
+                autoFocus
+                rows={1}
+              />
+              <div className="message-edit-actions">
+                <span className="message-edit-hint">
+                  Escape to cancel, Enter to save
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="message-content">
+              {msg.pinned && <span className="message-pin-badge">Pinned</span>}
+              {msg.content && <Markdown content={msg.content} />}
+              {msg.edited_at && <span className="message-edited">(edited)</span>}
+            </div>
+          )}
+
+          {msgReactions.length > 0 && (
+            <div className="message-reactions">
+              {msgReactions.map((r: ReactionGroup) => (
+                <button
+                  key={r.emoji_name}
+                  className={`reaction-chip ${r.me ? 'me' : ''}`}
+                  onClick={() =>
+                    r.me
+                      ? handleRemoveReaction(msg.id, r.emoji_name)
+                      : handleReaction(msg.id, r.emoji_name)
+                  }
+                >
+                  <span className="reaction-emoji">{r.emoji_name}</span>
+                  <span className="reaction-count">{r.count}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      messages, currentUser?.id, editingId, editContent, hoveredId,
+      emojiPickerForId, reactions, users, channelId, handleEditKeyDown,
+      handleDelete, handleReaction, handleRemoveReaction, handlePin, startEditing,
+    ],
+  );
+
   if (messages.length === 0) {
     return (
       <div className="message-list-wrapper">
-        <div ref={scrollRef} className="message-list">
+        <div className="message-list">
           <div className="message-list-empty">
             <p>No messages yet. Say something!</p>
           </div>
@@ -247,150 +378,33 @@ export function MessageList({ channelId }: MessageListProps) {
 
   return (
     <div className="message-list-wrapper">
-    <div ref={scrollRef} className="message-list" onScroll={handleScroll}>
-      {/* Sentinel for loading older messages */}
-      <div ref={sentinelRef} className="scroll-sentinel" />
+      <Virtuoso
+        key={channelId}
+        ref={virtuosoRef}
+        className="message-list"
+        data={messages}
+        firstItemIndex={firstItemIndex}
+        initialTopMostItemIndex={messages.length - 1}
+        followOutput="smooth"
+        startReached={handleStartReached}
+        atBottomStateChange={handleAtBottomChange}
+        atBottomThreshold={150}
+        scrollerRef={scrollerRefCallback}
+        increaseViewportBy={{ top: 200, bottom: 200 }}
+        itemContent={itemContent}
+      />
 
-      {messages.map((msg, index) => {
-        const showHeader = shouldShowHeader(msg, index);
-        const isOwn = msg.author_id === currentUser?.id;
-        const isEditing = editingId === msg.id;
-        const isHovered = hoveredId === msg.id;
-        const msgReactions = reactions.get(msg.id) || [];
-
-        return (
-          <div
-            key={msg.id}
-            className={`message ${showHeader ? 'with-header' : 'compact'} ${isEditing ? 'editing' : ''}`}
-            onMouseEnter={() => setHoveredId(msg.id)}
-            onMouseLeave={() => {
-              setHoveredId(null);
-              if (emojiPickerForId === msg.id) setEmojiPickerForId(null);
-            }}
-          >
-            {isHovered && !isEditing && (
-              <div className="message-actions">
-                <button
-                  className="message-action-btn"
-                  title="Add reaction"
-                  onClick={() => setEmojiPickerForId(emojiPickerForId === msg.id ? null : msg.id)}
-                >
-                  +
-                </button>
-                {msg.pinned ? (
-                  <button className="message-action-btn" title="Unpin" onClick={() => handlePin(msg.id, true)}>
-                    Unpin
-                  </button>
-                ) : (
-                  <button className="message-action-btn" title="Pin" onClick={() => handlePin(msg.id, false)}>
-                    Pin
-                  </button>
-                )}
-                {isOwn && (
-                  <button className="message-action-btn" title="Edit" onClick={() => startEditing(msg)}>
-                    Edit
-                  </button>
-                )}
-                {isOwn && (
-                  <button className="message-action-btn danger" title="Delete" onClick={() => handleDelete(msg.id)}>
-                    Del
-                  </button>
-                )}
-              </div>
-            )}
-
-            {emojiPickerForId === msg.id && (
-              <div className="emoji-quick-picker">
-                {EMOJI_QUICK_PICKS.map((emoji) => (
-                  <button
-                    key={emoji}
-                    className="emoji-pick-btn"
-                    onClick={() => handleReaction(msg.id, emoji)}
-                  >
-                    {emoji}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {showHeader && (
-              <div className="message-header">
-                <div className="message-avatar">
-                  {getAuthor(msg).avatar_url ? (
-                    <img src={getAuthor(msg).avatar_url!} alt="" />
-                  ) : (
-                    getAuthorName(msg).charAt(0).toUpperCase()
-                  )}
-                </div>
-                <div className="message-meta">
-                  <span className={`message-author ${isOwn ? 'own' : ''}`}>
-                    {getAuthorName(msg)}
-                  </span>
-                  <span className="message-timestamp">
-                    {formatTime(msg.created_at)}
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {isEditing ? (
-              <div className="message-edit-wrapper">
-                <textarea
-                  className="message-edit-input"
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  onKeyDown={handleEditKeyDown}
-                  autoFocus
-                  rows={1}
-                />
-                <div className="message-edit-actions">
-                  <span className="message-edit-hint">
-                    Escape to cancel, Enter to save
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className="message-content">
-                {msg.pinned && <span className="message-pin-badge">Pinned</span>}
-                {msg.content && <Markdown content={msg.content} />}
-                {msg.edited_at && <span className="message-edited">(edited)</span>}
-              </div>
-            )}
-
-            {msgReactions.length > 0 && (
-              <div className="message-reactions">
-                {msgReactions.map((r: ReactionGroup) => (
-                  <button
-                    key={r.emoji_name}
-                    className={`reaction-chip ${r.me ? 'me' : ''}`}
-                    onClick={() =>
-                      r.me
-                        ? handleRemoveReaction(msg.id, r.emoji_name)
-                        : handleReaction(msg.id, r.emoji_name)
-                    }
-                  >
-                    <span className="reaction-emoji">{r.emoji_name}</span>
-                    <span className="reaction-count">{r.count}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-
-    {showScrollBtn && (
-      <button
-        className="scroll-to-bottom-btn"
-        onClick={() => scrollToBottom('smooth')}
-        title="Jump to latest messages"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
-        </svg>
-      </button>
-    )}
+      {showScrollBtn && (
+        <button
+          className="scroll-to-bottom-btn"
+          onClick={scrollToBottom}
+          title="Jump to latest messages"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }
