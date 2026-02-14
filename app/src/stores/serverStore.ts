@@ -684,6 +684,7 @@ export const useServerStore = create<ServerState>((set, get) => ({
       voiceToken: resp.token,
       voiceUrl: resp.url,
     });
+    playVoiceJoinSound();
 
     // Load current voice states for this channel
     get().loadVoiceStates(channelId);
@@ -693,6 +694,7 @@ export const useServerStore = create<ServerState>((set, get) => ({
     const channelId = get().voiceChannelId;
     if (channelId) {
       await api.voiceLeave(channelId).catch(() => {});
+      playVoiceLeaveSound();
     }
     set({
       voiceChannelId: null,
