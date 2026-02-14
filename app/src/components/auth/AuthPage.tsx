@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import * as api from '../../api/client';
 import type { InviteResolve } from '../../types';
+import { ForgotPasswordForm } from './ForgotPasswordForm';
 import './AuthPage.css';
 
 interface AuthPageProps {
@@ -18,6 +19,7 @@ export function AuthPage({ serverInviteCode, onRegisteredWithInvite }: AuthPageP
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [serverInfo, setServerInfo] = useState<InviteResolve | null>(null);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   const login = useAuthStore((s) => s.login);
   const register = useAuthStore((s) => s.register);
@@ -69,6 +71,10 @@ export function AuthPage({ serverInviteCode, onRegisteredWithInvite }: AuthPageP
   };
 
   const hasServerInvite = !!serverInviteCode;
+
+  if (showForgotPassword) {
+    return <ForgotPasswordForm onBack={() => setShowForgotPassword(false)} />;
+  }
 
   return (
     <div className="auth-page">
@@ -151,6 +157,16 @@ export function AuthPage({ serverInviteCode, onRegisteredWithInvite }: AuthPageP
               autoComplete={isLogin ? 'current-password' : 'new-password'}
             />
           </div>
+
+          {isLogin && (
+            <button
+              type="button"
+              className="auth-forgot-btn"
+              onClick={() => setShowForgotPassword(true)}
+            >
+              Forgot your password?
+            </button>
+          )}
 
           {error && <div className="auth-error">{error}</div>}
 

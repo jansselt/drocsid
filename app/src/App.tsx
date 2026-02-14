@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuthStore } from './stores/authStore';
 import { AuthPage } from './components/auth/AuthPage';
+import { ResetPasswordForm } from './components/auth/ResetPasswordForm';
 import { InstancePicker } from './components/auth/InstancePicker';
 import { AppLayout } from './components/layout/AppLayout';
 import { JoinInvite } from './components/server/JoinInvite';
@@ -11,11 +12,20 @@ export default function App() {
   const isLoading = useAuthStore((s) => s.isLoading);
   const init = useAuthStore((s) => s.init);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [resetToken, setResetToken] = useState<string | null>(null);
   const [needsInstance, setNeedsInstance] = useState(() => isTauri() && !hasInstance());
 
   useEffect(() => {
     if (!needsInstance) {
       init();
+    }
+    // Check for password reset URL
+    if (window.location.pathname === '/reset-password') {
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('token');
+      if (token) {
+        setResetToken(token);
+      }
     }
     // Check for invite URL
     const match = window.location.pathname.match(/^\/invite\/([A-Za-z0-9]+)$/);
@@ -41,6 +51,18 @@ export default function App() {
       }}>
         Loading...
       </div>
+    );
+  }
+
+  if (resetToken) {
+    return (
+      <ResetPasswordForm
+        token={resetToken}
+        onSuccess={() => {
+          setResetToken(null);
+          window.history.replaceState(null, '', '/');
+        }}
+      />
     );
   }
 

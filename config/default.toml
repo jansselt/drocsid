@@ -28,3 +28,7 @@ api_secret = "devsecret"
 provider = "giphy"
 api_key = "DrZ1aJ4UIyYGzxjyeUDkOyvWbf4gh9bF"
 rating = "r"
+
+[email]
+resend_api_key = "re_JCGcdFSc_fQdv4u2jAfQagqfFMfLwiFGv"
+from_address = "Drocsid <noreply@drocsid.gizmoduck.win>"

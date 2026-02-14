@@ -1860,3 +1860,87 @@ pub async fn upsert_notification_preference(
     .fetch_one(pool)
     .await
 }
+
+// ── Password Reset Tokens ─────────────────────────────
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct PasswordResetToken {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub token_hash: String,
+    pub expires_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+}
+
+pub async fn create_password_reset_token(
+    pool: &PgPool,
+    id: Uuid,
+    user_id: Uuid,
+    token_hash: &str,
+    expires_at: DateTime<Utc>,
+) -> Result<PasswordResetToken, sqlx::Error> {
+    sqlx::query_as::<_, PasswordResetToken>(
+        r#"
+        INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id, user_id, token_hash, expires_at, created_at
+        "#,
+    )
+    .bind(id)
+    .bind(user_id)
+    .bind(token_hash)
+    .bind(expires_at)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_password_reset_token_by_hash(
+    pool: &PgPool,
+    token_hash: &str,
+) -> Result<Option<PasswordResetToken>, sqlx::Error> {
+    sqlx::query_as::<_, PasswordResetToken>(
+        r#"
+        SELECT id, user_id, token_hash, expires_at, created_at
+        FROM password_reset_tokens
+        WHERE token_hash = $1 AND expires_at > now()
+        "#,
+    )
+    .bind(token_hash)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn delete_password_reset_token(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM password_reset_tokens WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn delete_user_password_reset_tokens(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM password_reset_tokens WHERE user_id = $1")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn update_user_password_hash(
+    pool: &PgPool,
+    user_id: Uuid,
+    password_hash: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1")
+        .bind(user_id)
+        .bind(password_hash)
+        .execute(pool)
+        .await?;
+    Ok(())
+}

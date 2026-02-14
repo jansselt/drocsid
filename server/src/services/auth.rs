@@ -239,8 +239,90 @@ async fn create_tokens(
     Ok((access_token, refresh_token))
 }
 
-fn hash_token(token: &str) -> String {
+pub fn hash_token(token: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(token.as_bytes());
     format!("{:x}", hasher.finalize())
+}
+
+pub async fn request_password_reset(
+    pool: &PgPool,
+    config: &AppConfig,
+    email: &str,
+) -> Result<(), ApiError> {
+    let email_config = config.email.as_ref().ok_or_else(|| {
+        ApiError::Internal(anyhow::anyhow!("Email is not configured"))
+    })?;
+
+    // Look up user — but always return Ok to avoid revealing email existence
+    let user = queries::get_user_by_email(pool, email).await?;
+
+    if let Some(user) = user {
+        // Delete any existing reset tokens for this user
+        queries::delete_user_password_reset_tokens(pool, user.id).await?;
+
+        // Generate token
+        let raw_token = Uuid::now_v7().to_string();
+        let token_hash = hash_token(&raw_token);
+
+        let ttl_secs = email_config.reset_token_ttl_secs.unwrap_or(1800);
+        let expires_at = Utc::now() + chrono::Duration::seconds(ttl_secs);
+
+        queries::create_password_reset_token(pool, Uuid::now_v7(), user.id, &token_hash, expires_at)
+            .await?;
+
+        // Build reset URL
+        let reset_url = format!(
+            "https://{}/reset-password?token={}",
+            config.instance.domain, raw_token
+        );
+
+        // Send email — suppress errors to avoid leaking info
+        if let Err(e) = crate::services::email::send_password_reset_email(
+            email_config,
+            &config.instance.name,
+            email,
+            &reset_url,
+        )
+        .await
+        {
+            tracing::error!(error = %e, "Failed to send password reset email");
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn complete_password_reset(
+    pool: &PgPool,
+    raw_token: &str,
+    new_password: &str,
+) -> Result<(), ApiError> {
+    if new_password.len() < 8 {
+        return Err(ApiError::InvalidInput(
+            "Password must be at least 8 characters".into(),
+        ));
+    }
+
+    let token_hash = hash_token(raw_token);
+
+    let reset_token = queries::get_password_reset_token_by_hash(pool, &token_hash)
+        .await?
+        .ok_or(ApiError::InvalidInput(
+            "Invalid or expired reset token".into(),
+        ))?;
+
+    // Hash new password
+    let salt = SaltString::generate(&mut OsRng);
+    let argon2 = Argon2::default();
+    let password_hash = argon2
+        .hash_password(new_password.as_bytes(), &salt)
+        .map_err(|e| anyhow::anyhow!("Failed to hash password: {}", e))?
+        .to_string();
+
+    // Update password and clean up tokens
+    queries::update_user_password_hash(pool, reset_token.user_id, &password_hash).await?;
+    queries::delete_user_password_reset_tokens(pool, reset_token.user_id).await?;
+
+    Ok(())
 }
