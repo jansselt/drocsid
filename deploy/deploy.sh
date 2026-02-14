@@ -46,9 +46,11 @@ cd "$REPO_DIR"
 echo "==> Stopping drocsid-server..."
 sudo systemctl stop drocsid-server || true
 
-echo "==> Copying binary and frontend..."
+echo "==> Copying binary, frontend, and config..."
 cp "${REPO_DIR}/server/target/release/drocsid-server" "${DEPLOY_DIR}/drocsid-server"
 rsync -a --delete "${REPO_DIR}/app/dist/" "${DEPLOY_DIR}/web/"
+mkdir -p "${DEPLOY_DIR}/config"
+cp "${REPO_DIR}/config/default.toml" "${DEPLOY_DIR}/config/default.toml"
 
 echo "==> Updating nginx config..."
 sudo tee /etc/nginx/sites-available/drocsid < "${REPO_DIR}/deploy/nginx/drocsid.conf" > /dev/null
