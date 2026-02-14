@@ -22,7 +22,7 @@ async fn register(
     Json(body): Json<RegisterRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let response =
-        auth_service::register(&state.db, &state.config, &body.username, &body.email, &body.password)
+        auth_service::register(&state.db, &state.config, &body.username, &body.email, &body.password, body.invite_code.as_deref())
             .await?;
 
     Ok(Json(response))

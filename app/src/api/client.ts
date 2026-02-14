@@ -2,7 +2,7 @@ import type {
   AuthResponse, TokenResponse, Server, Channel, Message, Role, ChannelOverride,
   UploadUrlResponse, RelationshipWithUser, SearchResult, ThreadMetadata, User,
   VoiceTokenResponse, VoiceState, Invite, InviteResolve, Ban, AuditLogEntry,
-  Webhook, GifSearchResponse, ServerMemberWithUser,
+  Webhook, GifSearchResponse, ServerMemberWithUser, RegistrationCode,
 } from '../types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1';
@@ -118,10 +118,10 @@ export class ApiError extends Error {
 
 // ── Auth ───────────────────────────────────────────────
 
-export async function register(username: string, email: string, password: string): Promise<AuthResponse> {
+export async function register(username: string, email: string, password: string, inviteCode?: string): Promise<AuthResponse> {
   return request('/auth/register', {
     method: 'POST',
-    body: JSON.stringify({ username, email, password }),
+    body: JSON.stringify({ username, email, password, invite_code: inviteCode || undefined }),
   });
 }
 
@@ -596,4 +596,23 @@ export async function gifSearch(query: string, limit = 25, offset = 0): Promise<
 export async function gifTrending(limit = 25, offset = 0): Promise<GifSearchResponse> {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   return request(`/gif/trending?${params}`);
+}
+
+// ── Admin: Registration Codes ─────────────────────
+
+export async function getRegistrationCodes(): Promise<RegistrationCode[]> {
+  return request('/admin/registration-codes');
+}
+
+export async function createRegistrationCode(
+  options?: { max_uses?: number; max_age_secs?: number },
+): Promise<RegistrationCode> {
+  return request('/admin/registration-codes', {
+    method: 'POST',
+    body: JSON.stringify(options || {}),
+  });
+}
+
+export async function deleteRegistrationCode(code: string): Promise<void> {
+  return request(`/admin/registration-codes/${code}`, { method: 'DELETE' });
 }

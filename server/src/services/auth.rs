@@ -26,6 +26,7 @@ pub async fn register(
     username: &str,
     email: &str,
     password: &str,
+    invite_code: Option<&str>,
 ) -> Result<AuthResponse, ApiError> {
     // Validate input
     if username.len() < 2 || username.len() > 32 {
@@ -37,6 +38,33 @@ pub async fn register(
         return Err(ApiError::InvalidInput(
             "Password must be at least 8 characters".into(),
         ));
+    }
+
+    // Check if this is the first user (bootstrap: no invite code needed)
+    let user_count = queries::count_users(pool).await?;
+    let is_first_user = user_count == 0;
+
+    // Validate invite code (required unless first user)
+    if !is_first_user {
+        let code_str = invite_code.unwrap_or("");
+        if code_str.is_empty() {
+            return Err(ApiError::InvalidInput(
+                "Registration requires an invite code".into(),
+            ));
+        }
+        let reg_code = queries::get_registration_code_by_code(pool, code_str)
+            .await?
+            .ok_or_else(|| ApiError::InvalidInput("Invalid registration code".into()))?;
+        if let Some(expires_at) = reg_code.expires_at {
+            if Utc::now() > expires_at {
+                return Err(ApiError::InvalidInput("Registration code has expired".into()));
+            }
+        }
+        if let Some(max_uses) = reg_code.max_uses {
+            if reg_code.uses >= max_uses {
+                return Err(ApiError::InvalidInput("Registration code has reached its maximum uses".into()));
+            }
+        }
     }
 
     // Check if email already exists
@@ -61,6 +89,18 @@ pub async fn register(
     let user_id = Uuid::now_v7();
     let user = queries::create_user(pool, user_id, instance_id, username, email, &password_hash)
         .await?;
+
+    // First user becomes admin; otherwise increment invite code usage
+    if is_first_user {
+        queries::set_user_admin(pool, user.id, true).await?;
+    } else {
+        queries::increment_registration_code_uses(pool, invite_code.unwrap_or("")).await?;
+    }
+
+    // Re-fetch user to get updated is_admin flag
+    let user = queries::get_user_by_id(pool, user.id)
+        .await?
+        .ok_or(ApiError::NotFound("User"))?;
 
     // Generate tokens
     let (access_token, refresh_token) = create_tokens(pool, config, user.id).await?;

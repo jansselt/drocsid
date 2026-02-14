@@ -11,10 +11,21 @@ export interface User {
   status: string;
   custom_status: string | null;
   theme_preference?: string;
+  is_admin?: boolean;
   bot: boolean;
 }
 
 export type PublicUser = User;
+
+export interface RegistrationCode {
+  id: string;
+  code: string;
+  creator_id: string;
+  max_uses: number | null;
+  uses: number;
+  expires_at: string | null;
+  created_at: string;
+}
 
 // ── Servers ────────────────────────────────────────────
 

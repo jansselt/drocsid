@@ -279,3 +279,109 @@
   height: 100%;
   object-fit: cover;
 }
+
+/* Admin tab */
+
+.admin-panel h3 {
+  margin: 0 0 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.admin-create-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.admin-create-code .profile-field input[type="number"] {
+  padding: 8px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-family: inherit;
+  width: 100%;
+}
+
+.admin-create-code .profile-field input[type="number"]::placeholder {
+  color: var(--text-muted);
+}
+
+.admin-codes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.admin-code-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.admin-code-item.admin-code-inactive {
+  opacity: 0.5;
+}
+
+.admin-code-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-code-value {
+  font-family: monospace;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.05em;
+}
+
+.admin-code-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.admin-code-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.admin-code-copy {
+  padding: 4px 10px;
+  background: var(--accent);
+  border: none;
+  border-radius: 4px;
+  color: white;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.admin-code-copy:hover {
+  background: var(--accent-hover);
+}
+
+.admin-code-delete {
+  padding: 4px 10px;
+  background: none;
+  border: 1px solid var(--danger, #ed4245);
+  border-radius: 4px;
+  color: var(--danger, #ed4245);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.admin-code-delete:hover {
+  background: var(--danger, #ed4245);
+  color: white;
+}

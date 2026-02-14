@@ -11,7 +11,7 @@ interface AuthState {
 
   init: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
-  register: (username: string, email: string, password: string) => Promise<void>;
+  register: (username: string, email: string, password: string, inviteCode?: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -50,8 +50,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     gateway.connect();
   },
 
-  register: async (username, email, password) => {
-    const response = await api.register(username, email, password);
+  register: async (username, email, password, inviteCode) => {
+    const response = await api.register(username, email, password, inviteCode);
     api.setTokens(response.access_token, response.refresh_token);
     if (response.user.theme_preference) {
       useThemeStore.getState().setTheme(response.user.theme_preference as ThemeName);

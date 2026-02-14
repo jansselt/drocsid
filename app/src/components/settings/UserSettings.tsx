@@ -3,6 +3,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useServerStore } from '../../stores/serverStore';
 import { useThemeStore, themeNames, themeLabels, applyThemeToDOM, type ThemeName } from '../../stores/themeStore';
 import * as api from '../../api/client';
+import type { RegistrationCode } from '../../types';
 import './UserSettings.css';
 
 interface UserSettingsProps {
@@ -31,7 +32,7 @@ export function UserSettings({ onClose }: UserSettingsProps) {
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'appearance' | 'voice'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'appearance' | 'voice' | 'admin'>('profile');
 
   // Profile form state
   const [displayName, setDisplayName] = useState(user?.display_name || '');
@@ -146,6 +147,14 @@ export function UserSettings({ onClose }: UserSettingsProps) {
             >
               Voice &amp; Video
             </button>
+            {user.is_admin && (
+              <button
+                className={`settings-nav-item ${activeTab === 'admin' ? 'active' : ''}`}
+                onClick={() => setActiveTab('admin')}
+              >
+                Admin
+              </button>
+            )}
           </div>
 
           <div className="settings-content">
@@ -254,6 +263,7 @@ export function UserSettings({ onClose }: UserSettingsProps) {
             )}
 
             {activeTab === 'voice' && <VoiceVideoSettings />}
+            {activeTab === 'admin' && <AdminPanel />}
           </div>
         </div>
       </div>
@@ -466,6 +476,141 @@ function VoiceVideoSettings() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function AdminPanel() {
+  const [codes, setCodes] = useState<RegistrationCode[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [maxUses, setMaxUses] = useState('');
+  const [expiryHours, setExpiryHours] = useState('');
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+
+  const loadCodes = useCallback(async () => {
+    try {
+      const data = await api.getRegistrationCodes();
+      setCodes(data);
+    } catch {
+      // silently fail
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    loadCodes();
+  }, [loadCodes]);
+
+  const handleCreate = async () => {
+    setCreating(true);
+    try {
+      const options: { max_uses?: number; max_age_secs?: number } = {};
+      if (maxUses) options.max_uses = parseInt(maxUses, 10);
+      if (expiryHours) options.max_age_secs = parseInt(expiryHours, 10) * 3600;
+      const code = await api.createRegistrationCode(options);
+      setCodes((prev) => [code, ...prev]);
+      setMaxUses('');
+      setExpiryHours('');
+    } catch {
+      // silently fail
+    }
+    setCreating(false);
+  };
+
+  const handleDelete = async (code: string) => {
+    try {
+      await api.deleteRegistrationCode(code);
+      setCodes((prev) => prev.filter((c) => c.code !== code));
+    } catch {
+      // silently fail
+    }
+  };
+
+  const copyLink = (code: string) => {
+    const link = `${window.location.origin}?invite=${code}`;
+    navigator.clipboard.writeText(link);
+    setCopiedCode(code);
+    setTimeout(() => setCopiedCode(null), 2000);
+  };
+
+  const formatExpiry = (expiresAt: string | null) => {
+    if (!expiresAt) return 'Never';
+    const d = new Date(expiresAt);
+    if (d.getTime() < Date.now()) return 'Expired';
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  if (loading) return <div className="admin-panel"><p>Loading...</p></div>;
+
+  return (
+    <div className="admin-panel">
+      <h3>Registration Codes</h3>
+      <p style={{ color: 'var(--text-muted)', marginBottom: '1rem', fontSize: '0.85rem' }}>
+        Generate codes to invite new users. Without a valid code, registration is blocked.
+      </p>
+
+      <div className="admin-create-code">
+        <div className="admin-create-row">
+          <div className="profile-field" style={{ flex: 1 }}>
+            <label>Max Uses</label>
+            <input
+              type="number"
+              min={1}
+              value={maxUses}
+              onChange={(e) => setMaxUses(e.target.value)}
+              placeholder="Unlimited"
+            />
+          </div>
+          <div className="profile-field" style={{ flex: 1 }}>
+            <label>Expires After (hours)</label>
+            <input
+              type="number"
+              min={1}
+              value={expiryHours}
+              onChange={(e) => setExpiryHours(e.target.value)}
+              placeholder="Never"
+            />
+          </div>
+          <button
+            className="profile-save-btn"
+            onClick={handleCreate}
+            disabled={creating}
+            style={{ alignSelf: 'flex-end', marginBottom: '0.25rem' }}
+          >
+            {creating ? 'Creating...' : 'Generate Code'}
+          </button>
+        </div>
+      </div>
+
+      {codes.length === 0 ? (
+        <p style={{ color: 'var(--text-muted)', marginTop: '1rem' }}>No registration codes yet.</p>
+      ) : (
+        <div className="admin-codes-list">
+          {codes.map((c) => {
+            const expired = c.expires_at && new Date(c.expires_at).getTime() < Date.now();
+            const maxedOut = c.max_uses !== null && c.uses >= c.max_uses;
+            return (
+              <div key={c.id} className={`admin-code-item ${expired || maxedOut ? 'admin-code-inactive' : ''}`}>
+                <div className="admin-code-info">
+                  <span className="admin-code-value">{c.code}</span>
+                  <span className="admin-code-meta">
+                    Uses: {c.uses}{c.max_uses !== null ? `/${c.max_uses}` : ''} &middot; Expires: {formatExpiry(c.expires_at)}
+                  </span>
+                </div>
+                <div className="admin-code-actions">
+                  <button className="admin-code-copy" onClick={() => copyLink(c.code)}>
+                    {copiedCode === c.code ? 'Copied!' : 'Copy Link'}
+                  </button>
+                  <button className="admin-code-delete" onClick={() => handleDelete(c.code)}>
+                    Delete
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

@@ -4,8 +4,8 @@ use uuid::Uuid;
 
 use crate::types::entities::{
     Attachment, AuditAction, AuditLogEntry, Ban, Channel, ChannelOverride, ChannelType, DmMember,
-    Invite, Message, Reaction, Relationship, RelationshipType, Role, SearchResult, Server,
-    ServerMember, Session, ThreadMetadata, User, Webhook,
+    Invite, Message, Reaction, Relationship, RelationshipType, RegistrationCode, Role,
+    SearchResult, Server, ServerMember, Session, ThreadMetadata, User, Webhook,
 };
 
 // ── Instance ───────────────────────────────────────────
@@ -41,7 +41,7 @@ pub async fn create_user(
         INSERT INTO users (id, instance_id, username, email, password_hash)
         VALUES ($1, $2, $3, $4, $5)
         RETURNING id, instance_id, username, display_name, email, password_hash,
-                  avatar_url, bio, status, custom_status, theme_preference, bot, created_at, updated_at
+                  avatar_url, bio, status, custom_status, theme_preference, is_admin, bot, created_at, updated_at
         "#,
     )
     .bind(id)
@@ -57,7 +57,7 @@ pub async fn get_user_by_id(pool: &PgPool, id: Uuid) -> Result<Option<User>, sql
     sqlx::query_as::<_, User>(
         r#"
         SELECT id, instance_id, username, display_name, email, password_hash,
-               avatar_url, bio, status, custom_status, theme_preference, bot, created_at, updated_at
+               avatar_url, bio, status, custom_status, theme_preference, is_admin, bot, created_at, updated_at
         FROM users WHERE id = $1
         "#,
     )
@@ -70,7 +70,7 @@ pub async fn get_user_by_email(pool: &PgPool, email: &str) -> Result<Option<User
     sqlx::query_as::<_, User>(
         r#"
         SELECT id, instance_id, username, display_name, email, password_hash,
-               avatar_url, bio, status, custom_status, theme_preference, bot, created_at, updated_at
+               avatar_url, bio, status, custom_status, theme_preference, is_admin, bot, created_at, updated_at
         FROM users WHERE email = $1
         "#,
     )
@@ -1017,7 +1017,7 @@ pub async fn get_user_by_username(
     sqlx::query_as::<_, User>(
         r#"
         SELECT id, instance_id, username, display_name, email, password_hash,
-               avatar_url, bio, status, custom_status, theme_preference, bot, created_at, updated_at
+               avatar_url, bio, status, custom_status, theme_preference, is_admin, bot, created_at, updated_at
         FROM users WHERE username = $1
         "#,
     )
@@ -1035,7 +1035,7 @@ pub async fn search_users_by_username(
     sqlx::query_as::<_, User>(
         r#"
         SELECT id, instance_id, username, display_name, email, password_hash,
-               avatar_url, bio, status, custom_status, theme_preference, bot, created_at, updated_at
+               avatar_url, bio, status, custom_status, theme_preference, is_admin, bot, created_at, updated_at
         FROM users WHERE username ILIKE $1
         ORDER BY username
         LIMIT $2
@@ -1094,7 +1094,7 @@ pub async fn get_dm_members(
     sqlx::query_as::<_, User>(
         r#"
         SELECT u.id, u.instance_id, u.username, u.display_name, u.email, u.password_hash,
-               u.avatar_url, u.bio, u.status, u.custom_status, u.theme_preference, u.bot, u.created_at, u.updated_at
+               u.avatar_url, u.bio, u.status, u.custom_status, u.theme_preference, u.is_admin, u.bot, u.created_at, u.updated_at
         FROM users u
         INNER JOIN dm_members dm ON u.id = dm.user_id
         WHERE dm.channel_id = $1
@@ -1583,7 +1583,7 @@ pub async fn update_user_profile(
             updated_at = now()
         WHERE id = $1
         RETURNING id, instance_id, username, display_name, email, password_hash,
-                  avatar_url, bio, status, custom_status, theme_preference, bot, created_at, updated_at
+                  avatar_url, bio, status, custom_status, theme_preference, is_admin, bot, created_at, updated_at
         "#,
     )
     .bind(user_id)
@@ -1620,4 +1620,89 @@ pub async fn update_server(
     .bind(icon_url)
     .fetch_one(pool)
     .await
+}
+
+// ── Registration Codes ──────────────────────────────────
+
+pub async fn count_users(pool: &PgPool) -> Result<i64, sqlx::Error> {
+    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users")
+        .fetch_one(pool)
+        .await?;
+    Ok(row.0)
+}
+
+pub async fn set_user_admin(pool: &PgPool, user_id: Uuid, is_admin: bool) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET is_admin = $2 WHERE id = $1")
+        .bind(user_id)
+        .bind(is_admin)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn create_registration_code(
+    pool: &PgPool,
+    id: Uuid,
+    creator_id: Uuid,
+    code: &str,
+    max_uses: Option<i32>,
+    expires_at: Option<DateTime<Utc>>,
+) -> Result<RegistrationCode, sqlx::Error> {
+    sqlx::query_as::<_, RegistrationCode>(
+        r#"
+        INSERT INTO registration_codes (id, creator_id, code, max_uses, expires_at)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id, code, creator_id, max_uses, uses, expires_at, created_at
+        "#,
+    )
+    .bind(id)
+    .bind(creator_id)
+    .bind(code)
+    .bind(max_uses)
+    .bind(expires_at)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_registration_code_by_code(
+    pool: &PgPool,
+    code: &str,
+) -> Result<Option<RegistrationCode>, sqlx::Error> {
+    sqlx::query_as::<_, RegistrationCode>(
+        r#"
+        SELECT id, code, creator_id, max_uses, uses, expires_at, created_at
+        FROM registration_codes WHERE code = $1
+        "#,
+    )
+    .bind(code)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn get_all_registration_codes(pool: &PgPool) -> Result<Vec<RegistrationCode>, sqlx::Error> {
+    sqlx::query_as::<_, RegistrationCode>(
+        r#"
+        SELECT id, code, creator_id, max_uses, uses, expires_at, created_at
+        FROM registration_codes
+        ORDER BY created_at DESC
+        "#,
+    )
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn increment_registration_code_uses(pool: &PgPool, code: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE registration_codes SET uses = uses + 1 WHERE code = $1")
+        .bind(code)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn delete_registration_code(pool: &PgPool, code: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM registration_codes WHERE code = $1")
+        .bind(code)
+        .execute(pool)
+        .await?;
+    Ok(())
 }

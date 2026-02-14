@@ -21,6 +21,7 @@ pub struct User {
     pub status: String,
     pub custom_status: Option<String>,
     pub theme_preference: String,
+    pub is_admin: bool,
     pub bot: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -298,6 +299,26 @@ pub struct RegisterRequest {
     pub username: String,
     pub email: String,
     pub password: String,
+    pub invite_code: Option<String>,
+}
+
+// ── Registration Codes ────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct RegistrationCode {
+    pub id: Uuid,
+    pub code: String,
+    pub creator_id: Uuid,
+    pub max_uses: Option<i32>,
+    pub uses: i32,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateRegistrationCodeRequest {
+    pub max_uses: Option<i32>,
+    pub max_age_secs: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]

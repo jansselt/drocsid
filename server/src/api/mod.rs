@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod auth;
 pub mod bans;
 pub mod channels;
@@ -43,6 +44,7 @@ fn api_routes() -> Router<AppState> {
                 .merge(voice::routes())
                 .merge(webhooks::routes()),
         )
+        .nest("/admin", admin::routes())
         .nest("/dms", dms::routes())
         .nest("/relationships", relationships::routes())
         .nest("/search", search::routes())

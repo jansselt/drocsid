@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import './AuthPage.css';
 
@@ -7,11 +7,22 @@ export function AuthPage() {
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const login = useAuthStore((s) => s.login);
   const register = useAuthStore((s) => s.register);
+
+  // Read invite code from URL param and auto-switch to register mode
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const invite = params.get('invite');
+    if (invite) {
+      setInviteCode(invite);
+      setIsLogin(false);
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,7 +33,7 @@ export function AuthPage() {
       if (isLogin) {
         await login(email, password);
       } else {
-        await register(username, email, password);
+        await register(username, email, password, inviteCode || undefined);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
@@ -40,6 +51,20 @@ export function AuthPage() {
         </p>
 
         <form onSubmit={handleSubmit} className="auth-form">
+          {!isLogin && (
+            <div className="form-group">
+              <label htmlFor="invite-code">Invite Code</label>
+              <input
+                id="invite-code"
+                type="text"
+                value={inviteCode}
+                onChange={(e) => setInviteCode(e.target.value)}
+                placeholder="Required to register"
+                autoComplete="off"
+              />
+            </div>
+          )}
+
           {!isLogin && (
             <div className="form-group">
               <label htmlFor="username">Username</label>
