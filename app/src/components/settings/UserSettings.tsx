@@ -10,11 +10,20 @@ interface UserSettingsProps {
 }
 
 const themeSwatches: Record<ThemeName, { bg: string; accent: string; text: string }> = {
-  dark:     { bg: '#1a1b1e', accent: '#6366f1', text: '#e4e4e7' },
-  light:    { bg: '#f3f4f6', accent: '#4f46e5', text: '#111827' },
-  midnight: { bg: '#110f2a', accent: '#7c3aed', text: '#e0def4' },
-  forest:   { bg: '#0f1f17', accent: '#10b981', text: '#d4e7dc' },
-  rose:     { bg: '#220f1b', accent: '#ec4899', text: '#f0dde6' },
+  dark:              { bg: '#1a1b1e', accent: '#6366f1', text: '#e4e4e7' },
+  light:             { bg: '#f3f4f6', accent: '#4f46e5', text: '#111827' },
+  midnight:          { bg: '#110f2a', accent: '#7c3aed', text: '#e0def4' },
+  forest:            { bg: '#0f1f17', accent: '#10b981', text: '#d4e7dc' },
+  rose:              { bg: '#220f1b', accent: '#ec4899', text: '#f0dde6' },
+  'solarized-dark':  { bg: '#002b36', accent: '#268bd2', text: '#93a1a1' },
+  'solarized-light': { bg: '#fdf6e3', accent: '#268bd2', text: '#073642' },
+  dracula:           { bg: '#282a36', accent: '#bd93f9', text: '#f8f8f2' },
+  monokai:           { bg: '#272822', accent: '#a6e22e', text: '#f8f8f2' },
+  gruvbox:           { bg: '#282828', accent: '#fabd2f', text: '#ebdbb2' },
+  nord:              { bg: '#2e3440', accent: '#88c0d0', text: '#d8dee9' },
+  catppuccin:        { bg: '#1e1e2e', accent: '#cba6f7', text: '#cdd6f4' },
+  'tokyo-night':     { bg: '#1a1b26', accent: '#7aa2f7', text: '#c0caf5' },
+  terminal:          { bg: '#0d0d0d', accent: '#00ff00', text: '#00ff00' },
 };
 
 export function UserSettings({ onClose }: UserSettingsProps) {

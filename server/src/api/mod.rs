@@ -107,10 +107,14 @@ async fn update_me(
     // Profile fields
     if body.display_name.is_some() || body.bio.is_some() || body.avatar_url.is_some() || body.theme_preference.is_some() {
         if let Some(ref theme) = body.theme_preference {
-            let valid = matches!(theme.as_str(), "dark" | "light" | "midnight" | "forest" | "rose");
+            let valid = matches!(theme.as_str(),
+                "dark" | "light" | "midnight" | "forest" | "rose"
+                | "solarized-dark" | "solarized-light" | "dracula" | "monokai"
+                | "gruvbox" | "nord" | "catppuccin" | "tokyo-night" | "terminal"
+            );
             if !valid {
                 return Err(crate::error::ApiError::InvalidInput(
-                    "Theme must be one of: dark, light, midnight, forest, rose".into(),
+                    "Invalid theme name".into(),
                 ));
             }
         }

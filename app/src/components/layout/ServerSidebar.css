@@ -16,6 +16,7 @@
   border-radius: 50%;
   background: var(--bg-secondary);
   border: none;
+  padding: 0;
   color: var(--text-primary);
   font-size: 0.875rem;
   font-weight: 600;
