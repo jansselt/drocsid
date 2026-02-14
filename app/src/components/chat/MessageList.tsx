@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import { useAuthStore } from '../../stores/authStore';
 import type { Message, ReactionGroup } from '../../types';
@@ -30,34 +30,48 @@ export function MessageList({ channelId }: MessageListProps) {
   const [editContent, setEditContent] = useState('');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [emojiPickerForId, setEmojiPickerForId] = useState<string | null>(null);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
   const isLoadingMore = useRef(false);
   const atBottomRef = useRef(true);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const needsInitialScroll = useRef(true);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
     const el = scrollRef.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior });
   }, []);
 
-  // Scroll to bottom on channel switch or initial load
+  // Reset state on channel switch
   useEffect(() => {
     setEditingId(null);
     setEmojiPickerForId(null);
     setHoveredId(null);
-    // Use rAF to ensure DOM has rendered the messages
-    requestAnimationFrame(() => scrollToBottom());
-  }, [channelId, scrollToBottom]);
+    setShowScrollBtn(false);
+    needsInitialScroll.current = true;
+    atBottomRef.current = true;
+  }, [channelId]);
 
-  // Track whether user is near the bottom
+  // Initial scroll: useLayoutEffect ensures we scroll before paint, avoiding flash
+  useLayoutEffect(() => {
+    if (needsInitialScroll.current && messages.length > 0) {
+      needsInitialScroll.current = false;
+      const el = scrollRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    }
+  }, [messages]);
+
+  // Track whether user is near the bottom + show/hide scroll button
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    atBottomRef.current = distFromBottom < 150;
+    setShowScrollBtn(distFromBottom > 300);
   }, []);
 
-  // Auto-scroll when new messages arrive
+  // Auto-scroll when new messages arrive (after initial load)
   useEffect(() => {
-    if (messages.length === 0) return;
+    if (messages.length === 0 || needsInitialScroll.current) return;
     const lastMsg = messages[messages.length - 1];
     const isOwn = lastMsg?.author_id === currentUser?.id;
     // Always scroll for own messages, otherwise only if already at bottom
@@ -192,15 +206,18 @@ export function MessageList({ channelId }: MessageListProps) {
 
   if (messages.length === 0) {
     return (
-      <div className="message-list">
-        <div className="message-list-empty">
-          <p>No messages yet. Say something!</p>
+      <div className="message-list-wrapper">
+        <div ref={scrollRef} className="message-list">
+          <div className="message-list-empty">
+            <p>No messages yet. Say something!</p>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
+    <div className="message-list-wrapper">
     <div ref={scrollRef} className="message-list" onScroll={handleScroll}>
       {/* Sentinel for loading older messages */}
       <div ref={sentinelRef} className="scroll-sentinel" />
@@ -332,6 +349,19 @@ export function MessageList({ channelId }: MessageListProps) {
           </div>
         );
       })}
+    </div>
+
+    {showScrollBtn && (
+      <button
+        className="scroll-to-bottom-btn"
+        onClick={() => scrollToBottom('smooth')}
+        title="Jump to latest messages"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
+        </svg>
+      </button>
+    )}
     </div>
   );
 }

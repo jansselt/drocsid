@@ -24,6 +24,7 @@ const SLASH_COMMANDS: Record<string, string | null> = {
   '/disapprove': 'ಠ_ಠ',
   '/sparkles':  '✨',
   '/gif':       null, // special: opens GIF picker
+  '/bug':       null, // special: opens bug report modal
 };
 
 export function MessageInput({ channelId }: MessageInputProps) {
@@ -58,6 +59,11 @@ export function MessageInput({ channelId }: MessageInputProps) {
         if (cmd === '/gif') {
           setContent('');
           setShowGifs(true);
+          return;
+        }
+        if (cmd === '/bug') {
+          setContent('');
+          window.dispatchEvent(new CustomEvent('open-bug-report', { detail: rest }));
           return;
         }
         if (replacement !== null) {
@@ -211,7 +217,7 @@ export function MessageInput({ channelId }: MessageInputProps) {
             >
               <span className="slash-cmd-name">{cmd}</span>
               <span className="slash-cmd-desc">
-                {SLASH_COMMANDS[cmd] === null ? 'Open GIF picker' : SLASH_COMMANDS[cmd]}
+                {cmd === '/gif' ? 'Open GIF picker' : cmd === '/bug' ? 'Report a bug' : SLASH_COMMANDS[cmd]}
               </span>
             </button>
           ))}

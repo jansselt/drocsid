@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import { gateway } from '../../api/gateway';
 import { ServerSidebar } from './ServerSidebar';
@@ -6,6 +6,7 @@ import { ChannelSidebar } from './ChannelSidebar';
 import { ChatArea } from '../chat/ChatArea';
 import { MemberSidebar } from './MemberSidebar';
 import { QuickSwitcher } from '../common/QuickSwitcher';
+import { BugReportModal } from '../feedback/BugReportModal';
 import './AppLayout.css';
 
 const IDLE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
@@ -20,6 +21,7 @@ export function AppLayout() {
   const toggleChannelSidebar = useServerStore((s) => s.toggleChannelSidebar);
   const toggleMemberSidebar = useServerStore((s) => s.toggleMemberSidebar);
   const [showSwitcher, setShowSwitcher] = useState(false);
+  const [bugReport, setBugReport] = useState<{ open: boolean; prefill: string }>({ open: false, prefill: '' });
   const idleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const isIdleRef = useRef(false);
 
@@ -57,6 +59,17 @@ export function AppLayout() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleChannelSidebar, toggleMemberSidebar]);
+
+  // Bug report modal via custom event
+  const handleOpenBugReport = useCallback((e: Event) => {
+    const detail = (e as CustomEvent).detail || '';
+    setBugReport({ open: true, prefill: typeof detail === 'string' ? detail : '' });
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener('open-bug-report', handleOpenBugReport);
+    return () => window.removeEventListener('open-bug-report', handleOpenBugReport);
+  }, [handleOpenBugReport]);
 
   // Idle detection: go idle after 5 minutes of no focus/activity
   useEffect(() => {
@@ -107,6 +120,12 @@ export function AppLayout() {
       <ChatArea />
       {activeServerId && showMemberSidebar && <MemberSidebar />}
       {showSwitcher && <QuickSwitcher onClose={() => setShowSwitcher(false)} />}
+      {bugReport.open && (
+        <BugReportModal
+          prefill={bugReport.prefill}
+          onClose={() => setBugReport({ open: false, prefill: '' })}
+        />
+      )}
     </div>
   );
 }

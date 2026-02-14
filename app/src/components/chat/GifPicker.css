@@ -1,7 +1,6 @@
 .gif-picker {
   position: absolute;
   bottom: 100%;
-  left: 0;
   right: 0;
   max-width: 440px;
   height: 400px;
