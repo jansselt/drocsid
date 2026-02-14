@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import { useAuthStore } from '../../stores/authStore';
 import type { Role, Ban, AuditLogEntry } from '../../types';
@@ -17,7 +17,7 @@ export function ServerSettings({ serverId, onClose }: ServerSettingsProps) {
   const currentUser = useAuthStore((s) => s.user);
   const isOwner = server?.owner_id === currentUser?.id;
 
-  const [activeTab, setActiveTab] = useState<'roles' | 'bans' | 'audit-log'>('roles');
+  const [activeTab, setActiveTab] = useState<'overview' | 'roles' | 'bans' | 'audit-log'>(isOwner ? 'overview' : 'roles');
   const [bans, setBans] = useState<Ban[]>([]);
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
@@ -27,6 +27,14 @@ export function ServerSettings({ serverId, onClose }: ServerSettingsProps) {
   const [editName, setEditName] = useState('');
   const [editColor, setEditColor] = useState(0);
   const [saving, setSaving] = useState(false);
+
+  // Overview tab state
+  const [serverName, setServerName] = useState(server?.name || '');
+  const [serverDescription, setServerDescription] = useState(server?.description || '');
+  const [serverIconUrl, setServerIconUrl] = useState(server?.icon_url || '');
+  const [uploadingIcon, setUploadingIcon] = useState(false);
+  const [savingOverview, setSavingOverview] = useState(false);
+  const iconInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (selectedRole) {
@@ -109,6 +117,14 @@ export function ServerSettings({ serverId, onClose }: ServerSettingsProps) {
 
         <div className="settings-body">
           <div className="settings-nav">
+            {isOwner && (
+              <button
+                className={`settings-nav-item ${activeTab === 'overview' ? 'active' : ''}`}
+                onClick={() => setActiveTab('overview')}
+              >
+                Overview
+              </button>
+            )}
             <button
               className={`settings-nav-item ${activeTab === 'roles' ? 'active' : ''}`}
               onClick={() => setActiveTab('roles')}
@@ -140,6 +156,104 @@ export function ServerSettings({ serverId, onClose }: ServerSettingsProps) {
           </div>
 
           <div className="settings-content">
+            {activeTab === 'overview' && server && (
+              <div className="overview-panel">
+                <div className="profile-avatar-section">
+                  <div className="profile-avatar-large">
+                    {serverIconUrl ? (
+                      <img src={serverIconUrl} alt="" />
+                    ) : (
+                      server.name[0].toUpperCase()
+                    )}
+                  </div>
+                  <button
+                    className="profile-avatar-upload-btn"
+                    onClick={() => iconInputRef.current?.click()}
+                    disabled={uploadingIcon}
+                  >
+                    {uploadingIcon ? 'Uploading...' : 'Upload Icon'}
+                  </button>
+                  <input
+                    ref={iconInputRef}
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file || !file.type.startsWith('image/') || file.size > 5 * 1024 * 1024) return;
+                      setUploadingIcon(true);
+                      try {
+                        const { upload_url, file_url } = await api.requestServerIconUploadUrl(
+                          serverId, file.name, file.type, file.size,
+                        );
+                        await api.uploadFile(upload_url, file);
+                        setServerIconUrl(file_url);
+                        await api.updateServer(serverId, { icon_url: file_url });
+                      } catch {
+                        // Error handled silently
+                      }
+                      setUploadingIcon(false);
+                      if (iconInputRef.current) iconInputRef.current.value = '';
+                    }}
+                  />
+                </div>
+
+                <div className="profile-fields">
+                  <div className="profile-field">
+                    <label>Server Name</label>
+                    <input
+                      type="text"
+                      value={serverName}
+                      onChange={(e) => setServerName(e.target.value)}
+                      maxLength={100}
+                    />
+                  </div>
+
+                  <div className="profile-field">
+                    <label>Description</label>
+                    <textarea
+                      value={serverDescription}
+                      onChange={(e) => setServerDescription(e.target.value)}
+                      placeholder="What's this server about?"
+                      rows={3}
+                    />
+                  </div>
+                </div>
+
+                {(serverName !== (server.name || '') || serverDescription !== (server.description || '')) && (
+                  <div className="profile-save-bar">
+                    <button
+                      className="profile-save-btn"
+                      onClick={async () => {
+                        setSavingOverview(true);
+                        try {
+                          const updates: Record<string, string> = {};
+                          if (serverName !== server.name) updates.name = serverName;
+                          if (serverDescription !== (server.description || '')) updates.description = serverDescription;
+                          await api.updateServer(serverId, updates);
+                        } catch {
+                          // Error handled silently
+                        }
+                        setSavingOverview(false);
+                      }}
+                      disabled={savingOverview}
+                    >
+                      {savingOverview ? 'Saving...' : 'Save Changes'}
+                    </button>
+                    <button
+                      className="profile-reset-btn"
+                      onClick={() => {
+                        setServerName(server.name || '');
+                        setServerDescription(server.description || '');
+                      }}
+                    >
+                      Reset
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {activeTab === 'roles' && (
               <div className="roles-panel">
                 <div className="roles-list">

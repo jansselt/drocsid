@@ -20,12 +20,13 @@ pub struct User {
     pub bio: Option<String>,
     pub status: String,
     pub custom_status: Option<String>,
+    pub theme_preference: String,
     pub bot: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
-/// User data safe to send to other users (no email, no password)
+/// User data safe to send to other users (no email, no password, no theme)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublicUser {
     pub id: Uuid,

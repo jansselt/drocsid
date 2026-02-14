@@ -156,8 +156,48 @@ export async function getServerMembers(serverId: string): Promise<ServerMemberWi
   return request(`/servers/${serverId}/members`);
 }
 
-export async function updateMe(data: { status?: string; custom_status?: string }): Promise<User> {
+export async function updateMe(data: {
+  status?: string;
+  custom_status?: string;
+  display_name?: string;
+  bio?: string;
+  avatar_url?: string;
+  theme_preference?: string;
+}): Promise<User> {
   return request('/users/@me', { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+export async function requestAvatarUploadUrl(
+  filename: string,
+  contentType: string,
+  sizeBytes: number,
+): Promise<UploadUrlResponse> {
+  return request('/users/@me/avatar', {
+    method: 'POST',
+    body: JSON.stringify({ filename, content_type: contentType, size_bytes: sizeBytes }),
+  });
+}
+
+export async function updateServer(
+  serverId: string,
+  data: { name?: string; description?: string; icon_url?: string },
+): Promise<Server> {
+  return request(`/servers/${serverId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function requestServerIconUploadUrl(
+  serverId: string,
+  filename: string,
+  contentType: string,
+  sizeBytes: number,
+): Promise<UploadUrlResponse> {
+  return request(`/servers/${serverId}/icon`, {
+    method: 'POST',
+    body: JSON.stringify({ filename, content_type: contentType, size_bytes: sizeBytes }),
+  });
 }
 
 export async function joinServer(serverId: string): Promise<void> {

@@ -466,3 +466,11 @@
   flex-shrink: 0;
   margin-left: auto;
 }
+
+/* ── Overview Panel ──────────────────────────── */
+
+.overview-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}

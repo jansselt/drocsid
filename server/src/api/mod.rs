@@ -13,7 +13,7 @@ pub mod webhooks;
 
 use axum::extract::{State, WebSocketUpgrade};
 use axum::response::IntoResponse;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 
 use crate::gateway::connection::handle_connection;
@@ -52,7 +52,9 @@ fn api_routes() -> Router<AppState> {
 }
 
 fn user_routes() -> Router<AppState> {
-    Router::new().route("/@me", get(get_me).patch(update_me))
+    Router::new()
+        .route("/@me", get(get_me).patch(update_me))
+        .route("/@me/avatar", post(request_avatar_upload))
 }
 
 async fn get_me(
@@ -60,19 +62,23 @@ async fn get_me(
     user: crate::api::auth::AuthUser,
 ) -> Result<impl IntoResponse, crate::error::ApiError> {
     use crate::db::queries;
-    use crate::types::entities::PublicUser;
 
     let user_data = queries::get_user_by_id(&state.db, user.user_id)
         .await?
         .ok_or(crate::error::ApiError::NotFound("User"))?;
 
-    Ok(axum::Json(PublicUser::from(user_data)))
+    // Return full User (password_hash is #[serde(skip_serializing)]) so client gets theme_preference
+    Ok(axum::Json(user_data))
 }
 
 #[derive(serde::Deserialize)]
 struct UpdateUserRequest {
     status: Option<String>,
     custom_status: Option<String>,
+    display_name: Option<String>,
+    bio: Option<String>,
+    avatar_url: Option<String>,
+    theme_preference: Option<String>,
 }
 
 async fn update_me(
@@ -81,7 +87,6 @@ async fn update_me(
     axum::Json(body): axum::Json<UpdateUserRequest>,
 ) -> Result<impl IntoResponse, crate::error::ApiError> {
     use crate::db::queries;
-    use crate::types::entities::PublicUser;
 
     if let Some(ref status) = body.status {
         let valid = matches!(status.as_str(), "online" | "idle" | "dnd" | "offline");
@@ -98,11 +103,100 @@ async fn update_me(
         queries::update_user_custom_status(&state.db, user.user_id, Some(custom_status)).await?;
     }
 
+    // Profile fields
+    if body.display_name.is_some() || body.bio.is_some() || body.avatar_url.is_some() || body.theme_preference.is_some() {
+        if let Some(ref theme) = body.theme_preference {
+            let valid = matches!(theme.as_str(), "dark" | "light" | "midnight" | "forest" | "rose");
+            if !valid {
+                return Err(crate::error::ApiError::InvalidInput(
+                    "Theme must be one of: dark, light, midnight, forest, rose".into(),
+                ));
+            }
+        }
+        if let Some(ref name) = body.display_name {
+            if name.len() > 32 {
+                return Err(crate::error::ApiError::InvalidInput(
+                    "Display name must be 32 characters or fewer".into(),
+                ));
+            }
+        }
+        if let Some(ref bio) = body.bio {
+            if bio.len() > 190 {
+                return Err(crate::error::ApiError::InvalidInput(
+                    "Bio must be 190 characters or fewer".into(),
+                ));
+            }
+        }
+
+        queries::update_user_profile(
+            &state.db,
+            user.user_id,
+            body.display_name.as_deref(),
+            body.bio.as_deref(),
+            body.avatar_url.as_deref(),
+            body.theme_preference.as_deref(),
+        )
+        .await?;
+    }
+
     let user_data = queries::get_user_by_id(&state.db, user.user_id)
         .await?
         .ok_or(crate::error::ApiError::NotFound("User"))?;
 
-    Ok(axum::Json(PublicUser::from(user_data)))
+    Ok(axum::Json(user_data))
+}
+
+async fn request_avatar_upload(
+    State(state): State<AppState>,
+    user: crate::api::auth::AuthUser,
+    axum::Json(body): axum::Json<crate::types::entities::UploadRequest>,
+) -> Result<impl IntoResponse, crate::error::ApiError> {
+    let s3 = state
+        .s3
+        .as_ref()
+        .ok_or_else(|| crate::error::ApiError::InvalidInput("File uploads not configured".into()))?;
+    let s3_config = state
+        .config
+        .s3
+        .as_ref()
+        .ok_or_else(|| crate::error::ApiError::InvalidInput("File uploads not configured".into()))?;
+
+    if body.size_bytes > 5 * 1024 * 1024 {
+        return Err(crate::error::ApiError::InvalidInput(
+            "Avatar too large (max 5 MB)".into(),
+        ));
+    }
+
+    if !body.content_type.starts_with("image/") {
+        return Err(crate::error::ApiError::InvalidInput(
+            "Avatar must be an image".into(),
+        ));
+    }
+
+    let object_key = format!("avatars/users/{}/{}", user.user_id, body.filename);
+
+    let presigned = s3
+        .put_object()
+        .bucket(&s3_config.bucket)
+        .key(&object_key)
+        .content_type(&body.content_type)
+        .content_length(body.size_bytes)
+        .presigned(
+            aws_sdk_s3::presigning::PresigningConfig::builder()
+                .expires_in(std::time::Duration::from_secs(600))
+                .build()
+                .map_err(|e| crate::error::ApiError::Internal(e.into()))?,
+        )
+        .await
+        .map_err(|e| crate::error::ApiError::Internal(e.into()))?;
+
+    let file_url = format!("{}/{}", s3_config.public_url.trim_end_matches('/'), object_key);
+
+    Ok(axum::Json(crate::types::entities::UploadUrlResponse {
+        upload_url: presigned.uri().to_string(),
+        file_url,
+        attachment_id: String::new(),
+    }))
 }
 
 async fn health_check() -> impl IntoResponse {

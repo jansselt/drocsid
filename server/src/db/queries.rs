@@ -41,7 +41,7 @@ pub async fn create_user(
         INSERT INTO users (id, instance_id, username, email, password_hash)
         VALUES ($1, $2, $3, $4, $5)
         RETURNING id, instance_id, username, display_name, email, password_hash,
-                  avatar_url, bio, status, custom_status, bot, created_at, updated_at
+                  avatar_url, bio, status, custom_status, theme_preference, bot, created_at, updated_at
         "#,
     )
     .bind(id)
@@ -57,7 +57,7 @@ pub async fn get_user_by_id(pool: &PgPool, id: Uuid) -> Result<Option<User>, sql
     sqlx::query_as::<_, User>(
         r#"
         SELECT id, instance_id, username, display_name, email, password_hash,
-               avatar_url, bio, status, custom_status, bot, created_at, updated_at
+               avatar_url, bio, status, custom_status, theme_preference, bot, created_at, updated_at
         FROM users WHERE id = $1
         "#,
     )
@@ -70,7 +70,7 @@ pub async fn get_user_by_email(pool: &PgPool, email: &str) -> Result<Option<User
     sqlx::query_as::<_, User>(
         r#"
         SELECT id, instance_id, username, display_name, email, password_hash,
-               avatar_url, bio, status, custom_status, bot, created_at, updated_at
+               avatar_url, bio, status, custom_status, theme_preference, bot, created_at, updated_at
         FROM users WHERE email = $1
         "#,
     )
@@ -965,7 +965,7 @@ pub async fn get_user_by_username(
     sqlx::query_as::<_, User>(
         r#"
         SELECT id, instance_id, username, display_name, email, password_hash,
-               avatar_url, bio, status, custom_status, bot, created_at, updated_at
+               avatar_url, bio, status, custom_status, theme_preference, bot, created_at, updated_at
         FROM users WHERE username = $1
         "#,
     )
@@ -1021,7 +1021,7 @@ pub async fn get_dm_members(
     sqlx::query_as::<_, User>(
         r#"
         SELECT u.id, u.instance_id, u.username, u.display_name, u.email, u.password_hash,
-               u.avatar_url, u.bio, u.status, u.custom_status, u.bot, u.created_at, u.updated_at
+               u.avatar_url, u.bio, u.status, u.custom_status, u.theme_preference, u.bot, u.created_at, u.updated_at
         FROM users u
         INNER JOIN dm_members dm ON u.id = dm.user_id
         WHERE dm.channel_id = $1
@@ -1490,4 +1490,61 @@ pub async fn update_user_custom_status(
         .execute(pool)
         .await?;
     Ok(())
+}
+
+pub async fn update_user_profile(
+    pool: &PgPool,
+    user_id: Uuid,
+    display_name: Option<&str>,
+    bio: Option<&str>,
+    avatar_url: Option<&str>,
+    theme_preference: Option<&str>,
+) -> Result<User, sqlx::Error> {
+    sqlx::query_as::<_, User>(
+        r#"
+        UPDATE users SET
+            display_name = COALESCE($2, display_name),
+            bio = COALESCE($3, bio),
+            avatar_url = COALESCE($4, avatar_url),
+            theme_preference = COALESCE($5, theme_preference),
+            updated_at = now()
+        WHERE id = $1
+        RETURNING id, instance_id, username, display_name, email, password_hash,
+                  avatar_url, bio, status, custom_status, theme_preference, bot, created_at, updated_at
+        "#,
+    )
+    .bind(user_id)
+    .bind(display_name)
+    .bind(bio)
+    .bind(avatar_url)
+    .bind(theme_preference)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn update_server(
+    pool: &PgPool,
+    server_id: Uuid,
+    name: Option<&str>,
+    description: Option<&str>,
+    icon_url: Option<&str>,
+) -> Result<Server, sqlx::Error> {
+    sqlx::query_as::<_, Server>(
+        r#"
+        UPDATE servers SET
+            name = COALESCE($2, name),
+            description = COALESCE($3, description),
+            icon_url = COALESCE($4, icon_url),
+            updated_at = now()
+        WHERE id = $1
+        RETURNING id, instance_id, name, description, icon_url, owner_id,
+                  default_channel_id, created_at, updated_at
+        "#,
+    )
+    .bind(server_id)
+    .bind(name)
+    .bind(description)
+    .bind(icon_url)
+    .fetch_one(pool)
+    .await
 }

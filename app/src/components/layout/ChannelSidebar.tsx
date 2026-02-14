@@ -4,6 +4,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { ServerSettings } from '../server/ServerSettings';
 import { InviteModal } from '../server/InviteModal';
 import { CreateChannelModal } from '../channel/CreateChannelModal';
+import { UserSettings } from '../settings/UserSettings';
 import { FriendList } from '../dm/FriendList';
 import { VoiceChannel } from '../voice/VoiceChannel';
 import { VoiceControls } from '../voice/VoiceControls';
@@ -27,11 +28,13 @@ export function ChannelSidebar() {
   const [showSettings, setShowSettings] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [showCreateChannel, setShowCreateChannel] = useState<'text' | 'voice' | null>(null);
+  const [showUserSettings, setShowUserSettings] = useState(false);
   const [homeTab, setHomeTab] = useState<HomeTab>('dms');
 
   // ── Home view (DMs + Friends) ──────────────────────
   if (view === 'home') {
     return (
+      <>
       <div className="channel-sidebar">
         <div className="channel-header">
           <span className="channel-header-text">Direct Messages</span>
@@ -85,8 +88,13 @@ export function ChannelSidebar() {
         )}
 
         <VoiceControls />
-        <UserPanel />
+        <UserPanel onOpenSettings={() => setShowUserSettings(true)} />
       </div>
+
+      {showUserSettings && (
+        <UserSettings onClose={() => setShowUserSettings(false)} />
+      )}
+    </>
     );
   }
 
@@ -176,7 +184,7 @@ export function ChannelSidebar() {
         </div>
 
         <VoiceControls />
-        <UserPanel />
+        <UserPanel onOpenSettings={() => setShowUserSettings(true)} />
       </div>
 
       {showSettings && activeServerId && (
@@ -199,6 +207,10 @@ export function ChannelSidebar() {
           serverId={activeServerId}
           onClose={() => setShowInvite(false)}
         />
+      )}
+
+      {showUserSettings && (
+        <UserSettings onClose={() => setShowUserSettings(false)} />
       )}
     </>
   );

@@ -11,7 +11,11 @@ const STATUS_OPTIONS = [
   { value: 'offline', label: 'Invisible' },
 ] as const;
 
-export function UserPanel() {
+interface UserPanelProps {
+  onOpenSettings?: () => void;
+}
+
+export function UserPanel({ onOpenSettings }: UserPanelProps) {
   const user = useAuthStore((s) => s.user);
   const presences = useServerStore((s) => s.presences);
   const updateMyStatus = useServerStore((s) => s.updateMyStatus);
@@ -40,6 +44,19 @@ export function UserPanel() {
           <span className="user-panel-status">{myStatus === 'dnd' ? 'Do Not Disturb' : myStatus}</span>
         </div>
       </div>
+
+      {onOpenSettings && (
+        <button
+          className="user-panel-settings"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenSettings();
+          }}
+          title="User Settings"
+        >
+          &#9881;
+        </button>
+      )}
 
       {showPicker && (
         <div className="status-picker">
