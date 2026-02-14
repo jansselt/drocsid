@@ -22,6 +22,8 @@ export function ChatArea() {
   const voiceChannelId = useServerStore((s) => s.voiceChannelId);
   const currentUser = useAuthStore((s) => s.user);
 
+  const showChannelSidebar = useServerStore((s) => s.showChannelSidebar);
+  const toggleChannelSidebar = useServerStore((s) => s.toggleChannelSidebar);
   const showMemberSidebar = useServerStore((s) => s.showMemberSidebar);
   const toggleMemberSidebar = useServerStore((s) => s.toggleMemberSidebar);
 
@@ -80,6 +82,17 @@ export function ChatArea() {
         {voiceChannelId && <VoicePanelCompact />}
 
         <div className="chat-header">
+          {!showChannelSidebar && (
+            <button
+              className="chat-header-action chat-header-expand"
+              title="Show Channels (Ctrl+\)"
+              onClick={toggleChannelSidebar}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z" />
+              </svg>
+            </button>
+          )}
           <span className="chat-header-hash">{channelPrefix}</span>
           <span className="chat-header-name">{channelName}</span>
           <div style={{ flex: 1 }} />

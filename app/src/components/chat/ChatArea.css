@@ -160,6 +160,10 @@
   background: var(--bg-hover);
 }
 
+.chat-header-expand {
+  margin-right: 0.25rem;
+}
+
 /* ── Typing Indicator ─────────────────────────────── */
 
 .typing-indicator {
