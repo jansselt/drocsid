@@ -7,10 +7,13 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "tauri": "tauri"
   },
   "dependencies": {
     "@livekit/components-react": "^2.9.19",
+    "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/plugin-notification": "^2.3.3",
     "livekit-client": "^2.17.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
@@ -19,6 +22,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@tauri-apps/cli": "^2.10.0",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",

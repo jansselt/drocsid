@@ -1,3 +1,5 @@
+import { isTauri } from '../api/instance';
+
 const PREF_KEY = 'drocsid:browser-notifications-enabled';
 
 let browserNotificationsEnabled = (() => {
@@ -24,6 +26,7 @@ export function getBrowserNotificationsEnabled(): boolean {
 }
 
 export function getPermissionState(): NotificationPermission | 'unsupported' {
+  if (isTauri()) return 'granted'; // Tauri handles permissions natively
   if (!('Notification' in window)) return 'unsupported';
   return Notification.permission;
 }
@@ -31,6 +34,21 @@ export function getPermissionState(): NotificationPermission | 'unsupported' {
 export async function requestNotificationPermission(): Promise<
   NotificationPermission | 'unsupported'
 > {
+  if (isTauri()) {
+    try {
+      const { isPermissionGranted, requestPermission } = await import(
+        '@tauri-apps/plugin-notification'
+      );
+      let granted = await isPermissionGranted();
+      if (!granted) {
+        const result = await requestPermission();
+        granted = result === 'granted';
+      }
+      return granted ? 'granted' : 'denied';
+    } catch {
+      return 'granted'; // Tauri notifications usually work without explicit permission on Linux
+    }
+  }
   if (!('Notification' in window)) return 'unsupported';
   if (Notification.permission === 'granted') return 'granted';
   if (Notification.permission === 'denied') return 'denied';
@@ -44,9 +62,20 @@ export function showBrowserNotification(
   tag?: string,
 ): void {
   if (!browserNotificationsEnabled) return;
+  if (!document.hidden) return;
+
+  if (isTauri()) {
+    import('@tauri-apps/plugin-notification').then(({ sendNotification }) => {
+      sendNotification({ title, body });
+    }).catch(() => {
+      // Fall through silently if plugin unavailable
+    });
+    return;
+  }
+
+  // Web fallback
   if (!('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;
-  if (!document.hidden) return;
 
   const notification = new Notification(title, {
     body,

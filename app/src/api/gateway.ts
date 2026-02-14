@@ -1,7 +1,7 @@
 import { GatewayOpcode, type GatewayPayload, type ReadyPayload } from '../types';
 import { getAccessToken } from './client';
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080';
+import { getWsUrl } from './instance';
 
 type EventHandler = (event: string, data: unknown) => void;
 
@@ -26,7 +26,7 @@ export class GatewayConnection {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    this.ws = new WebSocket(`${WS_URL}/gateway`);
+    this.ws = new WebSocket(`${getWsUrl()}/gateway`);
 
     this.ws.onopen = () => {
       this.reconnectAttempts = 0;

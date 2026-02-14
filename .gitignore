@@ -1,5 +1,7 @@
 # Rust
 /server/target/
+/app/src-tauri/target/
+/app/src-tauri/gen/
 *.swp
 
 # Node
