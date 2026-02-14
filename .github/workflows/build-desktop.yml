@@ -1,0 +1,68 @@
+name: Build Desktop App
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: self-hosted
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install npm dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Build Tauri app
+        working-directory: app
+        run: npm run tauri -- build
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          VITE_WS_URL: ${{ secrets.VITE_WS_URL }}
+
+      - name: Get version
+        id: version
+        run: echo "version=$(jq -r .version app/src-tauri/tauri.conf.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-packages
+          path: |
+            app/src-tauri/target/release/bundle/rpm/*.rpm
+            app/src-tauri/target/release/bundle/deb/*.deb
+
+      # Update rolling "latest" release on every push to main
+      - name: Update latest release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Delete existing latest release if it exists
+          gh release delete latest --yes 2>/dev/null || true
+          git tag -d latest 2>/dev/null || true
+          git push origin :refs/tags/latest 2>/dev/null || true
+
+          # Create new latest release
+          gh release create latest \
+            --title "Latest Build" \
+            --notes "Automated build from main branch ($(date -u '+%Y-%m-%d %H:%M UTC'))" \
+            --prerelease \
+            app/src-tauri/target/release/bundle/rpm/*.rpm \
+            app/src-tauri/target/release/bundle/deb/*.deb
+
+      # Create versioned release on tags
+      - name: Create versioned release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "Drocsid ${{ github.ref_name }}" \
+            --generate-notes \
+            app/src-tauri/target/release/bundle/rpm/*.rpm \
+            app/src-tauri/target/release/bundle/deb/*.deb
