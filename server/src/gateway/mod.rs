@@ -327,7 +327,7 @@ impl GatewayState {
 
     /// Update a user's presence status
     pub fn update_presence(&self, user_id: Uuid, status: &str) {
-        let valid = matches!(status, "online" | "idle" | "dnd");
+        let valid = matches!(status, "online" | "idle" | "dnd" | "invisible");
         if !valid {
             return;
         }
@@ -336,14 +336,16 @@ impl GatewayState {
             presence.status = status.to_string();
         }
 
-        self.broadcast_presence(user_id, status, None);
+        // Invisible users appear offline to others
+        let broadcast_status = if status == "invisible" { "offline" } else { status };
+        self.broadcast_presence(user_id, broadcast_status, None);
     }
 
-    /// Get a user's current presence status (returns "offline" if not connected)
+    /// Get a user's public presence status (returns "offline" if not connected or invisible)
     pub fn get_presence(&self, user_id: Uuid) -> String {
         self.presences
             .get(&user_id)
-            .map(|p| p.status.clone())
+            .map(|p| if p.status == "invisible" { "offline".into() } else { p.status.clone() })
             .unwrap_or_else(|| "offline".into())
     }
 

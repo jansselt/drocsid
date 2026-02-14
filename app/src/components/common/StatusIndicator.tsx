@@ -9,6 +9,7 @@ const STATUS_COLORS: Record<string, string> = {
   online: '#23a55a',
   idle: '#f0b232',
   dnd: '#f23f43',
+  invisible: '#80848e',
   offline: '#80848e',
 };
 
@@ -23,7 +24,7 @@ export function StatusIndicator({ status, size = 'md' }: StatusIndicatorProps) {
     >
       {status === 'dnd' && <span className="status-dnd-line" />}
       {status === 'idle' && <span className="status-idle-cutout" />}
-      {status === 'offline' && <span className="status-offline-cutout" />}
+      {(status === 'offline' || status === 'invisible') && <span className="status-offline-cutout" />}
     </span>
   );
 }

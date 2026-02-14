@@ -8,7 +8,7 @@ const STATUS_OPTIONS = [
   { value: 'online', label: 'Online' },
   { value: 'idle', label: 'Idle' },
   { value: 'dnd', label: 'Do Not Disturb' },
-  { value: 'offline', label: 'Invisible' },
+  { value: 'invisible', label: 'Invisible' },
 ] as const;
 
 interface UserPanelProps {
@@ -41,7 +41,7 @@ export function UserPanel({ onOpenSettings }: UserPanelProps) {
         </div>
         <div className="user-panel-text">
           <span className="user-panel-name">{displayName}</span>
-          <span className="user-panel-status">{myStatus === 'dnd' ? 'Do Not Disturb' : myStatus}</span>
+          <span className="user-panel-status">{myStatus === 'dnd' ? 'Do Not Disturb' : myStatus === 'invisible' ? 'Invisible' : myStatus}</span>
         </div>
       </div>
 

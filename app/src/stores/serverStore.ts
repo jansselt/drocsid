@@ -600,6 +600,16 @@ export const useServerStore = create<ServerState>((set, get) => ({
     try {
       await api.updateMe({ status });
       gateway.sendPresenceUpdate(status);
+      // Set own presence locally so the UI reflects the chosen status immediately
+      // (the server broadcasts "offline" for invisible, so we must set it here)
+      const userId = useAuthStore.getState().user?.id;
+      if (userId) {
+        set((state) => {
+          const presences = new Map(state.presences);
+          presences.set(userId, status);
+          return { presences };
+        });
+      }
     } catch {
       // ignore
     }
@@ -1036,6 +1046,11 @@ export const useServerStore = create<ServerState>((set, get) => ({
           const ev = data as PresenceUpdateEvent;
           set((state) => {
             const presences = new Map(state.presences);
+            // Don't let the server's broadcast overwrite our own invisible status
+            const myId = useAuthStore.getState().user?.id;
+            if (ev.user_id === myId && ev.status === 'offline' && presences.get(myId) === 'invisible') {
+              return state;
+            }
             presences.set(ev.user_id, ev.status);
             return { presences };
           });

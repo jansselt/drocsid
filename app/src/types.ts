@@ -256,7 +256,7 @@ export interface MessagePinEvent {
 
 // ── Presence ────────────────────────────────────────
 
-export type PresenceStatus = 'online' | 'idle' | 'dnd' | 'offline';
+export type PresenceStatus = 'online' | 'idle' | 'dnd' | 'invisible' | 'offline';
 
 export interface PresenceUpdateEvent {
   user_id: string;

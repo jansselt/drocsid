@@ -92,10 +92,10 @@ async fn update_me(
     use crate::db::queries;
 
     if let Some(ref status) = body.status {
-        let valid = matches!(status.as_str(), "online" | "idle" | "dnd" | "offline");
+        let valid = matches!(status.as_str(), "online" | "idle" | "dnd" | "invisible" | "offline");
         if !valid {
             return Err(crate::error::ApiError::InvalidInput(
-                "Status must be one of: online, idle, dnd, offline".into(),
+                "Status must be one of: online, idle, dnd, invisible, offline".into(),
             ));
         }
         queries::update_user_status(&state.db, user.user_id, status).await?;
