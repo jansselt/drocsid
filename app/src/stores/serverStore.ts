@@ -62,6 +62,7 @@ interface ServerState {
   activeChannelId: string | null;
   messages: Map<string, Message[]>; // channel_id -> messages
   reactions: Map<string, ReactionGroup[]>; // message_id -> reaction groups
+  channelAccessOrder: string[]; // LRU tracking: most recently accessed at end
   users: Map<string, User>; // user_id -> User (cache)
 
   // DM state
@@ -191,6 +192,61 @@ interface ServerState {
 }
 
 const TYPING_TIMEOUT = 8000;
+const MAX_CACHED_CHANNELS = 5;
+
+function touchLru(order: string[], channelId: string): string[] {
+  const filtered = order.filter((id) => id !== channelId);
+  filtered.push(channelId);
+  return filtered;
+}
+
+function evictLruChannels(
+  messages: Map<string, Message[]>,
+  reactions: Map<string, ReactionGroup[]>,
+  channelAccessOrder: string[],
+): { messages: Map<string, Message[]>; reactions: Map<string, ReactionGroup[]>; channelAccessOrder: string[] } {
+  if (channelAccessOrder.length <= MAX_CACHED_CHANNELS) {
+    return { messages, reactions, channelAccessOrder };
+  }
+
+  const newMessages = new Map(messages);
+  const newReactions = new Map(reactions);
+  const newOrder = [...channelAccessOrder];
+
+  while (newOrder.length > MAX_CACHED_CHANNELS) {
+    const evictedChannelId = newOrder.shift()!;
+    const evictedMsgs = newMessages.get(evictedChannelId);
+    if (evictedMsgs) {
+      for (const msg of evictedMsgs) {
+        newReactions.delete(msg.id);
+      }
+      newMessages.delete(evictedChannelId);
+    }
+  }
+
+  return { messages: newMessages, reactions: newReactions, channelAccessOrder: newOrder };
+}
+
+function updateLastMessageId(
+  state: { channels: Map<string, Channel[]>; dmChannels: Channel[] },
+  channelId: string,
+  messageId: string,
+): { channels: Map<string, Channel[]>; dmChannels: Channel[] } {
+  const channels = new Map(state.channels);
+  for (const [serverId, serverChannels] of channels) {
+    const idx = serverChannels.findIndex((c) => c.id === channelId);
+    if (idx !== -1) {
+      const updated = [...serverChannels];
+      updated[idx] = { ...updated[idx], last_message_id: messageId };
+      channels.set(serverId, updated);
+      break;
+    }
+  }
+  const dmChannels = state.dmChannels.map((c) =>
+    c.id === channelId ? { ...c, last_message_id: messageId } : c,
+  );
+  return { channels, dmChannels };
+}
 
 export const useServerStore = create<ServerState>((set, get) => ({
   view: 'servers',
@@ -201,6 +257,7 @@ export const useServerStore = create<ServerState>((set, get) => ({
   activeChannelId: null,
   messages: new Map(),
   reactions: new Map(),
+  channelAccessOrder: [],
   users: new Map(),
   showChannelSidebar: JSON.parse(localStorage.getItem('drocsid_show_channel_sidebar') ?? 'true'),
   showMemberSidebar: JSON.parse(localStorage.getItem('drocsid_show_member_sidebar') ?? 'true'),
@@ -236,7 +293,7 @@ export const useServerStore = create<ServerState>((set, get) => ({
   setServers: (servers) => set({ servers }),
 
   setActiveServer: (serverId) => {
-    set({ activeServerId: serverId, activeChannelId: null, activeThreadId: null, view: 'servers' });
+    set({ activeServerId: serverId, activeChannelId: null, activeThreadId: null, view: 'servers', threads: new Map(), threadMetadata: new Map() });
     const { channels, loadChannels, roles, loadRoles, members, loadMembers } = get();
     if (!channels.has(serverId)) {
       loadChannels(serverId);
@@ -256,7 +313,11 @@ export const useServerStore = create<ServerState>((set, get) => ({
   },
 
   setActiveChannel: (channelId) => {
-    set({ activeChannelId: channelId, activeThreadId: null });
+    set((state) => ({
+      activeChannelId: channelId,
+      activeThreadId: null,
+      channelAccessOrder: touchLru(state.channelAccessOrder, channelId),
+    }));
     const { messages, loadMessages } = get();
     if (!messages.has(channelId)) {
       loadMessages(channelId);
@@ -291,7 +352,8 @@ export const useServerStore = create<ServerState>((set, get) => ({
           reactions.set(msg.id, msg.reactions);
         }
       }
-      return { messages, reactions };
+      const channelAccessOrder = touchLru(state.channelAccessOrder, channelId);
+      return evictLruChannels(messages, reactions, channelAccessOrder);
     });
   },
 
@@ -324,14 +386,6 @@ export const useServerStore = create<ServerState>((set, get) => ({
   },
 
   addMessage: (message) => {
-    if (message.author) {
-      set((state) => {
-        const users = new Map(state.users);
-        users.set(message.author!.id, message.author!);
-        return { users };
-      });
-    }
-
     // Notification sounds & browser notifications — only for messages from other users
     const currentUser = useAuthStore.getState().user;
     if (currentUser && message.author_id !== currentUser.id) {
@@ -411,29 +465,30 @@ export const useServerStore = create<ServerState>((set, get) => ({
     }
 
     set((state) => {
-      const messages = new Map(state.messages);
-      const channelMessages = messages.get(message.channel_id) || [];
-      if (channelMessages.some((m) => m.id === message.id)) return state;
-      messages.set(message.channel_id, [...channelMessages, message]);
+      const result: Partial<ServerState> = {};
 
-      // Update last_message_id on the channel (for unread detection)
-      const channels = new Map(state.channels);
-      for (const [serverId, serverChannels] of channels) {
-        const idx = serverChannels.findIndex((c) => c.id === message.channel_id);
-        if (idx !== -1) {
-          const updated = [...serverChannels];
-          updated[idx] = { ...updated[idx], last_message_id: message.id };
-          channels.set(serverId, updated);
-          break;
-        }
+      // Cache author only if not already known (skip redundant Map clones)
+      if (message.author && !state.users.has(message.author.id)) {
+        const users = new Map(state.users);
+        users.set(message.author.id, message.author);
+        result.users = users;
       }
 
-      // Also update DM channels
-      const dmChannels = state.dmChannels.map((c) =>
-        c.id === message.channel_id ? { ...c, last_message_id: message.id } : c,
-      );
+      // If channel was LRU-evicted, don't create a partial cache entry
+      const channelMessages = state.messages.get(message.channel_id);
+      if (channelMessages) {
+        if (channelMessages.some((m) => m.id === message.id)) {
+          // Duplicate message — still update last_message_id
+          Object.assign(result, updateLastMessageId(state, message.channel_id, message.id));
+          return Object.keys(result).length > 0 ? result : state;
+        }
+        const messages = new Map(state.messages);
+        messages.set(message.channel_id, [...channelMessages, message]);
+        result.messages = messages;
+      }
 
-      return { messages, channels, dmChannels };
+      Object.assign(result, updateLastMessageId(state, message.channel_id, message.id));
+      return Object.keys(result).length > 0 ? result : state;
     });
 
     // Auto-ack if this is the active channel
@@ -639,7 +694,13 @@ export const useServerStore = create<ServerState>((set, get) => ({
   },
 
   setActiveDmChannel: (channelId) => {
-    set({ activeChannelId: channelId, activeServerId: null, activeThreadId: null, view: 'home' });
+    set((state) => ({
+      activeChannelId: channelId,
+      activeServerId: null,
+      activeThreadId: null,
+      view: 'home' as ViewMode,
+      channelAccessOrder: touchLru(state.channelAccessOrder, channelId),
+    }));
     const { messages, loadMessages } = get();
     if (!messages.has(channelId)) {
       loadMessages(channelId);
@@ -1335,30 +1396,44 @@ export const useServerStore = create<ServerState>((set, get) => ({
         case 'PRESENCE_UPDATE': {
           const ev = data as PresenceUpdateEvent;
           set((state) => {
-            const presences = new Map(state.presences);
-            // Don't let the server's broadcast overwrite our own invisible status
             const myId = useAuthStore.getState().user?.id;
-            if (ev.user_id === myId && ev.status === 'offline' && presences.get(myId) === 'invisible') {
+            // Don't let the server's broadcast overwrite our own invisible status
+            if (ev.user_id === myId && ev.status === 'offline' && state.presences.get(myId) === 'invisible') {
               return state;
             }
-            presences.set(ev.user_id, ev.status);
 
-            // Update custom_status on the cached User object
-            const users = new Map(state.users);
-            const existingUser = users.get(ev.user_id);
-            if (existingUser) {
-              users.set(ev.user_id, { ...existingUser, custom_status: ev.custom_status ?? null });
+            const currentStatus = state.presences.get(ev.user_id);
+            const statusChanged = currentStatus !== ev.status;
+
+            const existingUser = state.users.get(ev.user_id);
+            const newCustomStatus = ev.custom_status ?? null;
+            const customStatusChanged = existingUser && existingUser.custom_status !== newCustomStatus;
+
+            if (!statusChanged && !customStatusChanged) return state;
+
+            const result: Partial<ServerState> = {};
+
+            if (statusChanged) {
+              const presences = new Map(state.presences);
+              presences.set(ev.user_id, ev.status);
+              result.presences = presences;
+            }
+
+            if (customStatusChanged) {
+              const users = new Map(state.users);
+              users.set(ev.user_id, { ...existingUser!, custom_status: newCustomStatus });
+              result.users = users;
             }
 
             // Also update the auth store user if it's us
             if (ev.user_id === myId) {
               const authUser = useAuthStore.getState().user;
               if (authUser) {
-                useAuthStore.setState({ user: { ...authUser, custom_status: ev.custom_status ?? null } });
+                useAuthStore.setState({ user: { ...authUser, custom_status: newCustomStatus } });
               }
             }
 
-            return { presences, users };
+            return result;
           });
           break;
         }

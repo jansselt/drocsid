@@ -8,6 +8,8 @@ type EventHandler = (event: string, data: unknown) => void;
 export class GatewayConnection {
   private ws: WebSocket | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private jitterTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private sequence: number | null = null;
   private reconnectAttempts = 0;
   private handlers: EventHandler[] = [];
@@ -20,6 +22,10 @@ export class GatewayConnection {
     if (!token) return;
 
     this.intentionalClose = false;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     this.ws = new WebSocket(`${WS_URL}/gateway`);
 
     this.ws.onopen = () => {
@@ -45,6 +51,10 @@ export class GatewayConnection {
 
   disconnect() {
     this.intentionalClose = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     this.stopHeartbeat();
     this.ws?.close();
     this.ws = null;
@@ -92,7 +102,13 @@ export class GatewayConnection {
         if (!resumable) {
           this.sequence = null;
         }
-        setTimeout(() => this.connect(), 1000 + Math.random() * 4000);
+        if (this.reconnectTimer) {
+          clearTimeout(this.reconnectTimer);
+        }
+        this.reconnectTimer = setTimeout(() => {
+          this.reconnectTimer = null;
+          this.connect();
+        }, 1000 + Math.random() * 4000);
         break;
       }
     }
@@ -112,7 +128,8 @@ export class GatewayConnection {
     this.stopHeartbeat();
     // Add jitter to prevent thundering herd
     const jitter = Math.random() * intervalMs;
-    setTimeout(() => {
+    this.jitterTimer = setTimeout(() => {
+      this.jitterTimer = null;
       this.sendHeartbeat();
       this.heartbeatTimer = setInterval(() => {
         this.sendHeartbeat();
@@ -121,6 +138,10 @@ export class GatewayConnection {
   }
 
   private stopHeartbeat() {
+    if (this.jitterTimer) {
+      clearTimeout(this.jitterTimer);
+      this.jitterTimer = null;
+    }
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
@@ -148,9 +169,15 @@ export class GatewayConnection {
   }
 
   private scheduleReconnect() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+    }
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
     this.reconnectAttempts++;
-    setTimeout(() => this.connect(), delay);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect();
+    }, delay);
   }
 }
 
