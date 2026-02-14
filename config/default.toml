@@ -27,4 +27,4 @@ api_secret = "devsecret"
 [gif]
 provider = "giphy"
 api_key = "DrZ1aJ4UIyYGzxjyeUDkOyvWbf4gh9bF"
-rating = "pg-13"
+rating = "r"
