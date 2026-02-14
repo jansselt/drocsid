@@ -26,6 +26,7 @@ export function ChannelSidebar() {
   const dmRecipients = useServerStore((s) => s.dmRecipients);
   const setActiveDmChannel = useServerStore((s) => s.setActiveDmChannel);
   const closeDm = useServerStore((s) => s.closeDm);
+  const toggleChannelSidebar = useServerStore((s) => s.toggleChannelSidebar);
   const currentUser = useAuthStore((s) => s.user);
 
   const [showSettings, setShowSettings] = useState(false);
@@ -41,6 +42,15 @@ export function ChannelSidebar() {
       <>
       <div className="channel-sidebar">
         <div className="channel-header">
+          <button
+            className="channel-sidebar-collapse"
+            onClick={toggleChannelSidebar}
+            title="Collapse Sidebar (Ctrl+\)"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
+            </svg>
+          </button>
           <span className="channel-header-text">Direct Messages</span>
           <button
             className="channel-header-settings"
@@ -133,6 +143,15 @@ export function ChannelSidebar() {
     return (
       <div className="channel-sidebar">
         <div className="channel-header">
+          <button
+            className="channel-sidebar-collapse"
+            onClick={toggleChannelSidebar}
+            title="Collapse Sidebar (Ctrl+\)"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
+            </svg>
+          </button>
           <span className="channel-header-text">Select a server</span>
         </div>
       </div>
@@ -143,6 +162,15 @@ export function ChannelSidebar() {
     <>
       <div className="channel-sidebar">
         <div className="channel-header">
+          <button
+            className="channel-sidebar-collapse"
+            onClick={toggleChannelSidebar}
+            title="Collapse Sidebar (Ctrl+\)"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
+            </svg>
+          </button>
           <span className="channel-header-text">{activeServer.name}</span>
           <button
             className="channel-header-settings"

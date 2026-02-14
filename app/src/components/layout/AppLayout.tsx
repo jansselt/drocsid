@@ -46,7 +46,7 @@ export function AppLayout() {
         e.preventDefault();
         setShowSwitcher((prev) => !prev);
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'b' && e.shiftKey) {
+      if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
         e.preventDefault();
         toggleChannelSidebar();
       } else if ((e.ctrlKey || e.metaKey) && e.key === 'b' && !e.shiftKey) {
