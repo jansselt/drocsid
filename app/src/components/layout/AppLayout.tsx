@@ -8,6 +8,8 @@ import { ChatArea } from '../chat/ChatArea';
 import { MemberSidebar } from './MemberSidebar';
 import { QuickSwitcher } from '../common/QuickSwitcher';
 import { BugReportModal } from '../feedback/BugReportModal';
+import { useDocumentTitle } from '../../hooks/useDocumentTitle';
+import { useFaviconBadge } from '../../hooks/useFaviconBadge';
 import './AppLayout.css';
 
 const IDLE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
@@ -15,6 +17,7 @@ const IDLE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 export function AppLayout() {
   const initGatewayHandlers = useServerStore((s) => s.initGatewayHandlers);
   const setServers = useServerStore((s) => s.setServers);
+  const setReadStates = useServerStore((s) => s.setReadStates);
   const restoreNavigation = useServerStore((s) => s.restoreNavigation);
   const activeServerId = useServerStore((s) => s.activeServerId);
   const showChannelSidebar = useServerStore((s) => s.showChannelSidebar);
@@ -26,10 +29,16 @@ export function AppLayout() {
   const idleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const isIdleRef = useRef(false);
 
+  useDocumentTitle();
+  useFaviconBadge();
+
   useEffect(() => {
     // Set up gateway READY handler
     gateway.onReady = (data) => {
       setServers(data.servers);
+      if (data.read_states) {
+        setReadStates(data.read_states);
+      }
       restoreNavigation();
     };
 
@@ -40,7 +49,7 @@ export function AppLayout() {
       gateway.onReady = null;
       cleanup();
     };
-  }, [initGatewayHandlers, setServers, restoreNavigation]);
+  }, [initGatewayHandlers, setServers, setReadStates, restoreNavigation]);
 
   // Unlock audio context on first user interaction (browser autoplay policy)
   useEffect(() => {

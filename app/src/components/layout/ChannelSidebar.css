@@ -282,3 +282,36 @@
   font-size: 0.875rem;
   outline: none;
 }
+
+/* ── Unread indicators ─────────────────────────────── */
+
+.channel-item.unread .channel-name,
+.dm-item.unread .channel-name {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.unread-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.mention-badge {
+  margin-left: auto;
+  background: #ed4245;
+  color: #fff;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}

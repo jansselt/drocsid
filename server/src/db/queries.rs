@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::types::entities::{
     Attachment, AuditAction, AuditLogEntry, Ban, Channel, ChannelOverride, ChannelType, DmMember,
-    Invite, Message, Reaction, Relationship, RelationshipType, RegistrationCode, Role,
+    Invite, Message, Reaction, ReadState, Relationship, RelationshipType, RegistrationCode, Role,
     SearchResult, Server, ServerMember, Session, ThreadMetadata, User, Webhook,
 };
 
@@ -304,7 +304,7 @@ pub async fn create_channel(
         INSERT INTO channels (id, instance_id, server_id, channel_type, name, topic, parent_id, position)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING id, instance_id, server_id, parent_id, channel_type, name, topic, position,
-                  created_at, updated_at
+                  created_at, updated_at, last_message_id
         "#,
     )
     .bind(id)
@@ -326,7 +326,7 @@ pub async fn get_server_channels(
     sqlx::query_as::<_, Channel>(
         r#"
         SELECT id, instance_id, server_id, parent_id, channel_type, name, topic, position,
-               created_at, updated_at
+               created_at, updated_at, last_message_id
         FROM channels
         WHERE server_id = $1
         ORDER BY position
@@ -341,7 +341,7 @@ pub async fn get_channel_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Channel
     sqlx::query_as::<_, Channel>(
         r#"
         SELECT id, instance_id, server_id, parent_id, channel_type, name, topic, position,
-               created_at, updated_at
+               created_at, updated_at, last_message_id
         FROM channels WHERE id = $1
         "#,
     )
@@ -364,7 +364,7 @@ pub async fn update_channel(
             updated_at = now()
         WHERE id = $1
         RETURNING id, instance_id, server_id, parent_id, channel_type, name, topic, position,
-                  created_at, updated_at
+                  created_at, updated_at, last_message_id
         "#,
     )
     .bind(id)
@@ -1083,7 +1083,7 @@ pub async fn get_dm_channels(
     sqlx::query_as::<_, Channel>(
         r#"
         SELECT c.id, c.instance_id, c.server_id, c.parent_id, c.channel_type,
-               c.name, c.topic, c.position, c.created_at, c.updated_at
+               c.name, c.topic, c.position, c.created_at, c.updated_at, c.last_message_id
         FROM channels c
         INNER JOIN dm_members dm ON c.id = dm.channel_id
         WHERE dm.user_id = $1 AND c.channel_type IN ('dm', 'groupdm') AND dm.closed = FALSE
@@ -1121,7 +1121,7 @@ pub async fn find_existing_dm(
     sqlx::query_as::<_, Channel>(
         r#"
         SELECT c.id, c.instance_id, c.server_id, c.parent_id, c.channel_type,
-               c.name, c.topic, c.position, c.created_at, c.updated_at
+               c.name, c.topic, c.position, c.created_at, c.updated_at, c.last_message_id
         FROM channels c
         WHERE c.channel_type = 'dm'
           AND c.id IN (
@@ -1199,7 +1199,7 @@ pub async fn get_channel_threads(
     sqlx::query_as::<_, Channel>(
         r#"
         SELECT c.id, c.instance_id, c.server_id, c.parent_id, c.channel_type,
-               c.name, c.topic, c.position, c.created_at, c.updated_at
+               c.name, c.topic, c.position, c.created_at, c.updated_at, c.last_message_id
         FROM channels c
         INNER JOIN thread_metadata tm ON c.id = tm.channel_id
         WHERE tm.parent_channel_id = $1 AND tm.archived = false
@@ -1727,6 +1727,85 @@ pub async fn increment_registration_code_uses(pool: &PgPool, code: &str) -> Resu
 pub async fn delete_registration_code(pool: &PgPool, code: &str) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM registration_codes WHERE code = $1")
         .bind(code)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+// ── Read States ──────────────────────────────────────────
+
+pub async fn get_user_read_states(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Vec<ReadState>, sqlx::Error> {
+    sqlx::query_as::<_, ReadState>(
+        r#"
+        SELECT channel_id, last_read_message_id, mention_count
+        FROM read_states
+        WHERE user_id = $1
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn ack_channel(
+    pool: &PgPool,
+    user_id: Uuid,
+    channel_id: Uuid,
+    message_id: Uuid,
+) -> Result<ReadState, sqlx::Error> {
+    sqlx::query_as::<_, ReadState>(
+        r#"
+        INSERT INTO read_states (user_id, channel_id, last_read_message_id, mention_count, updated_at)
+        VALUES ($1, $2, $3, 0, now())
+        ON CONFLICT (user_id, channel_id) DO UPDATE SET
+            last_read_message_id = GREATEST(read_states.last_read_message_id, $3),
+            mention_count = 0,
+            updated_at = now()
+        RETURNING channel_id, last_read_message_id, mention_count
+        "#,
+    )
+    .bind(user_id)
+    .bind(channel_id)
+    .bind(message_id)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn increment_mention_counts(
+    pool: &PgPool,
+    channel_id: Uuid,
+    user_ids: &[Uuid],
+) -> Result<(), sqlx::Error> {
+    if user_ids.is_empty() {
+        return Ok(());
+    }
+    sqlx::query(
+        r#"
+        INSERT INTO read_states (user_id, channel_id, mention_count, updated_at)
+        SELECT unnest($1::uuid[]), $2, 1, now()
+        ON CONFLICT (user_id, channel_id) DO UPDATE SET
+            mention_count = read_states.mention_count + 1,
+            updated_at = now()
+        "#,
+    )
+    .bind(user_ids)
+    .bind(channel_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn update_channel_last_message(
+    pool: &PgPool,
+    channel_id: Uuid,
+    message_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE channels SET last_message_id = $2 WHERE id = $1")
+        .bind(channel_id)
+        .bind(message_id)
         .execute(pool)
         .await?;
     Ok(())

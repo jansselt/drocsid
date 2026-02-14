@@ -6,9 +6,11 @@ import type {
   MessageCreateEvent,
   MessageUpdateEvent,
   MessageDeleteEvent,
+  MessageAckEvent,
   ReactionAddEvent,
   ReactionRemoveEvent,
   MessagePinEvent,
+  ReadState,
   User,
   Role,
   RoleCreateEvent,
@@ -86,6 +88,9 @@ interface ServerState {
   showChannelSidebar: boolean;
   showMemberSidebar: boolean;
 
+  // Read states (unread tracking)
+  readStates: Map<string, ReadState>; // channel_id -> ReadState
+
   // Voice
   voiceChannelId: string | null; // channel we're connected to
   voiceToken: string | null;
@@ -158,6 +163,10 @@ interface ServerState {
   loadVoiceStates: (channelId: string) => Promise<void>;
   setSpeakingUsers: (userIds: Set<string>) => void;
 
+  // Read state actions
+  setReadStates: (readStates: ReadState[]) => void;
+  ackChannel: (channelId: string) => void;
+
   toggleChannelSidebar: () => void;
   toggleMemberSidebar: () => void;
 
@@ -180,6 +189,7 @@ export const useServerStore = create<ServerState>((set, get) => ({
   users: new Map(),
   showChannelSidebar: JSON.parse(localStorage.getItem('drocsid_show_channel_sidebar') ?? 'true'),
   showMemberSidebar: JSON.parse(localStorage.getItem('drocsid_show_member_sidebar') ?? 'true'),
+  readStates: new Map(),
   voiceChannelId: null,
   voiceToken: null,
   voiceUrl: null,
@@ -235,6 +245,8 @@ export const useServerStore = create<ServerState>((set, get) => ({
     if (!messages.has(channelId)) {
       loadMessages(channelId);
     }
+    // Auto-ack when switching to a channel
+    get().ackChannel(channelId);
   },
 
   loadChannels: async (serverId) => {
@@ -326,8 +338,31 @@ export const useServerStore = create<ServerState>((set, get) => ({
       const channelMessages = messages.get(message.channel_id) || [];
       if (channelMessages.some((m) => m.id === message.id)) return state;
       messages.set(message.channel_id, [...channelMessages, message]);
-      return { messages };
+
+      // Update last_message_id on the channel (for unread detection)
+      const channels = new Map(state.channels);
+      for (const [serverId, serverChannels] of channels) {
+        const idx = serverChannels.findIndex((c) => c.id === message.channel_id);
+        if (idx !== -1) {
+          const updated = [...serverChannels];
+          updated[idx] = { ...updated[idx], last_message_id: message.id };
+          channels.set(serverId, updated);
+          break;
+        }
+      }
+
+      // Also update DM channels
+      const dmChannels = state.dmChannels.map((c) =>
+        c.id === message.channel_id ? { ...c, last_message_id: message.id } : c,
+      );
+
+      return { messages, channels, dmChannels };
     });
+
+    // Auto-ack if this is the active channel
+    if (get().activeChannelId === message.channel_id) {
+      get().ackChannel(message.channel_id);
+    }
   },
 
   updateMessage: (event) => {
@@ -532,6 +567,8 @@ export const useServerStore = create<ServerState>((set, get) => ({
     if (!messages.has(channelId)) {
       loadMessages(channelId);
     }
+    // Auto-ack when switching to a DM channel
+    get().ackChannel(channelId);
   },
 
   // ── Relationship Actions ─────────────────────────────
@@ -736,6 +773,66 @@ export const useServerStore = create<ServerState>((set, get) => ({
     } catch {
       // ignore
     }
+  },
+
+  // ── Read State Actions ──────────────────────────────
+
+  setReadStates: (readStatesArray) => {
+    set(() => {
+      const readStates = new Map<string, ReadState>();
+      for (const rs of readStatesArray) {
+        readStates.set(rs.channel_id, rs);
+      }
+      return { readStates };
+    });
+  },
+
+  ackChannel: (channelId) => {
+    // Find the latest message ID for this channel
+    const state = get();
+    const channelMessages = state.messages.get(channelId);
+    let latestMessageId: string | null = null;
+
+    if (channelMessages && channelMessages.length > 0) {
+      latestMessageId = channelMessages[channelMessages.length - 1].id;
+    } else {
+      // Check last_message_id from channel data
+      for (const [, serverChannels] of state.channels) {
+        const ch = serverChannels.find((c) => c.id === channelId);
+        if (ch?.last_message_id) {
+          latestMessageId = ch.last_message_id;
+          break;
+        }
+      }
+      if (!latestMessageId) {
+        const dmCh = state.dmChannels.find((c) => c.id === channelId);
+        if (dmCh?.last_message_id) {
+          latestMessageId = dmCh.last_message_id;
+        }
+      }
+    }
+
+    if (!latestMessageId) return;
+
+    // Check if already acked up to this point
+    const existing = state.readStates.get(channelId);
+    if (existing?.last_read_message_id && existing.last_read_message_id >= latestMessageId) {
+      return;
+    }
+
+    // Optimistic update
+    set((s) => {
+      const readStates = new Map(s.readStates);
+      readStates.set(channelId, {
+        channel_id: channelId,
+        last_read_message_id: latestMessageId,
+        mention_count: 0,
+      });
+      return { readStates };
+    });
+
+    // Fire and forget API call
+    api.ackChannel(channelId, latestMessageId).catch(() => {});
   },
 
   toggleChannelSidebar: () => {
@@ -1111,6 +1208,19 @@ export const useServerStore = create<ServerState>((set, get) => ({
             }
 
             return { voiceStates };
+          });
+          break;
+        }
+        case 'MESSAGE_ACK': {
+          const ev = data as MessageAckEvent;
+          set((state) => {
+            const readStates = new Map(state.readStates);
+            readStates.set(ev.channel_id, {
+              channel_id: ev.channel_id,
+              last_read_message_id: ev.message_id,
+              mention_count: 0,
+            });
+            return { readStates };
           });
           break;
         }

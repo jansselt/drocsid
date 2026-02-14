@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import { useAuthStore } from '../../stores/authStore';
 import './ServerSidebar.css';
@@ -10,7 +10,29 @@ export function ServerSidebar() {
   const setView = useServerStore((s) => s.setView);
   const setActiveServer = useServerStore((s) => s.setActiveServer);
   const createServer = useServerStore((s) => s.createServer);
+  const channels = useServerStore((s) => s.channels);
+  const readStates = useServerStore((s) => s.readStates);
   const logout = useAuthStore((s) => s.logout);
+
+  // Compute per-server unread and mention counts
+  const serverIndicators = useMemo(() => {
+    const result = new Map<string, { hasUnread: boolean; mentionCount: number }>();
+    for (const server of servers) {
+      const serverChannels = channels.get(server.id) || [];
+      let hasUnread = false;
+      let totalMentions = 0;
+      for (const ch of serverChannels) {
+        if (ch.channel_type !== 'text') continue;
+        const rs = readStates.get(ch.id);
+        if (ch.last_message_id && (!rs?.last_read_message_id || ch.last_message_id > rs.last_read_message_id)) {
+          hasUnread = true;
+        }
+        totalMentions += rs?.mention_count || 0;
+      }
+      result.set(server.id, { hasUnread, mentionCount: totalMentions });
+    }
+    return result;
+  }, [servers, channels, readStates]);
   const [showCreate, setShowCreate] = useState(false);
   const [newServerName, setNewServerName] = useState('');
 
@@ -35,20 +57,34 @@ export function ServerSidebar() {
 
       <div className="server-divider" />
 
-      {servers.map((server) => (
-        <button
-          key={server.id}
-          className={`server-icon ${activeServerId === server.id ? 'active' : ''}`}
-          onClick={() => setActiveServer(server.id)}
-          title={server.name}
-        >
-          {server.icon_url ? (
-            <img src={server.icon_url} alt={server.name} />
-          ) : (
-            <span>{server.name.slice(0, 2).toUpperCase()}</span>
-          )}
-        </button>
-      ))}
+      {servers.map((server) => {
+        const indicator = serverIndicators.get(server.id);
+        const hasUnread = indicator?.hasUnread || false;
+        const mentionCount = indicator?.mentionCount || 0;
+        const isActive = activeServerId === server.id;
+
+        return (
+          <div key={server.id} className="server-icon-wrapper">
+            {hasUnread && !isActive && (
+              <div className={`server-unread-pill${mentionCount > 0 ? ' has-mentions' : ''}`} />
+            )}
+            <button
+              className={`server-icon ${isActive ? 'active' : ''}`}
+              onClick={() => setActiveServer(server.id)}
+              title={server.name}
+            >
+              {server.icon_url ? (
+                <img src={server.icon_url} alt={server.name} />
+              ) : (
+                <span>{server.name.slice(0, 2).toUpperCase()}</span>
+              )}
+            </button>
+            {mentionCount > 0 && (
+              <div className="server-mention-badge">{mentionCount > 99 ? '99+' : mentionCount}</div>
+            )}
+          </div>
+        );
+      })}
 
       <div className="server-divider" />
 

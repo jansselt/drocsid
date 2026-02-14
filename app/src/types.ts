@@ -54,8 +54,17 @@ export interface Channel {
   name: string | null;
   topic: string | null;
   position: number;
+  last_message_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// ── Read States ─────────────────────────────────────────
+
+export interface ReadState {
+  channel_id: string;
+  last_read_message_id: string | null;
+  mention_count: number;
 }
 
 // ── Messages ───────────────────────────────────────────
@@ -180,6 +189,12 @@ export interface ReadyPayload {
   session_id: string;
   user: User;
   servers: Server[];
+  read_states: ReadState[];
+}
+
+export interface MessageAckEvent {
+  channel_id: string;
+  message_id: string;
 }
 
 export interface MessageCreateEvent extends Message {

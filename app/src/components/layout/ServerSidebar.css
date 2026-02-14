@@ -117,3 +117,48 @@
   font-size: 0.875rem;
   cursor: pointer;
 }
+
+/* ── Server unread indicators ──────────────────────── */
+
+.server-icon-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.server-unread-pill {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 8px;
+  border-radius: 0 4px 4px 0;
+  background: var(--text-primary);
+  transition: height 0.15s;
+}
+
+.server-icon-wrapper:hover .server-unread-pill,
+.server-unread-pill.has-mentions {
+  height: 20px;
+}
+
+.server-mention-badge {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  background: #ed4245;
+  color: #fff;
+  font-size: 0.625rem;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--bg-darkest);
+  line-height: 1;
+}

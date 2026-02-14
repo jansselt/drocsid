@@ -24,6 +24,7 @@ export function ChannelSidebar() {
   const setActiveChannel = useServerStore((s) => s.setActiveChannel);
   const dmChannels = useServerStore((s) => s.dmChannels);
   const dmRecipients = useServerStore((s) => s.dmRecipients);
+  const readStates = useServerStore((s) => s.readStates);
   const setActiveDmChannel = useServerStore((s) => s.setActiveDmChannel);
   const closeDm = useServerStore((s) => s.closeDm);
   const toggleChannelSidebar = useServerStore((s) => s.toggleChannelSidebar);
@@ -89,16 +90,23 @@ export function ChannelSidebar() {
                     ? dm.name || otherUsers.map((u) => u.username).join(', ')
                     : otherUsers[0]?.username || 'Unknown';
 
+                const rs = readStates.get(dm.id);
+                const isUnread = !!(dm.last_message_id && (!rs?.last_read_message_id || dm.last_message_id > rs.last_read_message_id));
+                const mentionCount = rs?.mention_count || 0;
+
                 return (
                   <div
                     key={dm.id}
-                    className={`channel-item dm-item ${activeChannelId === dm.id ? 'active' : ''}`}
+                    className={`channel-item dm-item ${activeChannelId === dm.id ? 'active' : ''}${isUnread ? ' unread' : ''}`}
                     onClick={() => setActiveDmChannel(dm.id)}
                   >
                     <span className="dm-avatar">
                       {dm.channel_type === 'groupdm' ? 'G' : displayName.slice(0, 1).toUpperCase()}
                     </span>
                     <span className="channel-name">{displayName}</span>
+                    {mentionCount > 0 && (
+                      <span className="mention-badge">{mentionCount}</span>
+                    )}
                     <button
                       className="dm-close-btn"
                       onClick={(e) => {
@@ -203,16 +211,23 @@ export function ChannelSidebar() {
               </button>
             )}
           </div>
-          {textChannels.map((channel) => (
-            <ChannelItem
-              key={channel.id}
-              channelId={channel.id}
-              name={channel.name || ''}
-              isActive={activeChannelId === channel.id}
-              canManage={isOwner}
-              onClick={() => setActiveChannel(channel.id)}
-            />
-          ))}
+          {textChannels.map((channel) => {
+            const rs = readStates.get(channel.id);
+            const isUnread = !!(channel.last_message_id && (!rs?.last_read_message_id || channel.last_message_id > rs.last_read_message_id));
+            const mentionCount = rs?.mention_count || 0;
+            return (
+              <ChannelItem
+                key={channel.id}
+                channelId={channel.id}
+                name={channel.name || ''}
+                isActive={activeChannelId === channel.id}
+                isUnread={isUnread}
+                mentionCount={mentionCount}
+                canManage={isOwner}
+                onClick={() => setActiveChannel(channel.id)}
+              />
+            );
+          })}
 
           <div className="channel-category">
             <span>Voice Channels</span>
@@ -273,12 +288,16 @@ function ChannelItem({
   channelId,
   name,
   isActive,
+  isUnread,
+  mentionCount,
   canManage,
   onClick,
 }: {
   channelId: string;
   name: string;
   isActive: boolean;
+  isUnread: boolean;
+  mentionCount: number;
   canManage: boolean;
   onClick: () => void;
 }) {
@@ -363,12 +382,18 @@ function ChannelItem({
   return (
     <>
       <button
-        className={`channel-item ${isActive ? 'active' : ''}`}
+        className={`channel-item ${isActive ? 'active' : ''}${isUnread && !isActive ? ' unread' : ''}`}
         onClick={onClick}
         onContextMenu={handleContextMenu}
       >
         <span className="channel-hash">#</span>
         <span className="channel-name">{name}</span>
+        {mentionCount > 0 && (
+          <span className="mention-badge">{mentionCount}</span>
+        )}
+        {isUnread && !isActive && mentionCount === 0 && (
+          <span className="unread-dot" />
+        )}
       </button>
       {menu && (
         <div

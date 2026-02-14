@@ -1,8 +1,11 @@
+use std::sync::LazyLock;
+
 use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use axum::routing::{get, put};
 use axum::{Json, Router};
 use chrono::Utc;
+use regex::Regex;
 use uuid::Uuid;
 
 use crate::api::auth::AuthUser;
@@ -11,14 +14,14 @@ use crate::error::ApiError;
 use crate::services::permissions as perm_service;
 use crate::state::AppState;
 use crate::types::entities::{
-    AuditAction, ChannelType, CreateThreadRequest, EditMessageRequest, MessageQuery, PublicUser,
-    ReactionGroup, SendMessageRequest, SetChannelOverrideRequest, UpdateChannelRequest,
-    UploadUrlResponse,
+    AckMessageRequest, AuditAction, ChannelType, CreateThreadRequest, EditMessageRequest,
+    MessageQuery, PublicUser, ReactionGroup, SendMessageRequest, SetChannelOverrideRequest,
+    UpdateChannelRequest, UploadUrlResponse,
 };
 use crate::types::events::{
-    ChannelOverrideUpdateEvent, MessageCreateEvent, MessageDeleteEvent, MessagePinEvent,
-    MessageUpdateEvent, ReactionAddEvent, ReactionRemoveEvent, ThreadCreateEvent,
-    TypingStartEvent,
+    ChannelOverrideUpdateEvent, MessageAckEvent, MessageCreateEvent, MessageDeleteEvent,
+    MessagePinEvent, MessageUpdateEvent, ReactionAddEvent, ReactionRemoveEvent,
+    ThreadCreateEvent, TypingStartEvent,
 };
 use crate::types::permissions::Permissions;
 
@@ -58,6 +61,7 @@ pub fn routes() -> Router<AppState> {
             get(list_threads).post(create_thread),
         )
         .route("/{channel_id}/typing", axum::routing::post(typing_start))
+        .route("/{channel_id}/ack", put(ack_message))
 }
 
 /// Helper: resolve channel and verify VIEW_CHANNEL permission.
@@ -302,6 +306,21 @@ async fn send_message(
         body.reply_to_id,
     )
     .await?;
+
+    // Update the channel's last_message_id for unread tracking
+    let _ = queries::update_channel_last_message(&state.db, channel_id, message_id).await;
+
+    // Parse mentions and increment mention counts
+    let mentioned_user_ids = parse_mentions(
+        &state.db,
+        &body.content,
+        user.user_id,
+        channel.server_id,
+    )
+    .await;
+    if !mentioned_user_ids.is_empty() {
+        let _ = queries::increment_mention_counts(&state.db, channel_id, &mentioned_user_ids).await;
+    }
 
     let author = queries::get_user_by_id(&state.db, user.user_id)
         .await?
@@ -1013,7 +1032,78 @@ async fn typing_start(
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
+// ── Ack (Read State) ─────────────────────────────────
+
+async fn ack_message(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(channel_id): Path<Uuid>,
+    Json(body): Json<AckMessageRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    // Verify the user has access to this channel
+    resolve_channel_with_perm(&state, channel_id, user.user_id, Permissions::VIEW_CHANNEL)
+        .await?;
+
+    queries::ack_channel(&state.db, user.user_id, channel_id, body.message_id).await?;
+
+    let event = MessageAckEvent {
+        channel_id,
+        message_id: body.message_id,
+    };
+    state
+        .gateway
+        .dispatch_to_user(user.user_id, "MESSAGE_ACK", &event);
+
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
 // ── Helpers ───────────────────────────────────────────
+
+static RE_MENTION_ID: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"<@([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})>").unwrap());
+static RE_MENTION_NAME: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"@(\w{2,32})").unwrap());
+
+/// Parse `<@uuid>` and `@username` mentions from message content.
+/// Returns a deduplicated list of mentioned user IDs (excluding the author).
+async fn parse_mentions(
+    pool: &sqlx::PgPool,
+    content: &str,
+    author_id: Uuid,
+    server_id: Option<Uuid>,
+) -> Vec<Uuid> {
+    let mut mentioned: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
+
+    // Direct ID mentions: <@uuid>
+    for cap in RE_MENTION_ID.captures_iter(content) {
+        if let Ok(uid) = cap[1].parse::<Uuid>() {
+            if uid != author_id {
+                mentioned.insert(uid);
+            }
+        }
+    }
+
+    // Username mentions: @username
+    for cap in RE_MENTION_NAME.captures_iter(content) {
+        let username = &cap[1];
+        if let Ok(Some(user)) = queries::get_user_by_username(pool, username).await {
+            if user.id != author_id {
+                mentioned.insert(user.id);
+            }
+        }
+    }
+
+    // For server channels, filter to actual server members
+    if let Some(sid) = server_id {
+        if let Ok(members) = queries::get_server_members(pool, sid).await {
+            let member_ids: std::collections::HashSet<Uuid> =
+                members.iter().map(|m| m.user_id).collect();
+            mentioned.retain(|uid| member_ids.contains(uid));
+        }
+    }
+
+    mentioned.into_iter().collect()
+}
 
 async fn build_reaction_groups(
     state: &AppState,

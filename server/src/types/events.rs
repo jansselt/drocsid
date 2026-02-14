@@ -103,9 +103,16 @@ pub struct ReadyPayload {
     pub session_id: Uuid,
     pub user: PublicUser,
     pub servers: Vec<Server>,
+    pub read_states: Vec<super::entities::ReadState>,
 }
 
 // ── Dispatch Events ────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MessageAckEvent {
+    pub channel_id: Uuid,
+    pub message_id: Uuid,
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct MessageCreateEvent {

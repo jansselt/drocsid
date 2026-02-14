@@ -107,6 +107,21 @@ pub struct Channel {
     pub position: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub last_message_id: Option<Uuid>,
+}
+
+// ── Read States ───────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct ReadState {
+    pub channel_id: Uuid,
+    pub last_read_message_id: Option<Uuid>,
+    pub mention_count: i32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AckMessageRequest {
+    pub message_id: Uuid,
 }
 
 // ── Messages ───────────────────────────────────────────

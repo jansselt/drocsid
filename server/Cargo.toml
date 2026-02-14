@@ -63,5 +63,8 @@ livekit-api = "0.4"
 reqwest = { version = "0.12", features = ["json"] }
 urlencoding = "2"
 
+# Regex
+regex = "1"
+
 # Config
 config = "0.15"

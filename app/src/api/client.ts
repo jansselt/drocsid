@@ -255,6 +255,15 @@ export async function deleteChannel(channelId: string): Promise<void> {
   return request(`/channels/${channelId}`, { method: 'DELETE' });
 }
 
+// ── Read State / Ack ─────────────────────────────────
+
+export async function ackChannel(channelId: string, messageId: string): Promise<void> {
+  return request(`/channels/${channelId}/ack`, {
+    method: 'PUT',
+    body: JSON.stringify({ message_id: messageId }),
+  });
+}
+
 // ── Message Edit / Delete ─────────────────────────────
 
 export async function editMessage(channelId: string, messageId: string, content: string): Promise<Message> {
