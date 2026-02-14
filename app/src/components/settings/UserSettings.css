@@ -366,6 +366,56 @@
   object-fit: cover;
 }
 
+/* ── Push-to-talk ──────────────────────────────── */
+
+.vv-input-mode-toggle {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.vv-mode-btn {
+  flex: 1;
+  padding: 0.375rem 0.75rem;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.vv-mode-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.vv-ptt-keybind {
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  font-family: inherit;
+  cursor: pointer;
+  min-width: 100px;
+  text-align: center;
+}
+
+.vv-ptt-keybind.recording {
+  border-color: var(--accent);
+  color: var(--accent);
+  animation: pulse-border 1s infinite;
+}
+
+@keyframes pulse-border {
+  0%, 100% { border-color: var(--accent); }
+  50% { border-color: transparent; }
+}
+
 /* Admin tab */
 
 .admin-panel h3 {

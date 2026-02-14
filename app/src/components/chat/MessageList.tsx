@@ -26,6 +26,9 @@ export function MessageList({ channelId }: MessageListProps) {
   const pinMessage = useServerStore((s) => s.pinMessage);
   const unpinMessage = useServerStore((s) => s.unpinMessage);
   const loadMoreMessages = useServerStore((s) => s.loadMoreMessages);
+  const activeServerId = useServerStore((s) => s.activeServerId);
+  const members = useServerStore((s) => activeServerId ? s.members.get(activeServerId) : undefined);
+  const roles = useServerStore((s) => activeServerId ? s.roles.get(activeServerId) : undefined);
 
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const scrollContainerRef = useRef<HTMLElement | null>(null);
@@ -137,6 +140,20 @@ export function MessageList({ channelId }: MessageListProps) {
   };
 
   const getAuthorName = (msg: Message): string => getAuthor(msg).name;
+
+  const getAuthorRoleColor = (msg: Message): string | undefined => {
+    if (!members || !roles) return undefined;
+    const member = members.find((m) => m.user_id === msg.author_id);
+    if (!member || member.role_ids.length === 0) return undefined;
+    let best: { color: number; position: number } | undefined;
+    for (const rid of member.role_ids) {
+      const role = roles.find((r) => r.id === rid);
+      if (role && role.color && (!best || role.position > best.position)) {
+        best = role;
+      }
+    }
+    return best ? `#${best.color.toString(16).padStart(6, '0')}` : undefined;
+  };
 
   const formatTime = (iso: string): string => {
     const date = new Date(iso);
@@ -295,7 +312,10 @@ export function MessageList({ channelId }: MessageListProps) {
                 )}
               </div>
               <div className="message-meta">
-                <span className={`message-author ${isOwn ? 'own' : ''}`}>
+                <span
+                  className={`message-author ${isOwn ? 'own' : ''}`}
+                  style={!isOwn ? { color: getAuthorRoleColor(msg) } : undefined}
+                >
                   {getAuthorName(msg)}
                 </span>
                 <span className="message-timestamp">

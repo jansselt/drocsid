@@ -4,7 +4,21 @@ import { useAuthStore } from '../../stores/authStore';
 import { StatusIndicator } from '../common/StatusIndicator';
 import * as api from '../../api/client';
 import type { ServerMemberWithUser } from '../../types';
+import type { Role } from '../../types';
 import './MemberSidebar.css';
+
+function getRoleColor(roleIds: string[], roles: Role[] | undefined): string | undefined {
+  if (!roles || roleIds.length === 0) return undefined;
+  // Find the highest-position role with a non-zero color
+  let best: Role | undefined;
+  for (const rid of roleIds) {
+    const role = roles.find((r) => r.id === rid);
+    if (role && role.color && (!best || role.position > best.position)) {
+      best = role;
+    }
+  }
+  return best ? `#${best.color.toString(16).padStart(6, '0')}` : undefined;
+}
 
 export function MemberSidebar() {
   const activeServerId = useServerStore((s) => s.activeServerId);
@@ -107,6 +121,8 @@ function MemberItem({ member }: { member: ServerMemberWithUser & { status: strin
   const displayName = member.nickname || user.display_name || user.username;
   const isOffline = member.status === 'offline';
   const openDm = useServerStore((s) => s.openDm);
+  const sendFriendRequest = useServerStore((s) => s.sendFriendRequest);
+  const relationships = useServerStore((s) => s.relationships);
   const currentUserId = useAuthStore((s) => s.user?.id);
   const activeServerId = useServerStore((s) => s.activeServerId);
   const servers = useServerStore((s) => s.servers);
@@ -152,6 +168,9 @@ function MemberItem({ member }: { member: ServerMemberWithUser & { status: strin
   // Non-default roles for the submenu
   const assignableRoles = (roles || []).filter((r) => !r.is_default).sort((a, b) => b.position - a.position);
 
+  // Highest role color for display
+  const roleColor = getRoleColor(member.role_ids, roles);
+
   return (
     <>
       <div
@@ -174,7 +193,7 @@ function MemberItem({ member }: { member: ServerMemberWithUser & { status: strin
           <StatusIndicator status={member.status} size="sm" />
         </div>
         <div className="member-info">
-          <span className="member-name">{displayName}</span>
+          <span className="member-name" style={roleColor ? { color: roleColor } : undefined}>{displayName}</span>
           {user.custom_status && (
             <span className="member-custom-status">{user.custom_status}</span>
           )}
@@ -195,6 +214,26 @@ function MemberItem({ member }: { member: ServerMemberWithUser & { status: strin
           >
             Message
           </button>
+          {(() => {
+            const rel = relationships.find((r) => r.target_id === member.user_id || r.user_id === member.user_id);
+            if (!rel) return (
+              <button
+                className="member-context-item"
+                onClick={() => {
+                  setMenu(null);
+                  sendFriendRequest(member.user_id);
+                }}
+              >
+                Send Friend Request
+              </button>
+            );
+            if (rel.rel_type === 'pending_outgoing') return (
+              <button className="member-context-item" disabled>
+                Friend Request Sent
+              </button>
+            );
+            return null;
+          })()}
           {isOwner && assignableRoles.length > 0 && (
             <>
               <div className="member-context-separator" />

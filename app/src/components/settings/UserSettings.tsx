@@ -449,6 +449,11 @@ function VoiceVideoSettings() {
   const [micLevel, setMicLevel] = useState(0);
   const [cameraPreview, setCameraPreview] = useState(false);
 
+  // Push-to-talk settings
+  const [pttEnabled, setPttEnabled] = useState(() => localStorage.getItem('drocsid_ptt_enabled') === 'true');
+  const [pttKey, setPttKey] = useState(() => localStorage.getItem('drocsid_ptt_key') || 'Space');
+  const [recordingKey, setRecordingKey] = useState(false);
+
   const micStreamRef = useRef<MediaStream | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animFrameRef = useRef<number>(0);
@@ -591,6 +596,59 @@ function VoiceVideoSettings() {
           </div>
         )}
       </div>
+
+      <h3>Input Mode</h3>
+      <div className="profile-field">
+        <label>Mode</label>
+        <div className="vv-input-mode-toggle">
+          <button
+            className={`vv-mode-btn ${!pttEnabled ? 'active' : ''}`}
+            onClick={() => {
+              setPttEnabled(false);
+              localStorage.setItem('drocsid_ptt_enabled', 'false');
+            }}
+          >
+            Voice Activity
+          </button>
+          <button
+            className={`vv-mode-btn ${pttEnabled ? 'active' : ''}`}
+            onClick={() => {
+              setPttEnabled(true);
+              localStorage.setItem('drocsid_ptt_enabled', 'true');
+            }}
+          >
+            Push to Talk
+          </button>
+        </div>
+      </div>
+      {pttEnabled && (
+        <div className="profile-field">
+          <label>Keybind</label>
+          {recordingKey ? (
+            <button
+              className="vv-ptt-keybind recording"
+              onKeyDown={(e) => {
+                e.preventDefault();
+                const key = e.code;
+                setPttKey(key);
+                localStorage.setItem('drocsid_ptt_key', key);
+                setRecordingKey(false);
+              }}
+              onBlur={() => setRecordingKey(false)}
+              autoFocus
+            >
+              Press a key...
+            </button>
+          ) : (
+            <button
+              className="vv-ptt-keybind"
+              onClick={() => setRecordingKey(true)}
+            >
+              {pttKey}
+            </button>
+          )}
+        </div>
+      )}
 
       <h3>Output Device</h3>
       <div className="profile-field">

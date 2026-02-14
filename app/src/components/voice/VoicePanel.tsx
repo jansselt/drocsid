@@ -55,6 +55,52 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
   const users = useServerStore((s) => s.users);
   const setSpeakingUsers = useServerStore((s) => s.setSpeakingUsers);
 
+  // Push-to-talk: global key listener
+  const pttActiveRef = useRef(false);
+  useEffect(() => {
+    const pttEnabled = localStorage.getItem('drocsid_ptt_enabled') === 'true';
+    if (!pttEnabled || !localParticipant) return;
+
+    const pttKey = localStorage.getItem('drocsid_ptt_key') || 'Space';
+
+    // Start muted for PTT mode
+    if (!useServerStore.getState().voiceSelfMute) {
+      voiceToggleMute();
+      localParticipant.setMicrophoneEnabled(false);
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== pttKey || e.repeat || pttActiveRef.current) return;
+      if ((e.target as HTMLElement)?.tagName === 'INPUT' || (e.target as HTMLElement)?.tagName === 'TEXTAREA') return;
+      e.preventDefault();
+      pttActiveRef.current = true;
+      // Unmute
+      if (useServerStore.getState().voiceSelfMute) {
+        voiceToggleMute();
+        localParticipant.setMicrophoneEnabled(true);
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code !== pttKey || !pttActiveRef.current) return;
+      e.preventDefault();
+      pttActiveRef.current = false;
+      // Mute
+      if (!useServerStore.getState().voiceSelfMute) {
+        voiceToggleMute();
+        localParticipant.setMicrophoneEnabled(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      pttActiveRef.current = false;
+    };
+  }, [localParticipant, voiceToggleMute]);
+
   // Sync speaking state to store so sidebar can show it
   const speakingRef = useRef<Set<string>>(new Set());
   useEffect(() => {
