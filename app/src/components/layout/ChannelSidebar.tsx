@@ -24,6 +24,7 @@ export function ChannelSidebar() {
   const dmChannels = useServerStore((s) => s.dmChannels);
   const dmRecipients = useServerStore((s) => s.dmRecipients);
   const setActiveDmChannel = useServerStore((s) => s.setActiveDmChannel);
+  const closeDm = useServerStore((s) => s.closeDm);
   const currentUser = useAuthStore((s) => s.user);
 
   const [showSettings, setShowSettings] = useState(false);
@@ -70,7 +71,7 @@ export function ChannelSidebar() {
                     : otherUsers[0]?.username || 'Unknown';
 
                 return (
-                  <button
+                  <div
                     key={dm.id}
                     className={`channel-item dm-item ${activeChannelId === dm.id ? 'active' : ''}`}
                     onClick={() => setActiveDmChannel(dm.id)}
@@ -79,7 +80,17 @@ export function ChannelSidebar() {
                       {dm.channel_type === 'groupdm' ? 'G' : displayName.slice(0, 1).toUpperCase()}
                     </span>
                     <span className="channel-name">{displayName}</span>
-                  </button>
+                    <button
+                      className="dm-close-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        closeDm(dm.id);
+                      }}
+                      title="Close DM"
+                    >
+                      &times;
+                    </button>
+                  </div>
                 );
               })
             )}

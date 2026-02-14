@@ -15,6 +15,7 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(list_dm_channels).post(create_dm))
         .route("/group", axum::routing::post(create_group_dm))
+        .route("/{channel_id}", axum::routing::delete(close_dm))
         .route("/{channel_id}/recipients", get(get_dm_recipients))
 }
 
@@ -144,6 +145,15 @@ async fn create_group_dm(
     }
 
     Ok(Json(channel))
+}
+
+async fn close_dm(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(channel_id): Path<Uuid>,
+) -> Result<impl IntoResponse, ApiError> {
+    queries::close_dm(&state.db, channel_id, user.user_id).await?;
+    Ok(Json(serde_json::json!({ "closed": true })))
 }
 
 async fn get_dm_recipients(

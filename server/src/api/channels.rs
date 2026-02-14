@@ -317,9 +317,18 @@ async fn send_message(
             .gateway
             .broadcast_to_server(sid, "MESSAGE_CREATE", &event, None);
     } else {
-        // DM/GroupDM — dispatch to all members
+        // DM/GroupDM — reopen for any members who closed it, then dispatch
+        queries::reopen_dm_for_members(&state.db, channel_id).await?;
         let members = queries::get_dm_members(&state.db, channel_id).await?;
+        let recipients: Vec<PublicUser> = members.iter().map(|m| PublicUser::from(m.clone())).collect();
+        let dm_event = crate::types::events::DmChannelCreateEvent {
+            channel: channel.clone(),
+            recipients,
+        };
         for member in &members {
+            state
+                .gateway
+                .dispatch_to_user(member.id, "DM_CHANNEL_CREATE", &dm_event);
             state
                 .gateway
                 .dispatch_to_user(member.id, "MESSAGE_CREATE", &event);

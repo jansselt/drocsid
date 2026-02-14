@@ -400,6 +400,10 @@ export async function createGroupDm(recipientIds: string[], name?: string): Prom
   });
 }
 
+export async function closeDm(channelId: string): Promise<void> {
+  return request(`/dms/${channelId}`, { method: 'DELETE' });
+}
+
 export async function getDmRecipients(channelId: string): Promise<User[]> {
   return request(`/dms/${channelId}/recipients`);
 }

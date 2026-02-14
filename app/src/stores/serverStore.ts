@@ -118,6 +118,7 @@ interface ServerState {
   // DM actions
   loadDmChannels: () => Promise<void>;
   openDm: (recipientId: string) => Promise<void>;
+  closeDm: (channelId: string) => Promise<void>;
   setActiveDmChannel: (channelId: string) => void;
 
   // Relationship actions
@@ -467,6 +468,18 @@ export const useServerStore = create<ServerState>((set, get) => ({
         }
         return { dmRecipients, users };
       });
+    } catch {
+      // ignore
+    }
+  },
+
+  closeDm: async (channelId) => {
+    try {
+      await api.closeDm(channelId);
+      set((state) => ({
+        dmChannels: state.dmChannels.filter((c) => c.id !== channelId),
+        activeChannelId: state.activeChannelId === channelId ? null : state.activeChannelId,
+      }));
     } catch {
       // ignore
     }

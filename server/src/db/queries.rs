@@ -1058,7 +1058,7 @@ pub async fn add_dm_member(
         r#"
         INSERT INTO dm_members (channel_id, user_id)
         VALUES ($1, $2)
-        ON CONFLICT DO NOTHING
+        ON CONFLICT (channel_id, user_id) DO UPDATE SET closed = FALSE
         RETURNING channel_id, user_id
         "#,
     )
@@ -1078,7 +1078,7 @@ pub async fn get_dm_channels(
                c.name, c.topic, c.position, c.created_at, c.updated_at
         FROM channels c
         INNER JOIN dm_members dm ON c.id = dm.channel_id
-        WHERE dm.user_id = $1 AND c.channel_type IN ('dm', 'groupdm')
+        WHERE dm.user_id = $1 AND c.channel_type IN ('dm', 'groupdm') AND dm.closed = FALSE
         ORDER BY c.updated_at DESC
         "#,
     )
@@ -1128,6 +1128,23 @@ pub async fn find_existing_dm(
     .bind(user_b)
     .fetch_optional(pool)
     .await
+}
+
+pub async fn close_dm(pool: &PgPool, channel_id: Uuid, user_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE dm_members SET closed = TRUE WHERE channel_id = $1 AND user_id = $2")
+        .bind(channel_id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn reopen_dm_for_members(pool: &PgPool, channel_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE dm_members SET closed = FALSE WHERE channel_id = $1")
+        .bind(channel_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 // ── Threads ──────────────────────────────────────────
