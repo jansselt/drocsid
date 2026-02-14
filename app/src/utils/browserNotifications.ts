@@ -53,7 +53,7 @@ export function showBrowserNotification(
     icon: '/favicon.ico',
     tag: tag || 'drocsid-message',
     renotify: true,
-  });
+  } as NotificationOptions);
 
   notification.onclick = () => {
     window.focus();
