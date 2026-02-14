@@ -1,8 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../../stores/authStore';
+import * as api from '../../api/client';
+import type { InviteResolve } from '../../types';
 import './AuthPage.css';
 
-export function AuthPage() {
+interface AuthPageProps {
+  serverInviteCode?: string;
+  onRegisteredWithInvite?: () => void;
+}
+
+export function AuthPage({ serverInviteCode, onRegisteredWithInvite }: AuthPageProps) {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
@@ -10,19 +17,34 @@ export function AuthPage() {
   const [inviteCode, setInviteCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [serverInfo, setServerInfo] = useState<InviteResolve | null>(null);
 
   const login = useAuthStore((s) => s.login);
   const register = useAuthStore((s) => s.register);
 
-  // Read invite code from URL param and auto-switch to register mode
+  // If a server invite code is provided, resolve it and prefill
   useEffect(() => {
+    if (serverInviteCode) {
+      setInviteCode(serverInviteCode);
+      setIsLogin(false);
+      api.resolveInvite(serverInviteCode)
+        .then(setServerInfo)
+        .catch(() => {
+          // Invite may be invalid/expired — user can still try to register
+        });
+    }
+  }, [serverInviteCode]);
+
+  // Read invite code from URL query param (for admin registration codes)
+  useEffect(() => {
+    if (serverInviteCode) return; // Server invite prop takes priority
     const params = new URLSearchParams(window.location.search);
     const invite = params.get('invite');
     if (invite) {
       setInviteCode(invite);
       setIsLogin(false);
     }
-  }, []);
+  }, [serverInviteCode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,6 +56,10 @@ export function AuthPage() {
         await login(email, password);
       } else {
         await register(username, email, password, inviteCode || undefined);
+        // If registered with a server invite, signal App to skip JoinInvite
+        if (serverInviteCode && onRegisteredWithInvite) {
+          onRegisteredWithInvite();
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
@@ -42,9 +68,27 @@ export function AuthPage() {
     }
   };
 
+  const hasServerInvite = !!serverInviteCode;
+
   return (
     <div className="auth-page">
       <div className="auth-card">
+        {serverInfo && (
+          <div className="invite-banner">
+            <div className="invite-server-icon">
+              {serverInfo.server.icon_url ? (
+                <img src={serverInfo.server.icon_url} alt="" />
+              ) : (
+                serverInfo.server.name.slice(0, 2).toUpperCase()
+              )}
+            </div>
+            <div className="invite-server-info">
+              <span className="invite-label">You've been invited to join</span>
+              <span className="invite-server-name">{serverInfo.server.name}</span>
+            </div>
+          </div>
+        )}
+
         <h1 className="auth-title">Drocsid</h1>
         <p className="auth-subtitle">
           {isLogin ? 'Welcome back!' : 'Create an account'}
@@ -61,6 +105,8 @@ export function AuthPage() {
                 onChange={(e) => setInviteCode(e.target.value)}
                 placeholder="Required to register"
                 autoComplete="off"
+                readOnly={hasServerInvite}
+                className={hasServerInvite ? 'readonly-input' : ''}
               />
             </div>
           )}

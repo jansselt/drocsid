@@ -20,6 +20,8 @@ pub struct JwtClaims {
     pub exp: i64,
 }
 
+/// Returns (AuthResponse, Option<server_id>) — server_id is set when a server invite
+/// was used as the registration code and the user was auto-joined to that server.
 pub async fn register(
     pool: &PgPool,
     config: &AppConfig,
@@ -27,7 +29,7 @@ pub async fn register(
     email: &str,
     password: &str,
     invite_code: Option<&str>,
-) -> Result<AuthResponse, ApiError> {
+) -> Result<(AuthResponse, Option<Uuid>), ApiError> {
     // Validate input
     if username.len() < 2 || username.len() > 32 {
         return Err(ApiError::InvalidInput(
@@ -44,6 +46,9 @@ pub async fn register(
     let user_count = queries::count_users(pool).await?;
     let is_first_user = user_count == 0;
 
+    // Track whether the code is a server invite (for auto-join after user creation)
+    let mut server_invite_id: Option<Uuid> = None;
+
     // Validate invite code (required unless first user)
     if !is_first_user {
         let code_str = invite_code.unwrap_or("");
@@ -52,18 +57,34 @@ pub async fn register(
                 "Registration requires an invite code".into(),
             ));
         }
-        let reg_code = queries::get_registration_code_by_code(pool, code_str)
-            .await?
-            .ok_or_else(|| ApiError::InvalidInput("Invalid registration code".into()))?;
-        if let Some(expires_at) = reg_code.expires_at {
-            if Utc::now() > expires_at {
-                return Err(ApiError::InvalidInput("Registration code has expired".into()));
+
+        // Check registration_codes table first
+        if let Some(reg_code) = queries::get_registration_code_by_code(pool, code_str).await? {
+            if let Some(expires_at) = reg_code.expires_at {
+                if Utc::now() > expires_at {
+                    return Err(ApiError::InvalidInput("Registration code has expired".into()));
+                }
             }
-        }
-        if let Some(max_uses) = reg_code.max_uses {
-            if reg_code.uses >= max_uses {
-                return Err(ApiError::InvalidInput("Registration code has reached its maximum uses".into()));
+            if let Some(max_uses) = reg_code.max_uses {
+                if reg_code.uses >= max_uses {
+                    return Err(ApiError::InvalidInput("Registration code has reached its maximum uses".into()));
+                }
             }
+        // Fall back to server invites table
+        } else if let Some(invite) = queries::get_invite_by_code(pool, code_str).await? {
+            if let Some(expires_at) = invite.expires_at {
+                if Utc::now() > expires_at {
+                    return Err(ApiError::InvalidInput("Invite has expired".into()));
+                }
+            }
+            if let Some(max_uses) = invite.max_uses {
+                if invite.uses >= max_uses {
+                    return Err(ApiError::InvalidInput("Invite has reached its maximum uses".into()));
+                }
+            }
+            server_invite_id = Some(invite.server_id);
+        } else {
+            return Err(ApiError::InvalidInput("Invalid invite code".into()));
         }
     }
 
@@ -90,10 +111,16 @@ pub async fn register(
     let user = queries::create_user(pool, user_id, instance_id, username, email, &password_hash)
         .await?;
 
-    // First user becomes admin; otherwise increment invite code usage
+    // First user becomes admin; otherwise increment code usage
     if is_first_user {
         queries::set_user_admin(pool, user.id, true).await?;
+    } else if server_invite_id.is_some() {
+        // Server invite: increment invite uses and auto-join server
+        let code_str = invite_code.unwrap_or("");
+        queries::increment_invite_uses(pool, code_str).await?;
+        queries::add_server_member(pool, server_invite_id.unwrap(), user.id).await?;
     } else {
+        // Registration code
         queries::increment_registration_code_uses(pool, invite_code.unwrap_or("")).await?;
     }
 
@@ -105,11 +132,11 @@ pub async fn register(
     // Generate tokens
     let (access_token, refresh_token) = create_tokens(pool, config, user.id).await?;
 
-    Ok(AuthResponse {
+    Ok((AuthResponse {
         access_token,
         refresh_token,
         user: PublicUser::from(user),
-    })
+    }, server_invite_id))
 }
 
 pub async fn login(

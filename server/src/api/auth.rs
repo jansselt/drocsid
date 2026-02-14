@@ -5,10 +5,12 @@ use axum::routing::post;
 use axum::{Json, Router};
 use uuid::Uuid;
 
+use crate::db::queries;
 use crate::error::ApiError;
 use crate::services::auth as auth_service;
 use crate::state::AppState;
 use crate::types::entities::{LoginRequest, RefreshRequest, RegisterRequest};
+use crate::types::events::ServerMemberAddEvent;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -21,9 +23,25 @@ async fn register(
     State(state): State<AppState>,
     Json(body): Json<RegisterRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let response =
+    let (response, joined_server_id) =
         auth_service::register(&state.db, &state.config, &body.username, &body.email, &body.password, body.invite_code.as_deref())
             .await?;
+
+    // If user was auto-joined to a server via invite, notify existing members
+    if let Some(server_id) = joined_server_id {
+        let member = queries::get_server_member(&state.db, server_id, response.user.id)
+            .await?;
+        if let Some(member) = member {
+            let event = ServerMemberAddEvent {
+                server_id,
+                member,
+                user: response.user.clone(),
+            };
+            state
+                .gateway
+                .broadcast_to_server(server_id, "SERVER_MEMBER_ADD", &event, None);
+        }
+    }
 
     Ok(Json(response))
 }
