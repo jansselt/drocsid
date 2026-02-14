@@ -356,14 +356,18 @@ function VoiceVideoSettings() {
       };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       cameraStreamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
       setCameraPreview(true);
     } catch {
       // Camera access denied
     }
   };
+
+  // Attach the stream once the video element is rendered
+  useEffect(() => {
+    if (cameraPreview && videoRef.current && cameraStreamRef.current) {
+      videoRef.current.srcObject = cameraStreamRef.current;
+    }
+  }, [cameraPreview]);
 
   const stopCameraPreview = () => {
     cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
