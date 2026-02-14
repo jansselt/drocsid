@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { useServerStore } from '../../stores/serverStore';
 import { useAuthStore } from '../../stores/authStore';
 import type { Message, ReactionGroup } from '../../types';
@@ -26,33 +25,76 @@ export function MessageList({ channelId }: MessageListProps) {
   const unpinMessage = useServerStore((s) => s.unpinMessage);
   const loadMoreMessages = useServerStore((s) => s.loadMoreMessages);
 
-  const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [emojiPickerForId, setEmojiPickerForId] = useState<string | null>(null);
   const isLoadingMore = useRef(false);
-  const prevMessageCount = useRef(messages.length);
+  const atBottomRef = useRef(true);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
-  // Cancel editing on channel switch
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior });
+  }, []);
+
+  // Scroll to bottom on channel switch or initial load
   useEffect(() => {
     setEditingId(null);
     setEmojiPickerForId(null);
     setHoveredId(null);
-  }, [channelId]);
+    // Use rAF to ensure DOM has rendered the messages
+    requestAnimationFrame(() => scrollToBottom());
+  }, [channelId, scrollToBottom]);
 
-  // Scroll to bottom when the current user sends a message
+  // Track whether user is near the bottom
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+  }, []);
+
+  // Auto-scroll when new messages arrive
   useEffect(() => {
-    if (messages.length > prevMessageCount.current) {
-      const lastMsg = messages[messages.length - 1];
-      if (lastMsg && lastMsg.author_id === currentUser?.id) {
-        requestAnimationFrame(() => {
-          virtuosoRef.current?.scrollToIndex({ index: messages.length - 1, behavior: 'smooth' });
-        });
-      }
+    if (messages.length === 0) return;
+    const lastMsg = messages[messages.length - 1];
+    const isOwn = lastMsg?.author_id === currentUser?.id;
+    // Always scroll for own messages, otherwise only if already at bottom
+    if (isOwn || atBottomRef.current) {
+      requestAnimationFrame(() => scrollToBottom('smooth'));
     }
-    prevMessageCount.current = messages.length;
-  }, [messages.length, messages, currentUser?.id]);
+  }, [messages.length, messages, currentUser?.id, scrollToBottom]);
+
+  // IntersectionObserver for infinite scroll (load older messages)
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    const container = scrollRef.current;
+    if (!sentinel || !container) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !isLoadingMore.current && messages.length > 0) {
+          isLoadingMore.current = true;
+          const prevHeight = container.scrollHeight;
+          loadMoreMessages(channelId).then(() => {
+            // Preserve scroll position after prepending older messages
+            requestAnimationFrame(() => {
+              const newHeight = container.scrollHeight;
+              container.scrollTop += newHeight - prevHeight;
+              isLoadingMore.current = false;
+            });
+          }).catch(() => {
+            isLoadingMore.current = false;
+          });
+        }
+      },
+      { root: container, threshold: 0 },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [channelId, loadMoreMessages, messages.length]);
 
   const getAuthor = (msg: Message): { name: string; avatar_url: string | null } => {
     const user = msg.author ?? users.get(msg.author_id);
@@ -148,16 +190,6 @@ export function MessageList({ channelId }: MessageListProps) {
     }
   }, [channelId, pinMessage, unpinMessage]);
 
-  const handleStartReached = useCallback(async () => {
-    if (isLoadingMore.current) return;
-    isLoadingMore.current = true;
-    try {
-      await loadMoreMessages(channelId);
-    } finally {
-      isLoadingMore.current = false;
-    }
-  }, [channelId, loadMoreMessages]);
-
   if (messages.length === 0) {
     return (
       <div className="message-list">
@@ -169,16 +201,11 @@ export function MessageList({ channelId }: MessageListProps) {
   }
 
   return (
-    <Virtuoso
-      ref={virtuosoRef}
-      className="message-list"
-      data={messages}
-      startReached={handleStartReached}
-      initialTopMostItemIndex={messages.length - 1}
-      followOutput={(isAtBottom) => isAtBottom ? 'smooth' : false}
-      atBottomThreshold={150}
-      increaseViewportBy={{ top: 200, bottom: 0 }}
-      itemContent={(index, msg) => {
+    <div ref={scrollRef} className="message-list" onScroll={handleScroll}>
+      {/* Sentinel for loading older messages */}
+      <div ref={sentinelRef} className="scroll-sentinel" />
+
+      {messages.map((msg, index) => {
         const showHeader = shouldShowHeader(msg, index);
         const isOwn = msg.author_id === currentUser?.id;
         const isEditing = editingId === msg.id;
@@ -187,6 +214,7 @@ export function MessageList({ channelId }: MessageListProps) {
 
         return (
           <div
+            key={msg.id}
             className={`message ${showHeader ? 'with-header' : 'compact'} ${isEditing ? 'editing' : ''}`}
             onMouseEnter={() => setHoveredId(msg.id)}
             onMouseLeave={() => {
@@ -303,7 +331,7 @@ export function MessageList({ channelId }: MessageListProps) {
             )}
           </div>
         );
-      }}
-    />
+      })}
+    </div>
   );
 }

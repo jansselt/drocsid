@@ -2,6 +2,11 @@
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+  padding-bottom: 0.5rem;
+}
+
+.scroll-sentinel {
+  height: 1px;
 }
 
 .message-list-empty {
