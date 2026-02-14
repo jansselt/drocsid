@@ -94,7 +94,7 @@ async fn forgot_password(
         .await
         .unwrap_or(None);
 
-    if count.unwrap_or(0) >= 3 {
+    if count.unwrap_or(0) >= 10 {
         return Err(ApiError::RateLimited {
             retry_after_ms: 900_000,
         });
