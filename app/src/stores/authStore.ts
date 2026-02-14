@@ -63,6 +63,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: () => {
     api.clearTokens();
     gateway.disconnect();
+    localStorage.removeItem('drocsid_nav');
     set({ user: null, isAuthenticated: false });
   },
 }));

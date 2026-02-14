@@ -14,7 +14,34 @@ export function GifPicker({ onSelect, onClose }: GifPickerProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const pickerRef = useRef<HTMLDivElement>(null);
   const searchTimeout = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // Click-outside to dismiss
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    // Use setTimeout so the click that opened the picker doesn't immediately close it
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handleClick);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mousedown', handleClick);
+    };
+  }, [onClose]);
+
+  // Escape to dismiss
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [onClose]);
 
   const loadTrending = useCallback(async () => {
     setLoading(true);
@@ -61,7 +88,7 @@ export function GifPicker({ onSelect, onClose }: GifPickerProps) {
   };
 
   return (
-    <div className="gif-picker">
+    <div className="gif-picker" ref={pickerRef}>
       <div className="gif-picker-header">
         <input
           ref={inputRef}

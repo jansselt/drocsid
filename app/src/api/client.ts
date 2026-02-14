@@ -246,6 +246,20 @@ export async function createChannel(
   });
 }
 
+export async function updateChannel(
+  channelId: string,
+  data: { name?: string; topic?: string },
+): Promise<Channel> {
+  return request(`/channels/${channelId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteChannel(channelId: string): Promise<void> {
+  return request(`/channels/${channelId}`, { method: 'DELETE' });
+}
+
 // ── Message Edit / Delete ─────────────────────────────
 
 export async function editMessage(channelId: string, messageId: string, content: string): Promise<Message> {

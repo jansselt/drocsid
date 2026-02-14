@@ -1,14 +1,16 @@
-import { useEffect } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import { useAuthStore } from '../../stores/authStore';
+import * as api from '../../api/client';
 import './VoiceChannel.css';
 
 interface VoiceChannelProps {
   channelId: string;
   channelName: string;
+  canManage?: boolean;
 }
 
-export function VoiceChannel({ channelId, channelName }: VoiceChannelProps) {
+export function VoiceChannel({ channelId, channelName, canManage }: VoiceChannelProps) {
   const voiceChannelId = useServerStore((s) => s.voiceChannelId);
   const voiceStates = useServerStore((s) => s.voiceStates);
   const voiceJoin = useServerStore((s) => s.voiceJoin);
@@ -17,6 +19,11 @@ export function VoiceChannel({ channelId, channelName }: VoiceChannelProps) {
   const currentUser = useAuthStore((s) => s.user);
 
   const speakingUsers = useServerStore((s) => s.speakingUsers);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(channelName);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const isConnected = voiceChannelId === channelId;
   const channelVoiceStates = voiceStates.get(channelId) || [];
@@ -25,17 +32,93 @@ export function VoiceChannel({ channelId, channelName }: VoiceChannelProps) {
     loadVoiceStates(channelId);
   }, [channelId, loadVoiceStates]);
 
+  useEffect(() => {
+    if (!menu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [menu]);
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
   const handleClick = () => {
     if (!isConnected) {
       voiceJoin(channelId);
     }
   };
 
+  const handleContextMenu = (e: React.MouseEvent) => {
+    if (!canManage) return;
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleRename = async () => {
+    const trimmed = editName.trim();
+    if (trimmed && trimmed !== channelName) {
+      try {
+        await api.updateChannel(channelId, { name: trimmed });
+      } catch {
+        setEditName(channelName);
+      }
+    } else {
+      setEditName(channelName);
+    }
+    setEditing(false);
+  };
+
+  const handleDelete = async () => {
+    if (!confirm(`Delete voice channel "${channelName}"? This cannot be undone.`)) return;
+    setMenu(null);
+    try {
+      await api.deleteChannel(channelId);
+    } catch {
+      // ignore
+    }
+  };
+
+  if (editing) {
+    return (
+      <div className="voice-channel">
+        <div className="voice-channel-btn" style={{ cursor: 'default' }}>
+          <svg className="voice-channel-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 3a1 1 0 0 0-1 1v8a1 1 0 0 0 2 0V4a1 1 0 0 0-1-1zM6.56 7.56a1 1 0 0 0-1.41 0C3.14 9.57 2 12.18 2 15a1 1 0 0 0 2 0c0-2.28.92-4.34 2.56-5.97a1 1 0 0 0 0-1.41zM18.85 7.56a1 1 0 0 0-1.41 1.41C19.08 10.66 20 12.72 20 15a1 1 0 0 0 2 0c0-2.82-1.14-5.43-3.15-7.44zM9.4 10.4a1 1 0 0 0-1.41 0A5.98 5.98 0 0 0 6 15a1 1 0 0 0 2 0c0-1.2.52-2.34 1.4-3.19a1 1 0 0 0 0-1.41zM15.6 10.4a1 1 0 0 0 0 1.41c.88.85 1.4 1.99 1.4 3.19a1 1 0 0 0 2 0c0-1.74-.72-3.38-1.99-4.6a1 1 0 0 0-1.41 0zM14 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0z" />
+          </svg>
+          <input
+            ref={inputRef}
+            className="channel-edit-input"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            onBlur={handleRename}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleRename();
+              if (e.key === 'Escape') {
+                setEditName(channelName);
+                setEditing(false);
+              }
+            }}
+            maxLength={100}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="voice-channel">
       <button
         className={`voice-channel-btn ${isConnected ? 'connected' : ''}`}
         onClick={handleClick}
+        onContextMenu={handleContextMenu}
       >
         <svg className="voice-channel-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
           <path d="M12 3a1 1 0 0 0-1 1v8a1 1 0 0 0 2 0V4a1 1 0 0 0-1-1zM6.56 7.56a1 1 0 0 0-1.41 0C3.14 9.57 2 12.18 2 15a1 1 0 0 0 2 0c0-2.28.92-4.34 2.56-5.97a1 1 0 0 0 0-1.41zM18.85 7.56a1 1 0 0 0-1.41 1.41C19.08 10.66 20 12.72 20 15a1 1 0 0 0 2 0c0-2.82-1.14-5.43-3.15-7.44zM9.4 10.4a1 1 0 0 0-1.41 0A5.98 5.98 0 0 0 6 15a1 1 0 0 0 2 0c0-1.2.52-2.34 1.4-3.19a1 1 0 0 0 0-1.41zM15.6 10.4a1 1 0 0 0 0 1.41c.88.85 1.4 1.99 1.4 3.19a1 1 0 0 0 2 0c0-1.74-.72-3.38-1.99-4.6a1 1 0 0 0-1.41 0zM14 18a2 2 0 1 1-4 0 2 2 0 0 1 4 0z" />
@@ -70,6 +153,30 @@ export function VoiceChannel({ channelId, channelName }: VoiceChannelProps) {
               </div>
             );
           })}
+        </div>
+      )}
+      {menu && (
+        <div
+          ref={menuRef}
+          className="channel-context-menu"
+          style={{ top: menu.y, left: menu.x }}
+        >
+          <button
+            className="channel-context-item"
+            onClick={() => {
+              setMenu(null);
+              setEditName(channelName);
+              setEditing(true);
+            }}
+          >
+            Edit Channel
+          </button>
+          <button
+            className="channel-context-item danger"
+            onClick={handleDelete}
+          >
+            Delete Channel
+          </button>
         </div>
       )}
     </div>

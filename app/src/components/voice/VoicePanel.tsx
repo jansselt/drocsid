@@ -11,7 +11,7 @@ import { Track } from 'livekit-client';
 import { useServerStore } from '../../stores/serverStore';
 import './VoicePanel.css';
 
-export function VoicePanel() {
+export function VoicePanel({ compact }: { compact?: boolean } = {}) {
   const voiceToken = useServerStore((s) => s.voiceToken);
   const voiceUrl = useServerStore((s) => s.voiceUrl);
   const voiceChannelId = useServerStore((s) => s.voiceChannelId);
@@ -39,12 +39,12 @@ export function VoicePanel() {
       video={false}
       onDisconnected={() => voiceLeave()}
     >
-      <VoicePanelContent channelName={channelName} />
+      <VoicePanelContent channelName={channelName} compact={compact} />
     </LiveKitRoom>
   );
 }
 
-function VoicePanelContent({ channelName }: { channelName: string }) {
+function VoicePanelContent({ channelName, compact }: { channelName: string; compact?: boolean }) {
   const participants = useParticipants();
   const { localParticipant } = useLocalParticipant();
   const voiceToggleMute = useServerStore((s) => s.voiceToggleMute);
@@ -105,7 +105,7 @@ function VoicePanelContent({ channelName }: { channelName: string }) {
   };
 
   return (
-    <div className="voice-panel">
+    <div className={`voice-panel ${compact ? 'compact' : ''}`}>
       <RoomAudioRenderer />
 
       <div className="voice-panel-header">

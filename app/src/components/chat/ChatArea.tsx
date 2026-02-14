@@ -115,7 +115,7 @@ function VoicePanelCompact() {
   // We still need the LiveKitRoom for audio, but we render it minimally
   return (
     <div className="voice-compact-bar">
-      <VoicePanel />
+      <VoicePanel compact />
     </div>
   );
 }

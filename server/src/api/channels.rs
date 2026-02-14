@@ -11,8 +11,9 @@ use crate::error::ApiError;
 use crate::services::permissions as perm_service;
 use crate::state::AppState;
 use crate::types::entities::{
-    ChannelType, CreateThreadRequest, EditMessageRequest, MessageQuery, PublicUser, ReactionGroup,
-    SendMessageRequest, SetChannelOverrideRequest, UploadRequest, UploadUrlResponse,
+    AuditAction, ChannelType, CreateThreadRequest, EditMessageRequest, MessageQuery, PublicUser,
+    ReactionGroup, SendMessageRequest, SetChannelOverrideRequest, UpdateChannelRequest,
+    UploadRequest, UploadUrlResponse,
 };
 use crate::types::events::{
     ChannelOverrideUpdateEvent, MessageCreateEvent, MessageDeleteEvent, MessagePinEvent,
@@ -23,7 +24,12 @@ use crate::types::permissions::Permissions;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/{channel_id}", get(get_channel))
+        .route(
+            "/{channel_id}",
+            get(get_channel)
+                .patch(update_channel)
+                .delete(delete_channel),
+        )
         .route(
             "/{channel_id}/messages",
             get(get_messages).post(send_message),
@@ -115,6 +121,90 @@ async fn get_channel(
         resolve_channel_with_perm(&state, channel_id, user.user_id, Permissions::VIEW_CHANNEL)
             .await?;
     Ok(Json(channel))
+}
+
+async fn update_channel(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(channel_id): Path<Uuid>,
+    Json(body): Json<UpdateChannelRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let (channel, server_id, _) =
+        resolve_channel_with_perm(&state, channel_id, user.user_id, Permissions::MANAGE_CHANNELS)
+            .await?;
+
+    let server_id = server_id.ok_or(ApiError::InvalidInput(
+        "Cannot update DM channels".into(),
+    ))?;
+
+    if let Some(ref name) = body.name {
+        if name.is_empty() || name.len() > 100 {
+            return Err(ApiError::InvalidInput(
+                "Channel name must be 1-100 characters".into(),
+            ));
+        }
+    }
+
+    let updated = queries::update_channel(
+        &state.db,
+        channel_id,
+        body.name.as_deref(),
+        body.topic.as_deref(),
+    )
+    .await?;
+
+    let _ = queries::create_audit_log(
+        &state.db,
+        server_id,
+        user.user_id,
+        AuditAction::ChannelUpdate,
+        Some(channel_id),
+        None,
+        Some(serde_json::json!({ "name": updated.name, "topic": updated.topic })),
+    )
+    .await;
+
+    state
+        .gateway
+        .broadcast_to_server(server_id, "CHANNEL_UPDATE", &updated, None);
+
+    Ok(Json(updated))
+}
+
+async fn delete_channel(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(channel_id): Path<Uuid>,
+) -> Result<impl IntoResponse, ApiError> {
+    let (channel, server_id, _) =
+        resolve_channel_with_perm(&state, channel_id, user.user_id, Permissions::MANAGE_CHANNELS)
+            .await?;
+
+    let server_id = server_id.ok_or(ApiError::InvalidInput(
+        "Cannot delete DM channels".into(),
+    ))?;
+
+    queries::delete_channel(&state.db, channel_id).await?;
+
+    let _ = queries::create_audit_log(
+        &state.db,
+        server_id,
+        user.user_id,
+        AuditAction::ChannelDelete,
+        Some(channel_id),
+        None,
+        Some(serde_json::json!({ "name": channel.name })),
+    )
+    .await;
+
+    state.gateway.broadcast_to_server(
+        server_id,
+        "CHANNEL_DELETE",
+        &serde_json::json!({ "id": channel_id, "server_id": server_id }),
+        None,
+    );
+
+    Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
 async fn get_messages(

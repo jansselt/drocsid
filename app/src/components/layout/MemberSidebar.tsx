@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useServerStore } from '../../stores/serverStore';
+import { useAuthStore } from '../../stores/authStore';
 import { StatusIndicator } from '../common/StatusIndicator';
 import type { ServerMemberWithUser } from '../../types';
 import './MemberSidebar.css';
@@ -101,25 +102,73 @@ export function MemberSidebar() {
 function MemberItem({ member }: { member: ServerMemberWithUser & { status: string } }) {
   const displayName = member.nickname || member.user.display_name || member.user.username;
   const isOffline = member.status === 'offline';
+  const openDm = useServerStore((s) => s.openDm);
+  const currentUserId = useAuthStore((s) => s.user?.id);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [menu]);
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    if (member.user_id === currentUserId) return;
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY });
+  };
 
   return (
-    <div className={`member-item ${isOffline ? 'member-offline' : ''}`}>
-      <div className="member-avatar-wrapper">
-        <div className="member-avatar">
-          {member.user.avatar_url ? (
-            <img src={member.user.avatar_url} alt="" />
-          ) : (
-            displayName[0].toUpperCase()
+    <>
+      <div
+        className={`member-item ${isOffline ? 'member-offline' : ''}`}
+        onContextMenu={handleContextMenu}
+        onClick={() => {
+          if (member.user_id !== currentUserId) {
+            openDm(member.user_id);
+          }
+        }}
+      >
+        <div className="member-avatar-wrapper">
+          <div className="member-avatar">
+            {member.user.avatar_url ? (
+              <img src={member.user.avatar_url} alt="" />
+            ) : (
+              displayName[0].toUpperCase()
+            )}
+          </div>
+          <StatusIndicator status={member.status} size="sm" />
+        </div>
+        <div className="member-info">
+          <span className="member-name">{displayName}</span>
+          {member.user.custom_status && (
+            <span className="member-custom-status">{member.user.custom_status}</span>
           )}
         </div>
-        <StatusIndicator status={member.status} size="sm" />
       </div>
-      <div className="member-info">
-        <span className="member-name">{displayName}</span>
-        {member.user.custom_status && (
-          <span className="member-custom-status">{member.user.custom_status}</span>
-        )}
-      </div>
-    </div>
+      {menu && (
+        <div
+          ref={menuRef}
+          className="member-context-menu"
+          style={{ top: menu.y, left: menu.x }}
+        >
+          <button
+            className="member-context-item"
+            onClick={() => {
+              setMenu(null);
+              openDm(member.user_id);
+            }}
+          >
+            Message
+          </button>
+        </div>
+      )}
+    </>
   );
 }

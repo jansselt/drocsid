@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import { useAuthStore } from '../../stores/authStore';
+import * as api from '../../api/client';
 import { ServerSettings } from '../server/ServerSettings';
 import { InviteModal } from '../server/InviteModal';
 import { CreateChannelModal } from '../channel/CreateChannelModal';
@@ -152,14 +153,14 @@ export function ChannelSidebar() {
             )}
           </div>
           {textChannels.map((channel) => (
-            <button
+            <ChannelItem
               key={channel.id}
-              className={`channel-item ${activeChannelId === channel.id ? 'active' : ''}`}
+              channelId={channel.id}
+              name={channel.name || ''}
+              isActive={activeChannelId === channel.id}
+              canManage={isOwner}
               onClick={() => setActiveChannel(channel.id)}
-            >
-              <span className="channel-hash">#</span>
-              <span className="channel-name">{channel.name}</span>
-            </button>
+            />
           ))}
 
           <div className="channel-category">
@@ -179,6 +180,7 @@ export function ChannelSidebar() {
               key={channel.id}
               channelId={channel.id}
               channelName={channel.name || 'Voice'}
+              canManage={isOwner}
             />
           ))}
         </div>
@@ -211,6 +213,135 @@ export function ChannelSidebar() {
 
       {showUserSettings && (
         <UserSettings onClose={() => setShowUserSettings(false)} />
+      )}
+    </>
+  );
+}
+
+function ChannelItem({
+  channelId,
+  name,
+  isActive,
+  canManage,
+  onClick,
+}: {
+  channelId: string;
+  name: string;
+  isActive: boolean;
+  canManage: boolean;
+  onClick: () => void;
+}) {
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(name);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!menu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [menu]);
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    if (!canManage) return;
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleRename = async () => {
+    const trimmed = editName.trim();
+    if (trimmed && trimmed !== name) {
+      try {
+        await api.updateChannel(channelId, { name: trimmed });
+      } catch {
+        // revert on error
+        setEditName(name);
+      }
+    } else {
+      setEditName(name);
+    }
+    setEditing(false);
+  };
+
+  const handleDelete = async () => {
+    if (!confirm(`Delete channel #${name}? This cannot be undone.`)) return;
+    setMenu(null);
+    try {
+      await api.deleteChannel(channelId);
+    } catch {
+      // ignore
+    }
+  };
+
+  if (editing) {
+    return (
+      <div className="channel-item editing">
+        <span className="channel-hash">#</span>
+        <input
+          ref={inputRef}
+          className="channel-edit-input"
+          value={editName}
+          onChange={(e) => setEditName(e.target.value)}
+          onBlur={handleRename}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleRename();
+            if (e.key === 'Escape') {
+              setEditName(name);
+              setEditing(false);
+            }
+          }}
+          maxLength={100}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <button
+        className={`channel-item ${isActive ? 'active' : ''}`}
+        onClick={onClick}
+        onContextMenu={handleContextMenu}
+      >
+        <span className="channel-hash">#</span>
+        <span className="channel-name">{name}</span>
+      </button>
+      {menu && (
+        <div
+          ref={menuRef}
+          className="channel-context-menu"
+          style={{ top: menu.y, left: menu.x }}
+        >
+          <button
+            className="channel-context-item"
+            onClick={() => {
+              setMenu(null);
+              setEditName(name);
+              setEditing(true);
+            }}
+          >
+            Edit Channel
+          </button>
+          <button
+            className="channel-context-item danger"
+            onClick={handleDelete}
+          >
+            Delete Channel
+          </button>
+        </div>
       )}
     </>
   );

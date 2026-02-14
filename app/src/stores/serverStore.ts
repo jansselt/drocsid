@@ -145,6 +145,8 @@ interface ServerState {
   loadVoiceStates: (channelId: string) => Promise<void>;
   setSpeakingUsers: (userIds: Set<string>) => void;
 
+  restoreNavigation: () => void;
+
   initGatewayHandlers: () => () => void;
 }
 
@@ -634,6 +636,41 @@ export const useServerStore = create<ServerState>((set, get) => ({
     }
   },
 
+  restoreNavigation: () => {
+    try {
+      const saved = localStorage.getItem('drocsid_nav');
+      if (!saved) return;
+      const nav = JSON.parse(saved) as {
+        view?: string;
+        serverId?: string | null;
+        channelId?: string | null;
+      };
+      if (nav.view === 'servers' && nav.serverId) {
+        get().setActiveServer(nav.serverId);
+        // setActiveServer auto-selects first text channel, but we want to restore the exact channel
+        if (nav.channelId) {
+          // Wait for channels to load then restore
+          const checkAndRestore = () => {
+            const channels = get().channels.get(nav.serverId!);
+            if (channels && channels.some((c) => c.id === nav.channelId)) {
+              get().setActiveChannel(nav.channelId!);
+            }
+          };
+          // Try immediately (channels may be cached), then retry after a short delay
+          checkAndRestore();
+          setTimeout(checkAndRestore, 500);
+        }
+      } else if (nav.view === 'home') {
+        get().setView('home');
+        if (nav.channelId) {
+          get().setActiveDmChannel(nav.channelId);
+        }
+      }
+    } catch {
+      // ignore corrupt localStorage
+    }
+  },
+
   // ── Gateway Handlers ─────────────────────────────────
 
   initGatewayHandlers: () => {
@@ -755,6 +792,37 @@ export const useServerStore = create<ServerState>((set, get) => ({
               return { channels };
             });
           }
+          break;
+        }
+        case 'CHANNEL_UPDATE': {
+          const channel = data as Channel;
+          if (channel.server_id) {
+            set((state) => {
+              const channels = new Map(state.channels);
+              const existing = channels.get(channel.server_id!) || [];
+              channels.set(
+                channel.server_id!,
+                existing.map((c) => (c.id === channel.id ? channel : c)),
+              );
+              return { channels };
+            });
+          }
+          break;
+        }
+        case 'CHANNEL_DELETE': {
+          const { id, server_id } = data as { id: string; server_id: string };
+          set((state) => {
+            const channels = new Map(state.channels);
+            const existing = channels.get(server_id) || [];
+            channels.set(
+              server_id,
+              existing.filter((c) => c.id !== id),
+            );
+            return {
+              channels,
+              activeChannelId: state.activeChannelId === id ? null : state.activeChannelId,
+            };
+          });
           break;
         }
         case 'ROLE_CREATE': {
@@ -927,3 +995,21 @@ export const useServerStore = create<ServerState>((set, get) => ({
     return removeHandler;
   },
 }));
+
+// Persist navigation state to localStorage
+useServerStore.subscribe((state, prev) => {
+  if (
+    state.view !== prev.view ||
+    state.activeServerId !== prev.activeServerId ||
+    state.activeChannelId !== prev.activeChannelId
+  ) {
+    localStorage.setItem(
+      'drocsid_nav',
+      JSON.stringify({
+        view: state.view,
+        serverId: state.activeServerId,
+        channelId: state.activeChannelId,
+      }),
+    );
+  }
+});

@@ -13,6 +13,7 @@ const IDLE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
 export function AppLayout() {
   const initGatewayHandlers = useServerStore((s) => s.initGatewayHandlers);
   const setServers = useServerStore((s) => s.setServers);
+  const restoreNavigation = useServerStore((s) => s.restoreNavigation);
   const activeServerId = useServerStore((s) => s.activeServerId);
   const [showSwitcher, setShowSwitcher] = useState(false);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -22,6 +23,7 @@ export function AppLayout() {
     // Set up gateway READY handler
     gateway.onReady = (data) => {
       setServers(data.servers);
+      restoreNavigation();
     };
 
     // Set up dispatch event handlers
@@ -31,7 +33,7 @@ export function AppLayout() {
       gateway.onReady = null;
       cleanup();
     };
-  }, [initGatewayHandlers, setServers]);
+  }, [initGatewayHandlers, setServers, restoreNavigation]);
 
   // Ctrl+K quick switcher
   useEffect(() => {

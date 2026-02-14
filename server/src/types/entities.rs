@@ -339,6 +339,12 @@ pub struct CreateChannelRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct UpdateChannelRequest {
+    pub name: Option<String>,
+    pub topic: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct SendMessageRequest {
     pub content: String,
     pub reply_to_id: Option<Uuid>,

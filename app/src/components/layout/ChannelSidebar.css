@@ -174,3 +174,62 @@
   color: var(--text-muted);
   font-size: 0.8125rem;
 }
+
+/* Channel context menu */
+.channel-context-menu {
+  position: fixed;
+  z-index: 1000;
+  background: var(--bg-darkest);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  padding: 0.25rem;
+  min-width: 160px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.channel-context-item {
+  display: block;
+  width: 100%;
+  padding: 0.375rem 0.5rem;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  text-align: left;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.channel-context-item:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.channel-context-item.danger {
+  color: var(--danger, #ed4245);
+}
+
+.channel-context-item.danger:hover {
+  background: var(--danger, #ed4245);
+  color: #fff;
+}
+
+/* Channel inline edit */
+.channel-item.editing {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0 0.5rem;
+}
+
+.channel-edit-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.25rem 0.375rem;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  background: var(--bg-darkest);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  outline: none;
+}

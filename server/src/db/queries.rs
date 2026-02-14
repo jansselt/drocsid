@@ -342,6 +342,38 @@ pub async fn get_channel_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Channel
     .await
 }
 
+pub async fn update_channel(
+    pool: &PgPool,
+    id: Uuid,
+    name: Option<&str>,
+    topic: Option<&str>,
+) -> Result<Channel, sqlx::Error> {
+    sqlx::query_as::<_, Channel>(
+        r#"
+        UPDATE channels
+        SET name = COALESCE($2, name),
+            topic = COALESCE($3, topic),
+            updated_at = now()
+        WHERE id = $1
+        RETURNING id, instance_id, server_id, parent_id, channel_type, name, topic, position,
+                  created_at, updated_at
+        "#,
+    )
+    .bind(id)
+    .bind(name)
+    .bind(topic)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn delete_channel(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM channels WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 // ── Messages ───────────────────────────────────────────
 
 pub async fn create_message(
