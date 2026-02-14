@@ -100,7 +100,10 @@ export function MemberSidebar() {
 }
 
 function MemberItem({ member }: { member: ServerMemberWithUser & { status: string } }) {
-  const displayName = member.nickname || member.user.display_name || member.user.username;
+  // Use cached user for live custom_status updates from PRESENCE_UPDATE
+  const cachedUser = useServerStore((s) => s.users.get(member.user_id));
+  const user = cachedUser || member.user;
+  const displayName = member.nickname || user.display_name || user.username;
   const isOffline = member.status === 'offline';
   const openDm = useServerStore((s) => s.openDm);
   const currentUserId = useAuthStore((s) => s.user?.id);
@@ -137,8 +140,8 @@ function MemberItem({ member }: { member: ServerMemberWithUser & { status: strin
       >
         <div className="member-avatar-wrapper">
           <div className="member-avatar">
-            {member.user.avatar_url ? (
-              <img src={member.user.avatar_url} alt="" />
+            {user.avatar_url ? (
+              <img src={user.avatar_url} alt="" />
             ) : (
               displayName[0].toUpperCase()
             )}
@@ -147,8 +150,8 @@ function MemberItem({ member }: { member: ServerMemberWithUser & { status: strin
         </div>
         <div className="member-info">
           <span className="member-name">{displayName}</span>
-          {member.user.custom_status && (
-            <span className="member-custom-status">{member.user.custom_status}</span>
+          {user.custom_status && (
+            <span className="member-custom-status">{user.custom_status}</span>
           )}
         </div>
       </div>
