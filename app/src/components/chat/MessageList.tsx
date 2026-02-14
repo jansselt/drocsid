@@ -37,7 +37,6 @@ export function MessageList({ channelId }: MessageListProps) {
   const [firstItemIndex, setFirstItemIndex] = useState(START_INDEX);
   const isLoadingMore = useRef(false);
   const atBottomRef = useRef(true);
-  const initialScrollGrace = useRef(false);
   const prevChannelRef = useRef(channelId);
 
   // Reset state on channel switch
@@ -49,24 +48,19 @@ export function MessageList({ channelId }: MessageListProps) {
     setFirstItemIndex(START_INDEX);
     isLoadingMore.current = false;
     atBottomRef.current = true;
-    initialScrollGrace.current = false;
     prevChannelRef.current = channelId;
   }, [channelId]);
 
-  // Re-scroll when images/embeds load after initial render (they change scrollHeight).
-  // Virtuoso's followOutput handles most cases, but async media loads can still cause
-  // the content height to change after the initial scroll.
+  // Re-scroll when images/embeds load (they change scrollHeight).
+  // Virtuoso's followOutput handles new-item scrolling, but async media loads
+  // can increase content height after the initial scroll, pushing the bottom
+  // out of view (e.g. GIF messages). Re-scroll whenever at the bottom.
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
 
-    initialScrollGrace.current = true;
-    const graceTimeout = setTimeout(() => {
-      initialScrollGrace.current = false;
-    }, 5000);
-
     const handleLoad = () => {
-      if (initialScrollGrace.current && atBottomRef.current) {
+      if (atBottomRef.current) {
         virtuosoRef.current?.scrollToIndex({
           index: messages.length - 1,
           align: 'end',
@@ -77,7 +71,6 @@ export function MessageList({ channelId }: MessageListProps) {
     // Capture phase catches load events from descendant img/iframe elements
     el.addEventListener('load', handleLoad, true);
     return () => {
-      clearTimeout(graceTimeout);
       el.removeEventListener('load', handleLoad, true);
     };
   }, [channelId, messages.length]);

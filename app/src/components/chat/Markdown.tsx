@@ -170,7 +170,7 @@ export function Markdown({ content }: MarkdownProps) {
           case 'image':
             return (
               <a key={i} className="md-image-link" href={token.href} target="_blank" rel="noopener noreferrer">
-                <img className="md-embedded-image" src={token.href} alt="" loading="lazy" />
+                <img className="md-embedded-image" src={token.href} alt="" />
               </a>
             );
           case 'youtube':

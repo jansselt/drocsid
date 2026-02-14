@@ -65,11 +65,12 @@ export function ServerSettings({ serverId, onClose }: ServerSettingsProps) {
     if (!selectedRole) return;
     setSaving(true);
     try {
-      await api.updateRole(serverId, selectedRole.id, {
+      const updated = await api.updateRole(serverId, selectedRole.id, {
         name: editName !== selectedRole.name ? editName : undefined,
         permissions: editPerms !== selectedRole.permissions ? editPerms : undefined,
         color: editColor !== selectedRole.color ? editColor : undefined,
       });
+      setSelectedRole(updated);
     } catch {
       // Error handled silently
     }
