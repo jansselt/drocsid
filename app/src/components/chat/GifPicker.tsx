@@ -6,10 +6,11 @@ import './GifPicker.css';
 interface GifPickerProps {
   onSelect: (gifUrl: string) => void;
   onClose: () => void;
+  initialQuery?: string;
 }
 
-export function GifPicker({ onSelect, onClose }: GifPickerProps) {
-  const [query, setQuery] = useState('');
+export function GifPicker({ onSelect, onClose, initialQuery = '' }: GifPickerProps) {
+  const [query, setQuery] = useState(initialQuery);
   const [gifs, setGifs] = useState<GifItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -57,8 +58,21 @@ export function GifPicker({ onSelect, onClose }: GifPickerProps) {
 
   useEffect(() => {
     inputRef.current?.focus();
-    loadTrending();
-  }, [loadTrending]);
+    if (initialQuery.trim()) {
+      // Pre-populated search from /gif command
+      setLoading(true);
+      api.gifSearch(initialQuery.trim()).then((result) => {
+        setGifs(result.gifs);
+        setLoading(false);
+      }).catch(() => {
+        setError('Search failed');
+        setLoading(false);
+      });
+    } else {
+      loadTrending();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSearch = (value: string) => {
     setQuery(value);
@@ -88,7 +102,7 @@ export function GifPicker({ onSelect, onClose }: GifPickerProps) {
   };
 
   return (
-    <div className="gif-picker" ref={pickerRef}>
+    <div className={`gif-picker ${initialQuery ? 'gif-picker-left' : ''}`} ref={pickerRef}>
       <div className="gif-picker-header">
         <input
           ref={inputRef}

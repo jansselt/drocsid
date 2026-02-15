@@ -33,6 +33,7 @@ export function MessageInput({ channelId }: MessageInputProps) {
   const [uploads, setUploads] = useState<PendingUpload[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [showGifs, setShowGifs] = useState(false);
+  const [gifQuery, setGifQuery] = useState('');
   const [showEmojis, setShowEmojis] = useState(false);
   const [showFormatHelp, setShowFormatHelp] = useState(false);
   const sendMessage = useServerStore((s) => s.sendMessage);
@@ -80,6 +81,7 @@ export function MessageInput({ channelId }: MessageInputProps) {
         }
         if (cmd === '/gif') {
           setContent('');
+          setGifQuery(rest);
           setShowGifs(true);
           return;
         }
@@ -433,7 +435,7 @@ export function MessageInput({ channelId }: MessageInputProps) {
         />
         <button
           className="gif-btn"
-          onClick={() => setShowGifs(!showGifs)}
+          onClick={() => { setGifQuery(''); setShowGifs(!showGifs); }}
           title="GIF"
         >
           GIF
@@ -456,6 +458,7 @@ export function MessageInput({ channelId }: MessageInputProps) {
 
       {showGifs && (
         <GifPicker
+          initialQuery={gifQuery}
           onSelect={(gifUrl) => {
             sendMessage(channelId, gifUrl);
             setShowGifs(false);
