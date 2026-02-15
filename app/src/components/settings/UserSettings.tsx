@@ -17,6 +17,7 @@ import {
   requestNotificationPermission,
 } from '../../utils/browserNotifications';
 import * as api from '../../api/client';
+import { isTauri } from '../../api/instance';
 import type { RegistrationCode, Channel } from '../../types';
 import './UserSettings.css';
 
@@ -664,6 +665,9 @@ function VoiceVideoSettings() {
             </option>
           ))}
         </select>
+        {audioOutputs.length === 0 && isTauri() && (
+          <span className="profile-field-hint">Output device selection is managed by your system audio settings in the desktop app.</span>
+        )}
       </div>
       <div className="profile-field">
         <label>Output Volume</label>

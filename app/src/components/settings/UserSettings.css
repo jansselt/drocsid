@@ -318,6 +318,12 @@
   font-size: 0.875rem;
   font-family: inherit;
   width: 100%;
+  color-scheme: dark;
+}
+
+.voice-video-settings select option {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
 }
 
 .voice-video-settings input[type="range"] {
