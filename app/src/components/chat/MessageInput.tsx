@@ -23,6 +23,7 @@ const SLASH_COMMANDS: Record<string, string | null> = {
   '/lenny':     '( ͡° ͜ʖ ͡°)',
   '/disapprove': 'ಠ_ಠ',
   '/sparkles':  '✨',
+  '/spoiler':   null, // special: wraps text in ||spoiler||
   '/gif':       null, // special: opens GIF picker
   '/bug':       null, // special: opens bug report modal
 };
@@ -33,6 +34,7 @@ export function MessageInput({ channelId }: MessageInputProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [showGifs, setShowGifs] = useState(false);
   const [showEmojis, setShowEmojis] = useState(false);
+  const [showFormatHelp, setShowFormatHelp] = useState(false);
   const sendMessage = useServerStore((s) => s.sendMessage);
   const replyingTo = useServerStore((s) => s.replyingTo);
   const setReplyingTo = useServerStore((s) => s.setReplyingTo);
@@ -68,6 +70,14 @@ export function MessageInput({ channelId }: MessageInputProps) {
 
       if (cmd in SLASH_COMMANDS) {
         const replacement = SLASH_COMMANDS[cmd];
+        if (cmd === '/spoiler') {
+          if (rest) {
+            trimmed = `||${rest}||`;
+          } else {
+            setContent('');
+            return;
+          }
+        }
         if (cmd === '/gif') {
           setContent('');
           setShowGifs(true);
@@ -298,7 +308,7 @@ export function MessageInput({ channelId }: MessageInputProps) {
             >
               <span className="slash-cmd-name">{cmd}</span>
               <span className="slash-cmd-desc">
-                {cmd === '/gif' ? 'Open GIF picker' : cmd === '/bug' ? 'Report a bug' : SLASH_COMMANDS[cmd]}
+                {cmd === '/spoiler' ? 'Hide text behind spoiler' : cmd === '/gif' ? 'Open GIF picker' : cmd === '/bug' ? 'Report a bug' : SLASH_COMMANDS[cmd]}
               </span>
             </button>
           ))}
@@ -435,6 +445,13 @@ export function MessageInput({ channelId }: MessageInputProps) {
         >
           {'\u{1F600}'}
         </button>
+        <button
+          className="gif-btn"
+          onClick={() => setShowFormatHelp(!showFormatHelp)}
+          title="Formatting help"
+        >
+          ?
+        </button>
       </div>
 
       {showGifs && (
@@ -455,6 +472,25 @@ export function MessageInput({ channelId }: MessageInputProps) {
           }}
           onClose={() => setShowEmojis(false)}
         />
+      )}
+
+      {showFormatHelp && (
+        <div className="format-help-panel">
+          <div className="format-help-header">
+            <span>Formatting</span>
+            <button className="format-help-close" onClick={() => setShowFormatHelp(false)}>&times;</button>
+          </div>
+          <div className="format-help-grid">
+            <span className="format-help-syntax">**bold**</span><span className="format-help-result"><strong>bold</strong></span>
+            <span className="format-help-syntax">*italic*</span><span className="format-help-result"><em>italic</em></span>
+            <span className="format-help-syntax">***bold italic***</span><span className="format-help-result"><strong><em>bold italic</em></strong></span>
+            <span className="format-help-syntax">||spoiler||</span><span className="format-help-result"><span className="format-help-spoiler">spoiler</span></span>
+            <span className="format-help-syntax">`inline code`</span><span className="format-help-result"><code className="md-inline-code">inline code</code></span>
+            <span className="format-help-syntax">```code block```</span><span className="format-help-result"><code className="md-inline-code">code block</code></span>
+            <span className="format-help-syntax">&lt;@user&gt;</span><span className="format-help-result">Mention a user</span>
+            <span className="format-help-syntax">:emoji:</span><span className="format-help-result">Emoji shortcode</span>
+          </div>
+        </div>
       )}
     </div>
   );
