@@ -135,7 +135,10 @@ export function VoiceChannel({ channelId, channelName, canManage }: VoiceChannel
             return (
               <div key={vs.user_id} className={`voice-user ${isMe ? 'me' : ''} ${isSpeaking ? 'speaking' : ''}`}>
                 <div className={`voice-user-avatar ${isSpeaking ? 'speaking' : ''}`}>
-                  {(user?.username || '?').charAt(0).toUpperCase()}
+                  {user?.avatar_url
+                    ? <img src={user.avatar_url} alt={user.username} />
+                    : (user?.username || '?').charAt(0).toUpperCase()
+                  }
                 </div>
                 <span className="voice-user-name">
                   {user?.username || 'Unknown'}
