@@ -200,10 +200,10 @@ export function MessageInput({ channelId }: MessageInputProps) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  // Slash command suggestions
-  const slashSuggestions = content.startsWith('/')
+  // Slash command suggestions — only while typing the command name (before any space)
+  const slashSuggestions = content.startsWith('/') && !content.includes(' ')
     ? Object.keys(SLASH_COMMANDS).filter((cmd) =>
-        cmd.startsWith(content.split(' ')[0].toLowerCase()),
+        cmd.startsWith(content.toLowerCase()),
       )
     : [];
 
