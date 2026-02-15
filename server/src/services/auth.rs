@@ -95,6 +95,13 @@ pub async fn register(
         ));
     }
 
+    // Check if username already exists
+    if queries::get_user_by_username(pool, username).await?.is_some() {
+        return Err(ApiError::InvalidInput(
+            "Username already taken".into(),
+        ));
+    }
+
     // Hash password
     let salt = SaltString::generate(&mut OsRng);
     let argon2 = Argon2::default();

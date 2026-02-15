@@ -27,7 +27,7 @@ pub struct User {
     pub updated_at: DateTime<Utc>,
 }
 
-/// User data safe to send to other users (no email, no password, no theme)
+/// User data safe to send to other users (no email, no password)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublicUser {
     pub id: Uuid,
@@ -37,6 +37,7 @@ pub struct PublicUser {
     pub bio: Option<String>,
     pub status: String,
     pub custom_status: Option<String>,
+    pub theme_preference: Option<String>,
     pub bot: bool,
 }
 
@@ -50,6 +51,7 @@ impl From<User> for PublicUser {
             bio: u.bio,
             status: u.status,
             custom_status: u.custom_status,
+            theme_preference: Some(u.theme_preference),
             bot: u.bot,
         }
     }

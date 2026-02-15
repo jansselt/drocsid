@@ -291,6 +291,7 @@ async fn execute_webhook(
         bio: None,
         status: "online".to_string(),
         custom_status: None,
+        theme_preference: None,
         bot: true,
     };
 

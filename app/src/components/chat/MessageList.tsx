@@ -248,22 +248,14 @@ export function MessageList({ channelId }: MessageListProps) {
 
   // ── Render ──────────────────────────────────────────────────────────
 
-  if (messages.length === 0) {
-    return (
-      <div className="message-list-wrapper">
-        <div className="message-list">
-          <div className="message-list-empty">
-            <p>No messages yet. Say something!</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="message-list-wrapper">
       <div key={channelId} ref={scrollRef} className="message-list">
-        {messages.map((msg, index) => {
+        {messages.length === 0 ? (
+          <div className="message-list-empty">
+            <p>No messages yet. Say something!</p>
+          </div>
+        ) : messages.map((msg, index) => {
           const showHeader = shouldShowHeader(index);
           const isOwn = msg.author_id === currentUser?.id;
           const isEditing = editingId === msg.id;
@@ -394,6 +386,7 @@ export function MessageList({ channelId }: MessageListProps) {
           );
         })}
       </div>
+
 
       {showScrollBtn && (
         <button
