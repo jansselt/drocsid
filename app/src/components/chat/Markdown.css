@@ -170,6 +170,24 @@
   line-height: 1.375;
 }
 
+/* ── Spoiler tags ────────────────────────────────── */
+
+.md-spoiler {
+  background: var(--text-muted);
+  color: transparent;
+  border-radius: 3px;
+  padding: 0 0.125rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  user-select: none;
+}
+
+.md-spoiler-revealed {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  user-select: text;
+}
+
 .md-mention {
   background: color-mix(in srgb, var(--accent) 25%, transparent);
   color: var(--accent-hover);

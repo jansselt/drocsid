@@ -19,6 +19,8 @@ import {
 import * as api from '../../api/client';
 import type { RegistrationCode, Channel } from '../../types';
 import { listAudioOutputs, saveSpeaker, type AudioOutputDevice } from '../../utils/audioDevices';
+import { SHORTCUT_CATEGORIES, mod } from '../common/KeyboardShortcutsDialog';
+import '../common/KeyboardShortcutsDialog.css';
 import './UserSettings.css';
 
 interface UserSettingsProps {
@@ -47,7 +49,7 @@ export function UserSettings({ onClose }: UserSettingsProps) {
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'appearance' | 'notifications' | 'voice' | 'admin'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'appearance' | 'notifications' | 'voice' | 'keybinds' | 'admin'>('profile');
 
   // Profile form state
   const [displayName, setDisplayName] = useState(user?.display_name || '');
@@ -188,6 +190,12 @@ export function UserSettings({ onClose }: UserSettingsProps) {
               onClick={() => setActiveTab('voice')}
             >
               Voice &amp; Video
+            </button>
+            <button
+              className={`settings-nav-item ${activeTab === 'keybinds' ? 'active' : ''}`}
+              onClick={() => setActiveTab('keybinds')}
+            >
+              Keybinds
             </button>
             {user.is_admin && (
               <button
@@ -349,6 +357,31 @@ export function UserSettings({ onClose }: UserSettingsProps) {
 
             {activeTab === 'notifications' && <NotificationSettings />}
             {activeTab === 'voice' && <VoiceVideoSettings />}
+            {activeTab === 'keybinds' && (
+              <div className="voice-video-settings">
+                <p style={{ color: 'var(--text-muted)', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
+                  Press <kbd className="shortcuts-kbd">{mod}</kbd> <span className="shortcuts-plus">+</span> <kbd className="shortcuts-kbd">?</kbd> anywhere to open this as a quick overlay.
+                </p>
+                {SHORTCUT_CATEGORIES.map((cat) => (
+                  <div key={cat.name} className="shortcuts-category">
+                    <h3 className="shortcuts-category-name">{cat.name}</h3>
+                    {cat.shortcuts.map((shortcut, i) => (
+                      <div key={i} className="shortcuts-row">
+                        <span className="shortcuts-description">{shortcut.description}</span>
+                        <span className="shortcuts-keys">
+                          {shortcut.keys.map((key, j) => (
+                            <span key={j}>
+                              <kbd className="shortcuts-kbd">{key}</kbd>
+                              {j < shortcut.keys.length - 1 && <span className="shortcuts-plus">+</span>}
+                            </span>
+                          ))}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
             {activeTab === 'admin' && <AdminPanel />}
           </div>
         </div>

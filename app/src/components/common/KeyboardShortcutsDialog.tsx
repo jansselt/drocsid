@@ -16,9 +16,9 @@ interface ShortcutCategory {
 }
 
 const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-const mod = isMac ? '⌘' : 'Ctrl';
+export const mod = isMac ? '⌘' : 'Ctrl';
 
-const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
+export const SHORTCUT_CATEGORIES: ShortcutCategory[] = [
   {
     name: 'Navigation',
     shortcuts: [

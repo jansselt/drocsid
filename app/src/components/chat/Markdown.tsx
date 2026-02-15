@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import { useAuthStore } from '../../stores/authStore';
 import { SHORTCODE_MAP } from './EmojiPicker';
@@ -9,7 +9,7 @@ interface MarkdownProps {
   content: string;
 }
 
-type TokenType = 'text' | 'bold' | 'italic' | 'bolditalic' | 'code' | 'codeblock' | 'link' | 'image' | 'youtube' | 'twitter' | 'tiktok' | 'instagram' | 'threads' | 'bluesky' | 'mention' | 'br';
+type TokenType = 'text' | 'bold' | 'italic' | 'bolditalic' | 'spoiler' | 'code' | 'codeblock' | 'link' | 'image' | 'youtube' | 'twitter' | 'tiktok' | 'instagram' | 'threads' | 'bluesky' | 'mention' | 'br';
 
 interface Token {
   type: TokenType;
@@ -75,6 +75,14 @@ function tokenize(text: string): Token[] {
     match = remaining.match(/^`([^`\n]+)`/);
     if (match) {
       tokens.push({ type: 'code', text: match[1] });
+      remaining = remaining.slice(match[0].length);
+      continue;
+    }
+
+    // Spoiler: ||text||
+    match = remaining.match(/^\|\|(.+?)\|\|/);
+    if (match) {
+      tokens.push({ type: 'spoiler', text: match[1] });
       remaining = remaining.slice(match[0].length);
       continue;
     }
@@ -173,7 +181,7 @@ function tokenize(text: string): Token[] {
     }
 
     // Plain text: consume until next special char or @
-    match = remaining.match(/^[^*`\n@https:]+/);
+    match = remaining.match(/^[^*`|\n@https:]+/);
     if (match) {
       tokens.push({ type: 'text', text: match[0] });
       remaining = remaining.slice(match[0].length);
@@ -186,6 +194,20 @@ function tokenize(text: string): Token[] {
   }
 
   return tokens;
+}
+
+function Spoiler({ children }: { children: React.ReactNode }) {
+  const [revealed, setRevealed] = useState(false);
+  return (
+    <span
+      className={`md-spoiler ${revealed ? 'md-spoiler-revealed' : ''}`}
+      onClick={() => setRevealed((r) => !r)}
+      role="button"
+      tabIndex={0}
+    >
+      {children}
+    </span>
+  );
 }
 
 export function Markdown({ content }: MarkdownProps) {
@@ -203,6 +225,8 @@ export function Markdown({ content }: MarkdownProps) {
             return <em key={i}>{token.text}</em>;
           case 'bolditalic':
             return <strong key={i}><em>{token.text}</em></strong>;
+          case 'spoiler':
+            return <Spoiler key={i}>{token.text}</Spoiler>;
           case 'code':
             return <code key={i} className="md-inline-code">{token.text}</code>;
           case 'codeblock':

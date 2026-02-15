@@ -42,6 +42,7 @@ export function MessageInput({ channelId }: MessageInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [mentionQuery, setMentionQuery] = useState<{ query: string; startPos: number } | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const [slashIndex, setSlashIndex] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastTypingRef = useRef(0);
 
@@ -284,15 +285,16 @@ export function MessageInput({ channelId }: MessageInputProps) {
 
       {slashSuggestions.length > 0 && (
         <div className="slash-suggestions">
-          {slashSuggestions.map((cmd) => (
+          {slashSuggestions.map((cmd, i) => (
             <button
               key={cmd}
-              className="slash-suggestion"
+              className={`slash-suggestion ${i === slashIndex ? 'active' : ''}`}
               onMouseDown={(e) => {
                 e.preventDefault();
                 setContent(cmd + ' ');
                 inputRef.current?.focus();
               }}
+              onMouseEnter={() => setSlashIndex(i)}
             >
               <span className="slash-cmd-name">{cmd}</span>
               <span className="slash-cmd-desc">
@@ -315,6 +317,7 @@ export function MessageInput({ channelId }: MessageInputProps) {
                   e.preventDefault();
                   insertMention(m.user_id, name);
                 }}
+                onMouseEnter={() => setMentionIndex(i)}
               >
                 <span className="mention-avatar">
                   {m.user.avatar_url ? (
@@ -355,6 +358,7 @@ export function MessageInput({ channelId }: MessageInputProps) {
           onPaste={handlePaste}
           onChange={(e) => {
             setContent(e.target.value);
+            setSlashIndex(0);
             updateMentionQuery(e.target.value, e.target.selectionStart ?? e.target.value.length);
             // Send typing indicator (throttled to every 5s)
             const now = Date.now();
@@ -364,6 +368,30 @@ export function MessageInput({ channelId }: MessageInputProps) {
             }
           }}
           onKeyDown={(e) => {
+            // Handle slash command keyboard nav
+            if (slashSuggestions.length > 0) {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setSlashIndex((i) => Math.min(i + 1, slashSuggestions.length - 1));
+                return;
+              }
+              if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setSlashIndex((i) => Math.max(i - 1, 0));
+                return;
+              }
+              if (e.key === 'Tab' || e.key === 'Enter') {
+                e.preventDefault();
+                setContent(slashSuggestions[slashIndex] + ' ');
+                inputRef.current?.focus();
+                return;
+              }
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                setContent('');
+                return;
+              }
+            }
             // Handle mention keyboard nav
             if (mentionSuggestions.length > 0) {
               if (e.key === 'ArrowDown') {
