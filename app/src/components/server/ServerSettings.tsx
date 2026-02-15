@@ -32,9 +32,12 @@ export function ServerSettings({ serverId, onClose }: ServerSettingsProps) {
   const [serverName, setServerName] = useState(server?.name || '');
   const [serverDescription, setServerDescription] = useState(server?.description || '');
   const [serverIconUrl, setServerIconUrl] = useState(server?.icon_url || '');
+  const [serverBannerUrl, setServerBannerUrl] = useState(server?.banner_url || '');
   const [uploadingIcon, setUploadingIcon] = useState(false);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
   const [savingOverview, setSavingOverview] = useState(false);
   const iconInputRef = useRef<HTMLInputElement>(null);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (selectedRole) {
@@ -198,6 +201,75 @@ export function ServerSettings({ serverId, onClose }: ServerSettingsProps) {
                       }
                       setUploadingIcon(false);
                       if (iconInputRef.current) iconInputRef.current.value = '';
+                    }}
+                  />
+                </div>
+
+                <div className="banner-upload-section">
+                  <label className="banner-upload-label">Server Banner</label>
+                  <div
+                    className="banner-upload-preview"
+                    onClick={() => bannerInputRef.current?.click()}
+                    style={serverBannerUrl ? { backgroundImage: `url(${serverBannerUrl})` } : undefined}
+                  >
+                    {!serverBannerUrl && (
+                      <span className="banner-upload-placeholder">
+                        Click to upload a banner image
+                      </span>
+                    )}
+                  </div>
+                  <div className="banner-upload-actions">
+                    <button
+                      className="profile-avatar-upload-btn"
+                      onClick={() => bannerInputRef.current?.click()}
+                      disabled={uploadingBanner}
+                    >
+                      {uploadingBanner ? 'Uploading...' : serverBannerUrl ? 'Change Banner' : 'Upload Banner'}
+                    </button>
+                    {serverBannerUrl && (
+                      <button
+                        className="profile-reset-btn"
+                        onClick={async () => {
+                          setServerBannerUrl('');
+                          try {
+                            await api.updateServer(serverId, { banner_url: '' });
+                            useServerStore.setState((state) => ({
+                              servers: state.servers.map((s) =>
+                                s.id === serverId ? { ...s, banner_url: null } : s,
+                              ),
+                            }));
+                          } catch {
+                            setServerBannerUrl(server.banner_url || '');
+                          }
+                        }}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    ref={bannerInputRef}
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file || !file.type.startsWith('image/') || file.size > 5 * 1024 * 1024) return;
+                      setUploadingBanner(true);
+                      try {
+                        const { file_url } = await api.uploadServerBanner(serverId, file);
+                        setServerBannerUrl(file_url);
+                        await api.updateServer(serverId, { banner_url: file_url });
+                        useServerStore.setState((state) => ({
+                          servers: state.servers.map((s) =>
+                            s.id === serverId ? { ...s, banner_url: file_url } : s,
+                          ),
+                        }));
+                      } catch {
+                        // Error handled silently
+                      }
+                      setUploadingBanner(false);
+                      if (bannerInputRef.current) bannerInputRef.current.value = '';
                     }}
                   />
                 </div>

@@ -35,6 +35,7 @@ export interface Server {
   name: string;
   description: string | null;
   icon_url: string | null;
+  banner_url: string | null;
   owner_id: string;
   default_channel_id: string | null;
   created_at: string;

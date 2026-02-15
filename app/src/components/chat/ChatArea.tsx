@@ -22,10 +22,13 @@ export function ChatArea() {
   const voiceChannelId = useServerStore((s) => s.voiceChannelId);
   const currentUser = useAuthStore((s) => s.user);
 
+  const servers = useServerStore((s) => s.servers);
   const showChannelSidebar = useServerStore((s) => s.showChannelSidebar);
   const toggleChannelSidebar = useServerStore((s) => s.toggleChannelSidebar);
   const showMemberSidebar = useServerStore((s) => s.showMemberSidebar);
   const toggleMemberSidebar = useServerStore((s) => s.toggleMemberSidebar);
+
+  const bannerUrl = activeServerId ? servers.find((s) => s.id === activeServerId)?.banner_url : null;
 
   const [showSearch, setShowSearch] = useState(false);
   const [showPins, setShowPins] = useState(false);
@@ -81,7 +84,10 @@ export function ChatArea() {
         {/* Voice panel pinned at top when connected */}
         {voiceChannelId && <VoicePanelCompact />}
 
-        <div className="chat-header">
+        <div
+          className={`chat-header ${bannerUrl ? 'has-banner' : ''}`}
+          style={bannerUrl ? { backgroundImage: `url(${bannerUrl})` } : undefined}
+        >
           {!showChannelSidebar && (
             <button
               className="chat-header-action chat-header-expand"

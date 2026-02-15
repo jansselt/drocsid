@@ -474,3 +474,53 @@
   flex-direction: column;
   gap: 24px;
 }
+
+/* ── Banner Upload ─────────────────────────── */
+
+.banner-upload-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.banner-upload-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.banner-upload-preview {
+  width: 100%;
+  height: 120px;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: 2px dashed var(--border);
+  transition: border-color 0.15s;
+}
+
+.banner-upload-preview:hover {
+  border-color: var(--accent);
+}
+
+.banner-upload-preview[style*="background-image"] {
+  border-style: solid;
+  border-color: transparent;
+}
+
+.banner-upload-placeholder {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.banner-upload-actions {
+  display: flex;
+  gap: 0.5rem;
+}

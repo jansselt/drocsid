@@ -19,6 +19,7 @@ pub fn routes() -> Router<AppState> {
         .route("/", post(create_server))
         .route("/{server_id}", get(get_server).patch(update_server_handler).delete(delete_server_handler))
         .route("/{server_id}/icon", post(request_icon_upload))
+        .route("/{server_id}/banner", post(request_banner_upload))
         .route(
             "/{server_id}/channels",
             get(get_channels).post(create_channel),
@@ -363,6 +364,7 @@ struct UpdateServerRequest {
     name: Option<String>,
     description: Option<String>,
     icon_url: Option<String>,
+    banner_url: Option<String>,
 }
 
 async fn update_server_handler(
@@ -403,6 +405,7 @@ async fn update_server_handler(
         body.name.as_deref(),
         body.description.as_deref(),
         body.icon_url.as_deref(),
+        body.banner_url.as_deref(),
     )
     .await?;
 
@@ -456,6 +459,56 @@ async fn request_icon_upload(
     }
 
     let object_key = format!("avatars/servers/{}/{}", server_id, filename);
+    let file_url =
+        crate::services::uploads::upload_to_s3(s3, s3_config, &object_key, &content_type, data)
+            .await?;
+
+    Ok(Json(serde_json::json!({ "file_url": file_url })))
+}
+
+async fn request_banner_upload(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(server_id): Path<Uuid>,
+    multipart: axum::extract::Multipart,
+) -> Result<impl IntoResponse, ApiError> {
+    let server = queries::get_server_by_id(&state.db, server_id)
+        .await?
+        .ok_or(ApiError::NotFound("Server"))?;
+
+    if server.owner_id != user.user_id
+        && !perm_service::has_server_permission(
+            &state.db,
+            server_id,
+            user.user_id,
+            server.owner_id,
+            Permissions::MANAGE_SERVER,
+        )
+        .await?
+    {
+        return Err(ApiError::Forbidden);
+    }
+
+    let s3 = state
+        .s3
+        .as_ref()
+        .ok_or_else(|| ApiError::InvalidInput("File uploads not configured".into()))?;
+    let s3_config = state
+        .config
+        .s3
+        .as_ref()
+        .ok_or_else(|| ApiError::InvalidInput("File uploads not configured".into()))?;
+
+    let (filename, content_type, data) =
+        crate::services::uploads::extract_multipart_file(multipart, 5 * 1024 * 1024).await?;
+
+    if !content_type.starts_with("image/") {
+        return Err(ApiError::InvalidInput(
+            "Banner must be an image".into(),
+        ));
+    }
+
+    let object_key = format!("banners/servers/{}/{}", server_id, filename);
     let file_url =
         crate::services::uploads::upload_to_s3(s3, s3_config, &object_key, &content_type, data)
             .await?;

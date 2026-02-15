@@ -163,7 +163,7 @@ pub async fn create_server(
         r#"
         INSERT INTO servers (id, instance_id, name, description, owner_id)
         VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, instance_id, name, description, icon_url, owner_id,
+        RETURNING id, instance_id, name, description, icon_url, banner_url, owner_id,
                   default_channel_id, created_at, updated_at
         "#,
     )
@@ -179,7 +179,7 @@ pub async fn create_server(
 pub async fn get_server_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Server>, sqlx::Error> {
     sqlx::query_as::<_, Server>(
         r#"
-        SELECT id, instance_id, name, description, icon_url, owner_id,
+        SELECT id, instance_id, name, description, icon_url, banner_url, owner_id,
                default_channel_id, created_at, updated_at
         FROM servers WHERE id = $1
         "#,
@@ -192,7 +192,7 @@ pub async fn get_server_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Server>,
 pub async fn get_user_servers(pool: &PgPool, user_id: Uuid) -> Result<Vec<Server>, sqlx::Error> {
     sqlx::query_as::<_, Server>(
         r#"
-        SELECT s.id, s.instance_id, s.name, s.description, s.icon_url, s.owner_id,
+        SELECT s.id, s.instance_id, s.name, s.description, s.icon_url, s.banner_url, s.owner_id,
                s.default_channel_id, s.created_at, s.updated_at
         FROM servers s
         INNER JOIN server_members sm ON s.id = sm.server_id
@@ -1646,6 +1646,7 @@ pub async fn update_server(
     name: Option<&str>,
     description: Option<&str>,
     icon_url: Option<&str>,
+    banner_url: Option<&str>,
 ) -> Result<Server, sqlx::Error> {
     sqlx::query_as::<_, Server>(
         r#"
@@ -1653,9 +1654,10 @@ pub async fn update_server(
             name = COALESCE($2, name),
             description = COALESCE($3, description),
             icon_url = COALESCE($4, icon_url),
+            banner_url = COALESCE($5, banner_url),
             updated_at = now()
         WHERE id = $1
-        RETURNING id, instance_id, name, description, icon_url, owner_id,
+        RETURNING id, instance_id, name, description, icon_url, banner_url, owner_id,
                   default_channel_id, created_at, updated_at
         "#,
     )
@@ -1663,6 +1665,7 @@ pub async fn update_server(
     .bind(name)
     .bind(description)
     .bind(icon_url)
+    .bind(banner_url)
     .fetch_one(pool)
     .await
 }

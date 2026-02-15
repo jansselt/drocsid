@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo } from 'react';
+import { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 import {
   LiveKitRoom,
   RoomAudioRenderer,
@@ -8,7 +8,7 @@ import {
   useTracks,
   VideoTrack,
 } from '@livekit/components-react';
-import { Track } from 'livekit-client';
+import { Track, RemoteParticipant } from 'livekit-client';
 import { useServerStore } from '../../stores/serverStore';
 import { isTauri } from '../../api/instance';
 import { applyAudioOutputTauri, applyAudioInputTauri, labelAudioStreamsTauri } from '../../utils/audioDevices';
@@ -56,6 +56,20 @@ export function VoicePanel({ compact }: { compact?: boolean } = {}) {
   );
 }
 
+const VOLUMES_KEY = 'drocsid_user_volumes';
+
+function loadSavedVolumes(): Record<string, number> {
+  try {
+    return JSON.parse(localStorage.getItem(VOLUMES_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function saveVolumes(volumes: Record<string, number>) {
+  localStorage.setItem(VOLUMES_KEY, JSON.stringify(volumes));
+}
+
 function VoicePanelContent({ channelName, compact }: { channelName: string; compact?: boolean }) {
   const participants = useParticipants();
   const { localParticipant } = useLocalParticipant();
@@ -66,6 +80,52 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
   const voiceSelfDeaf = useServerStore((s) => s.voiceSelfDeaf);
   const users = useServerStore((s) => s.users);
   const setSpeakingUsers = useServerStore((s) => s.setSpeakingUsers);
+
+  // Per-user volume control
+  const [volumeMenu, setVolumeMenu] = useState<{ identity: string; x: number; y: number } | null>(null);
+  const [userVolumes, setUserVolumes] = useState<Record<string, number>>(loadSavedVolumes);
+  const volumeMenuRef = useRef<HTMLDivElement>(null);
+
+  const handleParticipantContextMenu = useCallback((e: React.MouseEvent, identity: string) => {
+    if (identity === localParticipant?.identity) return;
+    e.preventDefault();
+    setVolumeMenu({ identity, x: e.clientX, y: e.clientY });
+  }, [localParticipant?.identity]);
+
+  // Close volume menu on outside click
+  useEffect(() => {
+    if (!volumeMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (volumeMenuRef.current && !volumeMenuRef.current.contains(e.target as Node)) {
+        setVolumeMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [volumeMenu]);
+
+  // Apply saved volumes when remote participants join
+  useEffect(() => {
+    const saved = loadSavedVolumes();
+    for (const p of participants) {
+      if (p instanceof RemoteParticipant && saved[p.identity] !== undefined) {
+        p.setVolume(saved[p.identity] / 100);
+      }
+    }
+  }, [participants]);
+
+  const setParticipantVolume = useCallback((identity: string, volume: number) => {
+    setUserVolumes((prev) => {
+      const next = { ...prev, [identity]: volume };
+      if (volume === 100) delete next[identity];
+      saveVolumes(next);
+      return next;
+    });
+    const p = participants.find((p) => p.identity === identity);
+    if (p instanceof RemoteParticipant) {
+      p.setVolume(volume / 100);
+    }
+  }, [participants]);
 
   // Push-to-talk: global key listener
   const pttActiveRef = useRef(false);
@@ -265,8 +325,14 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
         {participants.map((p) => {
           const user = users.get(p.identity);
           const isSpeaking = p.isSpeaking;
+          const isLocal = p.identity === localParticipant?.identity;
+          const customVolume = userVolumes[p.identity];
           return (
-            <div key={p.identity} className={`voice-participant ${isSpeaking ? 'speaking' : ''}`}>
+            <div
+              key={p.identity}
+              className={`voice-participant ${isSpeaking ? 'speaking' : ''}`}
+              onContextMenu={(e) => handleParticipantContextMenu(e, p.identity)}
+            >
               <div className={`voice-participant-avatar ${isSpeaking ? 'speaking' : ''}`}>
                 {user?.avatar_url ? (
                   <img src={user.avatar_url} alt="" />
@@ -277,6 +343,9 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
               <span className="voice-participant-name">
                 {user?.username || p.name || p.identity}
               </span>
+              {!isLocal && customVolume !== undefined && customVolume !== 100 && (
+                <span className="voice-participant-volume">{customVolume}%</span>
+              )}
               {p.isMicrophoneEnabled === false && (
                 <svg className="voice-participant-muted" width="14" height="14" viewBox="0 0 24 24" fill="var(--text-muted)">
                   <path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z" />
@@ -286,6 +355,44 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
           );
         })}
       </div>
+
+      {/* Per-user volume menu */}
+      {volumeMenu && (() => {
+        const user = users.get(volumeMenu.identity);
+        const volume = userVolumes[volumeMenu.identity] ?? 100;
+        return (
+          <div
+            ref={volumeMenuRef}
+            className="voice-user-menu"
+            style={{ top: volumeMenu.y, left: volumeMenu.x }}
+          >
+            <div className="voice-user-menu-name">
+              {user?.username || volumeMenu.identity}
+            </div>
+            <label className="voice-user-menu-label">
+              User Volume
+            </label>
+            <div className="voice-user-menu-slider">
+              <input
+                type="range"
+                min={0}
+                max={200}
+                value={volume}
+                onChange={(e) => setParticipantVolume(volumeMenu.identity, Number(e.target.value))}
+              />
+              <span className="voice-user-menu-value">{volume}%</span>
+            </div>
+            {volume !== 100 && (
+              <button
+                className="voice-user-menu-reset"
+                onClick={() => setParticipantVolume(volumeMenu.identity, 100)}
+              >
+                Reset Volume
+              </button>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Bottom controls */}
       <div className="voice-panel-controls">

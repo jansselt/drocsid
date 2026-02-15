@@ -195,7 +195,7 @@ export async function uploadAvatar(
 
 export async function updateServer(
   serverId: string,
-  data: { name?: string; description?: string; icon_url?: string },
+  data: { name?: string; description?: string; icon_url?: string; banner_url?: string },
 ): Promise<Server> {
   return request(`/servers/${serverId}`, {
     method: 'PATCH',
@@ -210,6 +210,15 @@ export async function uploadServerIcon(
   const formData = new FormData();
   formData.append('file', file);
   return request(`/servers/${serverId}/icon`, { method: 'POST', body: formData });
+}
+
+export async function uploadServerBanner(
+  serverId: string,
+  file: File,
+): Promise<{ file_url: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return request(`/servers/${serverId}/banner`, { method: 'POST', body: formData });
 }
 
 export async function joinServer(serverId: string): Promise<void> {
