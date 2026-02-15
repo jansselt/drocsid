@@ -45,6 +45,7 @@ export function MessageList({ channelId }: MessageListProps) {
   const prevChannelRef = useRef(channelId);
   const graceRef = useRef(true); // Grace period: always re-scroll on media load
   const graceTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const scrollDebounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Reset state on channel switch
   useEffect(() => {
@@ -80,22 +81,27 @@ export function MessageList({ channelId }: MessageListProps) {
     if (!el) return;
 
     const handleLoad = (e: Event) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      const src = (e.target as HTMLImageElement)?.src?.slice(0, 80);
+      const target = e.target as HTMLElement;
+      // Skip avatar images — they're fixed-size and don't affect scroll height.
+      // Virtuoso re-mounts them on scroll, creating a feedback loop.
+      if (target.closest('.message-avatar')) return;
+
+      const tag = target.tagName;
+      const src = (target as HTMLImageElement)?.src?.slice(0, 80);
       const shouldScroll = atBottomRef.current || graceRef.current;
       scrollLog('media loaded', tag, src, '| atBottom:', atBottomRef.current, '| grace:', graceRef.current, '| willScroll:', shouldScroll);
       if (shouldScroll) {
-        requestAnimationFrame(() => {
+        // Debounce: collapse rapid-fire load events (e.g. multiple GIFs in one
+        // message) into a single scroll after things settle.
+        clearTimeout(scrollDebounceRef.current);
+        scrollDebounceRef.current = setTimeout(() => {
           const container = scrollContainerRef.current;
           if (!container) return;
-          // Only scroll if not already at the bottom. Without this guard,
-          // scrolling causes Virtuoso to re-render virtualized items, which
-          // re-mounts <img> elements, firing new load events → infinite loop.
-          const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-          if (distanceFromBottom < 1) return;
-          scrollLog('re-scrolling after media load → scrollTop', container.scrollHeight, '| gap:', distanceFromBottom);
+          const gap = container.scrollHeight - container.scrollTop - container.clientHeight;
+          if (gap < 1) return;
+          scrollLog('re-scrolling after media load → scrollTop', container.scrollHeight, '| gap:', gap);
           container.scrollTop = container.scrollHeight;
-        });
+        }, 150);
       }
     };
 
