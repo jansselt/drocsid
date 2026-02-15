@@ -10,10 +10,14 @@ use crate::api::auth::AuthUser;
 use crate::db::queries;
 use crate::error::ApiError;
 use crate::state::AppState;
+use chrono::DateTime;
+use serde::Serialize;
+
 use crate::types::entities::CreateRegistrationCodeRequest;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/users", get(admin_search_users))
         .route(
             "/registration-codes",
             get(list_registration_codes).post(create_registration_code),
@@ -49,6 +53,50 @@ async fn require_admin(state: &AppState, user_id: Uuid) -> Result<(), ApiError> 
         return Err(ApiError::Forbidden);
     }
     Ok(())
+}
+
+#[derive(serde::Deserialize)]
+struct AdminSearchQuery {
+    q: String,
+}
+
+#[derive(Serialize)]
+struct AdminUserInfo {
+    id: Uuid,
+    username: String,
+    email: Option<String>,
+    is_admin: bool,
+    created_at: DateTime<Utc>,
+    last_login: Option<DateTime<Utc>>,
+}
+
+async fn admin_search_users(
+    State(state): State<AppState>,
+    user: AuthUser,
+    axum::extract::Query(params): axum::extract::Query<AdminSearchQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    require_admin(&state, user.user_id).await?;
+
+    let q = params.q.trim();
+    if q.is_empty() || q.len() > 32 {
+        return Ok(Json(Vec::<AdminUserInfo>::new()));
+    }
+
+    let users = queries::search_users_by_username(&state.db, q, 20).await?;
+    let mut results = Vec::with_capacity(users.len());
+    for u in users {
+        let last_login = queries::get_user_last_login(&state.db, u.id).await?;
+        results.push(AdminUserInfo {
+            id: u.id,
+            username: u.username,
+            email: u.email,
+            is_admin: u.is_admin,
+            created_at: u.created_at,
+            last_login,
+        });
+    }
+
+    Ok(Json(results))
 }
 
 async fn list_registration_codes(

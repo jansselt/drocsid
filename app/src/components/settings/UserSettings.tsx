@@ -850,7 +850,7 @@ function AdminPanel() {
 function AdminDeleteUser() {
   const currentUser = useAuthStore((s) => s.user);
   const [search, setSearch] = useState('');
-  const [results, setResults] = useState<{ id: string; username: string; is_admin: boolean }[]>([]);
+  const [results, setResults] = useState<api.AdminUserInfo[]>([]);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [togglingAdmin, setTogglingAdmin] = useState<string | null>(null);
@@ -858,8 +858,8 @@ function AdminDeleteUser() {
   const handleSearch = async () => {
     if (!search.trim()) return;
     try {
-      const users = await api.searchUsers(search.trim());
-      setResults(users.map((u) => ({ id: u.id, username: u.username, is_admin: !!u.is_admin })));
+      const users = await api.adminSearchUsers(search.trim());
+      setResults(users);
     } catch {
       // silently fail
     }
@@ -925,7 +925,9 @@ function AdminDeleteUser() {
                     {u.username}
                     {u.is_admin && <span style={{ color: 'var(--accent)', marginLeft: '0.5rem', fontSize: '0.75rem' }}>ADMIN</span>}
                   </span>
-                  <span className="admin-code-meta">{u.id}</span>
+                  <span className="admin-code-meta">
+                    {u.email || 'no email'} &middot; Last login: {u.last_login ? new Date(u.last_login).toLocaleDateString() + ' ' + new Date(u.last_login).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'never'}
+                  </span>
                 </div>
                 <div className="admin-code-actions">
                   {confirmId === u.id ? (

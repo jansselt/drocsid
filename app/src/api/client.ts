@@ -671,6 +671,19 @@ export async function deleteRegistrationCode(code: string): Promise<void> {
 
 // ── Admin: User & Channel Management ─────────────────
 
+export interface AdminUserInfo {
+  id: string;
+  username: string;
+  email: string | null;
+  is_admin: boolean;
+  created_at: string;
+  last_login: string | null;
+}
+
+export async function adminSearchUsers(query: string): Promise<AdminUserInfo[]> {
+  return request(`/admin/users?q=${encodeURIComponent(query)}`);
+}
+
 export async function adminDeleteUser(userId: string): Promise<void> {
   return request(`/admin/users/${userId}`, { method: 'DELETE' });
 }

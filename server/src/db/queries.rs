@@ -87,6 +87,18 @@ pub async fn delete_user(pool: &PgPool, user_id: Uuid) -> Result<(), sqlx::Error
     Ok(())
 }
 
+pub async fn get_user_last_login(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Option<chrono::DateTime<chrono::Utc>>, sqlx::Error> {
+    let row: Option<(chrono::DateTime<chrono::Utc>,)> =
+        sqlx::query_as("SELECT MAX(created_at) FROM sessions WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(row.map(|r| r.0))
+}
+
 // ── Sessions ───────────────────────────────────────────
 
 pub async fn create_session(
