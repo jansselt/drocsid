@@ -85,16 +85,16 @@ export function MessageList({ channelId }: MessageListProps) {
       const shouldScroll = atBottomRef.current || graceRef.current;
       scrollLog('media loaded', tag, src, '| atBottom:', atBottomRef.current, '| grace:', graceRef.current, '| willScroll:', shouldScroll);
       if (shouldScroll) {
-        // Use direct DOM scroll instead of Virtuoso's scrollToIndex.
-        // scrollToIndex relies on Virtuoso's cached item heights which may be
-        // stale after media expands content. Direct scrollTop = scrollHeight
-        // always reaches the absolute bottom.
         requestAnimationFrame(() => {
           const container = scrollContainerRef.current;
-          if (container) {
-            scrollLog('re-scrolling after media load → scrollTop', container.scrollHeight);
-            container.scrollTop = container.scrollHeight;
-          }
+          if (!container) return;
+          // Only scroll if not already at the bottom. Without this guard,
+          // scrolling causes Virtuoso to re-render virtualized items, which
+          // re-mounts <img> elements, firing new load events → infinite loop.
+          const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+          if (distanceFromBottom < 1) return;
+          scrollLog('re-scrolling after media load → scrollTop', container.scrollHeight, '| gap:', distanceFromBottom);
+          container.scrollTop = container.scrollHeight;
         });
       }
     };
