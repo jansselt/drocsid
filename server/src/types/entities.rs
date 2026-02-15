@@ -79,6 +79,7 @@ pub struct Server {
     pub description: Option<String>,
     pub icon_url: Option<String>,
     pub banner_url: Option<String>,
+    pub banner_position: i16,
     pub owner_id: Uuid,
     pub default_channel_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,

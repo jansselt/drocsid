@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { useServerStore } from '../../stores/serverStore';
 import { useThemeStore, themeNames, themeLabels, applyThemeToDOM, type ThemeName } from '../../stores/themeStore';
+import { ImageCropModal } from '../shared/ImageCropModal';
 import {
   playMessageSound,
   playMentionSound,
@@ -57,6 +58,7 @@ export function UserSettings({ onClose }: UserSettingsProps) {
   const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || '');
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [cropFile, setCropFile] = useState<File | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteError, setDeleteError] = useState('');
@@ -96,21 +98,24 @@ export function UserSettings({ onClose }: UserSettingsProps) {
     setAvatarUrl(originalAvatarUrl);
   };
 
-  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     if (!file.type.startsWith('image/')) return;
     if (file.size > 5 * 1024 * 1024) return;
+    setCropFile(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
+  const handleCroppedAvatarSave = async (blob: Blob) => {
+    setCropFile(null);
+    const croppedFile = new File([blob], 'avatar.png', { type: 'image/png' });
     setUploading(true);
     try {
-      const { file_url } = await api.uploadAvatar(file);
+      const { file_url } = await api.uploadAvatar(croppedFile);
       setAvatarUrl(file_url);
-      // Auto-save avatar immediately
       const updated = await api.updateMe({ avatar_url: file_url });
       useAuthStore.setState({ user: updated });
-      // Also update serverStore users cache so messages/voice/sidebar re-render
       useServerStore.setState((state) => {
         const users = new Map(state.users);
         users.set(updated.id, updated);
@@ -120,8 +125,6 @@ export function UserSettings({ onClose }: UserSettingsProps) {
       // Error handled silently
     }
     setUploading(false);
-    // Reset file input
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleDeleteAccount = async () => {
@@ -230,7 +233,7 @@ export function UserSettings({ onClose }: UserSettingsProps) {
                     type="file"
                     accept="image/*"
                     style={{ display: 'none' }}
-                    onChange={handleAvatarUpload}
+                    onChange={handleAvatarFileSelect}
                   />
                 </div>
 
@@ -385,6 +388,15 @@ export function UserSettings({ onClose }: UserSettingsProps) {
             {activeTab === 'admin' && <AdminPanel />}
           </div>
         </div>
+
+        {cropFile && (
+          <ImageCropModal
+            file={cropFile}
+            shape="circle"
+            onCancel={() => setCropFile(null)}
+            onSave={handleCroppedAvatarSave}
+          />
+        )}
       </div>
     </div>
   );

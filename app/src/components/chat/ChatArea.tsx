@@ -28,7 +28,9 @@ export function ChatArea() {
   const showMemberSidebar = useServerStore((s) => s.showMemberSidebar);
   const toggleMemberSidebar = useServerStore((s) => s.toggleMemberSidebar);
 
-  const bannerUrl = activeServerId ? servers.find((s) => s.id === activeServerId)?.banner_url : null;
+  const activeServer = activeServerId ? servers.find((s) => s.id === activeServerId) : null;
+  const bannerUrl = activeServer?.banner_url;
+  const bannerPosition = activeServer?.banner_position ?? 50;
 
   const [showSearch, setShowSearch] = useState(false);
   const [showPins, setShowPins] = useState(false);
@@ -86,7 +88,7 @@ export function ChatArea() {
 
         <div
           className={`chat-header ${bannerUrl ? 'has-banner' : ''}`}
-          style={bannerUrl ? { backgroundImage: `url(${bannerUrl})` } : undefined}
+          style={bannerUrl ? { backgroundImage: `url(${bannerUrl})`, backgroundPosition: `center ${bannerPosition}%` } : undefined}
         >
           {!showChannelSidebar && (
             <button

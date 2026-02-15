@@ -365,6 +365,7 @@ struct UpdateServerRequest {
     description: Option<String>,
     icon_url: Option<String>,
     banner_url: Option<String>,
+    banner_position: Option<i16>,
 }
 
 async fn update_server_handler(
@@ -406,6 +407,7 @@ async fn update_server_handler(
         body.description.as_deref(),
         body.icon_url.as_deref(),
         body.banner_url.as_deref(),
+        body.banner_position,
     )
     .await?;
 

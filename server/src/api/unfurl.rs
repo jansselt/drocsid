@@ -77,7 +77,9 @@ async fn unfurl(
     let client = reqwest::Client::builder()
         .timeout(FETCH_TIMEOUT)
         .redirect(reqwest::redirect::Policy::limited(5))
-        .user_agent("Drocsid/1.0 (link preview bot)")
+        // Use a recognized bot UA so sites like Reddit serve OG meta tags
+        // instead of JS-rendered shells
+        .user_agent("facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)")
         .build()
         .map_err(|e| ApiError::Internal(e.into()))?;
 
@@ -138,6 +140,9 @@ fn extract_og_metadata(url: &str, html: &str) -> UnfurlResponse {
     let mut og_description: Option<String> = None;
     let mut og_image: Option<String> = None;
     let mut og_site_name: Option<String> = None;
+    let mut twitter_title: Option<String> = None;
+    let mut twitter_description: Option<String> = None;
+    let mut twitter_image: Option<String> = None;
 
     for element in document.select(&meta_sel) {
         let property = element
@@ -152,6 +157,11 @@ fn extract_og_metadata(url: &str, html: &str) -> UnfurlResponse {
                 "og:description" => og_description = Some(cont.to_string()),
                 "og:image" => og_image = Some(cont.to_string()),
                 "og:site_name" => og_site_name = Some(cont.to_string()),
+                "twitter:title" => twitter_title = Some(cont.to_string()),
+                "twitter:description" => twitter_description = Some(cont.to_string()),
+                "twitter:image" | "twitter:image:src" => {
+                    twitter_image = Some(cont.to_string());
+                }
                 "description" if og_description.is_none() => {
                     og_description = Some(cont.to_string());
                 }
@@ -160,12 +170,35 @@ fn extract_og_metadata(url: &str, html: &str) -> UnfurlResponse {
         }
     }
 
+    // Use twitter: as fallbacks for og:
+    if og_title.is_none() {
+        og_title = twitter_title;
+    }
+    if og_description.is_none() {
+        og_description = twitter_description;
+    }
+    if og_image.is_none() {
+        og_image = twitter_image;
+    }
+
     // Fallback title from <title> tag
     if og_title.is_none() {
         if let Some(title_el) = document.select(&title_sel).next() {
             let text = title_el.text().collect::<String>();
             if !text.is_empty() {
                 og_title = Some(text);
+            }
+        }
+    }
+
+    // Resolve relative image URLs against the page URL
+    if let Some(ref mut img) = og_image {
+        if img.starts_with("//") {
+            *img = format!("https:{img}");
+        } else if img.starts_with('/') {
+            // Extract origin from the page URL
+            if let Some(origin_end) = url.find("://").and_then(|i| url[i + 3..].find('/').map(|j| i + 3 + j)) {
+                *img = format!("{}{img}", &url[..origin_end]);
             }
         }
     }

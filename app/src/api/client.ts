@@ -195,7 +195,7 @@ export async function uploadAvatar(
 
 export async function updateServer(
   serverId: string,
-  data: { name?: string; description?: string; icon_url?: string; banner_url?: string },
+  data: { name?: string; description?: string; icon_url?: string; banner_url?: string; banner_position?: number },
 ): Promise<Server> {
   return request(`/servers/${serverId}`, {
     method: 'PATCH',

@@ -149,17 +149,31 @@ where
         async move {
             let app_state = <AppState as FromRef<S>>::from_ref(state);
 
-            let auth_header = parts
+            // Try Authorization header first, then fall back to ?token= query param
+            // (needed for sendBeacon which can't set custom headers)
+            let token = if let Some(auth_header) = parts
                 .headers
                 .get("authorization")
                 .and_then(|v| v.to_str().ok())
-                .ok_or(ApiError::Unauthorized)?;
+            {
+                auth_header
+                    .strip_prefix("Bearer ")
+                    .ok_or(ApiError::Unauthorized)?
+                    .to_string()
+            } else {
+                // Check query string for token parameter
+                parts
+                    .uri
+                    .query()
+                    .and_then(|q| {
+                        q.split('&')
+                            .find_map(|pair| pair.strip_prefix("token="))
+                            .map(|v| v.to_string())
+                    })
+                    .ok_or(ApiError::Unauthorized)?
+            };
 
-            let token = auth_header
-                .strip_prefix("Bearer ")
-                .ok_or(ApiError::Unauthorized)?;
-
-            let user_id = auth_service::validate_access_token(&app_state.config, token)?;
+            let user_id = auth_service::validate_access_token(&app_state.config, &token)?;
 
             Ok(AuthUser { user_id })
         }

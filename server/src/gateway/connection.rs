@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use axum::extract::ws::{Message, WebSocket};
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
@@ -43,8 +45,25 @@ pub async fn handle_connection(state: AppState, socket: WebSocket) {
     let mut identified = false;
     let mut user_id: Option<Uuid> = None;
 
+    // Heartbeat timeout: if no message received within 2.5x the heartbeat interval, disconnect.
+    // This catches dead clients whose TCP connection hasn't closed yet.
+    let heartbeat_timeout = Duration::from_millis(state.gateway.heartbeat_interval() * 5 / 2);
+
     // Receive loop
-    while let Some(Ok(msg)) = ws_receiver.next().await {
+    loop {
+        let msg = match tokio::time::timeout(heartbeat_timeout, ws_receiver.next()).await {
+            Ok(Some(Ok(msg))) => msg,
+            Ok(Some(Err(_))) => break,  // WebSocket error
+            Ok(None) => break,          // Stream ended
+            Err(_) => {
+                // Heartbeat timeout — client is unresponsive
+                if let Some(uid) = user_id {
+                    tracing::info!(user_id = %uid, session_id = %session_id, "Client heartbeat timeout");
+                }
+                break;
+            }
+        };
+
         let text = match msg {
             Message::Text(t) => t.to_string(),
             Message::Close(_) => break,

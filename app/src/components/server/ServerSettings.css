@@ -510,14 +510,30 @@
   border-color: var(--accent);
 }
 
-.banner-upload-preview[style*="background-image"] {
+.banner-upload-preview.has-image {
   border-style: solid;
   border-color: transparent;
+  user-select: none;
 }
 
 .banner-upload-placeholder {
   font-size: 0.8125rem;
   color: var(--text-muted);
+}
+
+.banner-reposition-hint {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(0, 0, 0, 0.5);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+
+.banner-upload-preview.has-image:hover .banner-reposition-hint {
+  opacity: 1;
 }
 
 .banner-upload-actions {

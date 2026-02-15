@@ -41,9 +41,6 @@ export function LinkPreview({ url }: LinkPreviewProps) {
 
   return (
     <div className="md-link-preview">
-      {data.image && (
-        <img className="md-link-preview-image" src={data.image} alt="" />
-      )}
       <div className="md-link-preview-body">
         {data.site_name && (
           <span className="md-link-preview-site">{data.site_name}</span>
@@ -60,6 +57,11 @@ export function LinkPreview({ url }: LinkPreviewProps) {
           <span className="md-link-preview-desc">{data.description}</span>
         )}
       </div>
+      {data.image && (
+        <a href={url} target="_blank" rel="noopener noreferrer">
+          <img className="md-link-preview-image" src={data.image} alt="" />
+        </a>
+      )}
     </div>
   );
 }

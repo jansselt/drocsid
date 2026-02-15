@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import { useAuthStore } from '../../stores/authStore';
 import { SHORTCODE_MAP } from './EmojiPicker';
@@ -48,7 +48,7 @@ function getThreadsInfo(url: string): { user: string; id: string } | null {
 }
 
 function getBlueskyInfo(url: string): { handle: string; rkey: string } | null {
-  const m = url.match(/bsky\.app\/profile\/([\w.:]+)\/post\/([\w]+)/);
+  const m = url.match(/bsky\.app\/profile\/([\w.:-]+)\/post\/([\w]+)/);
   return m ? { handle: m[1], rkey: m[2] } : null;
 }
 
@@ -301,18 +301,20 @@ export function Markdown({ content }: MarkdownProps) {
                 />
               </div>
             );
-          case 'bluesky':
+          case 'bluesky': {
+            // token.text is "handle/app.bsky.feed.post/rkey"
+            const bskyParts = token.text.split('/');
+            const bskyHandle = bskyParts[0];
+            const bskyRkey = bskyParts[bskyParts.length - 1];
             return (
-              <div key={i} className="md-embed">
-                <a className="md-link md-embed-source" href={token.href} target="_blank" rel="noopener noreferrer">{token.href}</a>
-                <iframe
-                  className="md-social-embed md-bluesky"
-                  src={`https://embed.bsky.app/embed/${token.text}`}
-                  title="Bluesky"
-                  sandbox="allow-scripts allow-same-origin allow-popups"
-                />
-              </div>
+              <BlueskyEmbed
+                key={i}
+                handle={bskyHandle}
+                rkey={bskyRkey}
+                href={token.href!}
+              />
             );
+          }
           case 'link':
             return (
               <span key={i} className="md-link-wrapper">
@@ -355,5 +357,72 @@ export function Markdown({ content }: MarkdownProps) {
         }
       })}
     </span>
+  );
+}
+
+// Cache resolved DIDs to avoid repeated API calls
+const didCache = new Map<string, string>();
+
+function BlueskyEmbed({ handle, rkey, href }: { handle: string; rkey: string; href: string }) {
+  const [did, setDid] = useState<string | null>(() => {
+    // If the handle is already a DID, use it directly
+    if (handle.startsWith('did:')) return handle;
+    return didCache.get(handle) || null;
+  });
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    if (did || handle.startsWith('did:')) return;
+
+    let cancelled = false;
+    fetch(`https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(handle)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (data.did) {
+          didCache.set(handle, data.did);
+          setDid(data.did);
+        } else {
+          setError(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setError(true);
+      });
+
+    return () => { cancelled = true; };
+  }, [handle, did]);
+
+  const resolvedDid = did || (handle.startsWith('did:') ? handle : null);
+
+  if (error) {
+    return (
+      <span className="md-link-wrapper">
+        <a className="md-link" href={href} target="_blank" rel="noopener noreferrer">{href}</a>
+      </span>
+    );
+  }
+
+  if (!resolvedDid) {
+    return (
+      <div className="md-embed">
+        <a className="md-link md-embed-source" href={href} target="_blank" rel="noopener noreferrer">{href}</a>
+        <div className="md-social-embed md-bluesky" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
+          Loading...
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="md-embed">
+      <a className="md-link md-embed-source" href={href} target="_blank" rel="noopener noreferrer">{href}</a>
+      <iframe
+        className="md-social-embed md-bluesky"
+        src={`https://embed.bsky.app/embed/${resolvedDid}/app.bsky.feed.post/${rkey}`}
+        title="Bluesky"
+        sandbox="allow-scripts allow-same-origin allow-popups"
+      />
+    </div>
   );
 }

@@ -34,6 +34,7 @@ import type {
   NotificationLevel,
 } from '../types';
 import * as api from '../api/client';
+import { getApiUrl } from '../api/instance';
 import { gateway } from '../api/gateway';
 import { useAuthStore } from './authStore';
 import {
@@ -198,6 +199,15 @@ interface ServerState {
 
 const TYPING_TIMEOUT = 8000;
 const MAX_CACHED_CHANNELS = 5;
+
+// Track the beforeunload handler for voice cleanup on tab close
+let voiceBeforeUnloadHandler: (() => void) | null = null;
+function removeVoiceBeforeUnload() {
+  if (voiceBeforeUnloadHandler) {
+    window.removeEventListener('beforeunload', voiceBeforeUnloadHandler);
+    voiceBeforeUnloadHandler = null;
+  }
+}
 
 function touchLru(order: string[], channelId: string): string[] {
   const filtered = order.filter((id) => id !== channelId);
@@ -869,11 +879,29 @@ export const useServerStore = create<ServerState>((set, get) => ({
     });
     playVoiceJoinSound();
 
+    // Register beforeunload handler so closing the tab sends a leave beacon
+    removeVoiceBeforeUnload();
+    const handler = () => {
+      const chId = get().voiceChannelId;
+      if (chId) {
+        const token = api.getAccessToken();
+        if (token) {
+          // sendBeacon is guaranteed to fire during page unload
+          navigator.sendBeacon(
+            `${getApiUrl()}/channels/${chId}/voice/leave?token=${encodeURIComponent(token)}`,
+          );
+        }
+      }
+    };
+    voiceBeforeUnloadHandler = handler;
+    window.addEventListener('beforeunload', handler);
+
     // Load current voice states for this channel
     get().loadVoiceStates(channelId);
   },
 
   voiceLeave: async () => {
+    removeVoiceBeforeUnload();
     const channelId = get().voiceChannelId;
     if (channelId) {
       await api.voiceLeave(channelId).catch(() => {});

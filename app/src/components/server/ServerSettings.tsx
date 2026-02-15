@@ -4,6 +4,7 @@ import { useAuthStore } from '../../stores/authStore';
 import type { Role, Ban, AuditLogEntry } from '../../types';
 import { Permissions, PermissionLabels } from '../../types';
 import * as api from '../../api/client';
+import { ImageCropModal } from '../shared/ImageCropModal';
 import './ServerSettings.css';
 
 interface ServerSettingsProps {
@@ -33,11 +34,14 @@ export function ServerSettings({ serverId, onClose }: ServerSettingsProps) {
   const [serverDescription, setServerDescription] = useState(server?.description || '');
   const [serverIconUrl, setServerIconUrl] = useState(server?.icon_url || '');
   const [serverBannerUrl, setServerBannerUrl] = useState(server?.banner_url || '');
+  const [bannerPosition, setBannerPosition] = useState(server?.banner_position ?? 50);
   const [uploadingIcon, setUploadingIcon] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
   const [savingOverview, setSavingOverview] = useState(false);
+  const [cropFile, setCropFile] = useState<{ file: File; target: 'icon' } | null>(null);
   const iconInputRef = useRef<HTMLInputElement>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
+  const bannerDragRef = useRef<{ startY: number; startPos: number } | null>(null);
 
   useEffect(() => {
     if (selectedRole) {
@@ -182,24 +186,10 @@ export function ServerSettings({ serverId, onClose }: ServerSettingsProps) {
                     type="file"
                     accept="image/*"
                     style={{ display: 'none' }}
-                    onChange={async (e) => {
+                    onChange={(e) => {
                       const file = e.target.files?.[0];
                       if (!file || !file.type.startsWith('image/') || file.size > 5 * 1024 * 1024) return;
-                      setUploadingIcon(true);
-                      try {
-                        const { file_url } = await api.uploadServerIcon(serverId, file);
-                        setServerIconUrl(file_url);
-                        await api.updateServer(serverId, { icon_url: file_url });
-                        // Update local servers array so sidebar icon re-renders
-                        useServerStore.setState((state) => ({
-                          servers: state.servers.map((s) =>
-                            s.id === serverId ? { ...s, icon_url: file_url } : s,
-                          ),
-                        }));
-                      } catch {
-                        // Error handled silently
-                      }
-                      setUploadingIcon(false);
+                      setCropFile({ file, target: 'icon' });
                       if (iconInputRef.current) iconInputRef.current.value = '';
                     }}
                   />
@@ -208,14 +198,54 @@ export function ServerSettings({ serverId, onClose }: ServerSettingsProps) {
                 <div className="banner-upload-section">
                   <label className="banner-upload-label">Server Banner</label>
                   <div
-                    className="banner-upload-preview"
-                    onClick={() => bannerInputRef.current?.click()}
-                    style={serverBannerUrl ? { backgroundImage: `url(${serverBannerUrl})` } : undefined}
+                    className={`banner-upload-preview ${serverBannerUrl ? 'has-image' : ''}`}
+                    onClick={() => { if (!serverBannerUrl) bannerInputRef.current?.click(); }}
+                    style={serverBannerUrl ? {
+                      backgroundImage: `url(${serverBannerUrl})`,
+                      backgroundPosition: `center ${bannerPosition}%`,
+                      cursor: 'grab',
+                    } : undefined}
+                    onMouseDown={(e) => {
+                      if (!serverBannerUrl) return;
+                      e.preventDefault();
+                      bannerDragRef.current = { startY: e.clientY, startPos: bannerPosition };
+                      const el = e.currentTarget;
+                      el.style.cursor = 'grabbing';
+                      const onMove = (ev: MouseEvent) => {
+                        if (!bannerDragRef.current) return;
+                        const delta = ev.clientY - bannerDragRef.current.startY;
+                        // Map pixel delta to position percentage (negative delta = lower %)
+                        const newPos = Math.max(0, Math.min(100, bannerDragRef.current.startPos - delta * 0.5));
+                        setBannerPosition(Math.round(newPos));
+                      };
+                      const onUp = () => {
+                        el.style.cursor = 'grab';
+                        document.removeEventListener('mousemove', onMove);
+                        document.removeEventListener('mouseup', onUp);
+                        bannerDragRef.current = null;
+                        // Compute final position from where the mouse ended up
+                        setBannerPosition((currentPos) => {
+                          api.updateServer(serverId, { banner_position: currentPos }).then(() => {
+                            useServerStore.setState((state) => ({
+                              servers: state.servers.map((s) =>
+                                s.id === serverId ? { ...s, banner_position: currentPos } : s,
+                              ),
+                            }));
+                          }).catch(() => {});
+                          return currentPos;
+                        });
+                      };
+                      document.addEventListener('mousemove', onMove);
+                      document.addEventListener('mouseup', onUp);
+                    }}
                   >
                     {!serverBannerUrl && (
                       <span className="banner-upload-placeholder">
                         Click to upload a banner image
                       </span>
+                    )}
+                    {serverBannerUrl && (
+                      <span className="banner-reposition-hint">Drag to reposition</span>
                     )}
                   </div>
                   <div className="banner-upload-actions">
@@ -511,6 +541,32 @@ export function ServerSettings({ serverId, onClose }: ServerSettingsProps) {
             )}
           </div>
         </div>
+
+        {cropFile && (
+          <ImageCropModal
+            file={cropFile.file}
+            shape="circle"
+            onCancel={() => setCropFile(null)}
+            onSave={async (blob) => {
+              setCropFile(null);
+              const croppedFile = new File([blob], 'icon.png', { type: 'image/png' });
+              setUploadingIcon(true);
+              try {
+                const { file_url } = await api.uploadServerIcon(serverId, croppedFile);
+                setServerIconUrl(file_url);
+                await api.updateServer(serverId, { icon_url: file_url });
+                useServerStore.setState((state) => ({
+                  servers: state.servers.map((s) =>
+                    s.id === serverId ? { ...s, icon_url: file_url } : s,
+                  ),
+                }));
+              } catch {
+                // Error handled silently
+              }
+              setUploadingIcon(false);
+            }}
+          />
+        )}
       </div>
     </div>
   );
