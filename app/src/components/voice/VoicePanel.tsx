@@ -11,7 +11,7 @@ import {
 import { Track } from 'livekit-client';
 import { useServerStore } from '../../stores/serverStore';
 import { isTauri } from '../../api/instance';
-import { applyAudioOutputTauri } from '../../utils/audioDevices';
+import { applyAudioOutputTauri, applyAudioInputTauri, labelAudioStreamsTauri } from '../../utils/audioDevices';
 import './VoicePanel.css';
 
 export function VoicePanel({ compact }: { compact?: boolean } = {}) {
@@ -22,7 +22,9 @@ export function VoicePanel({ compact }: { compact?: boolean } = {}) {
   const channels = useServerStore((s) => s.channels);
 
   // Read saved device selection for mic
+  // On Tauri/Linux, mic routing is handled via pactl post-connect, so just use default here
   const audioOptions = useMemo(() => {
+    if (isTauri()) return true as const;
     const savedMic = localStorage.getItem('drocsid_mic');
     if (savedMic) return { deviceId: { exact: savedMic } } as MediaTrackConstraints;
     return true as const;
@@ -166,6 +168,38 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
     const handler = () => applySpeaker();
     window.addEventListener('drocsid-speaker-changed', handler);
     return () => window.removeEventListener('drocsid-speaker-changed', handler);
+  }, [room]);
+
+  // Apply saved audio input (mic) device selection and label PipeWire streams
+  useEffect(() => {
+    if (!room || !isTauri()) return;
+
+    const applyMic = async () => {
+      const deviceId = localStorage.getItem('drocsid_mic');
+      if (deviceId) {
+        // Route source-output via PipeWire/PulseAudio — retry since it may appear after a delay
+        for (let attempt = 0; attempt < 5; attempt++) {
+          try {
+            await applyAudioInputTauri(deviceId);
+            break;
+          } catch {
+            await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+          }
+        }
+      }
+      // Label all audio streams with distinct PipeWire names (best-effort)
+      try {
+        await labelAudioStreamsTauri();
+      } catch {
+        // pw-cli not available — PULSE_PROP baseline naming still applies
+      }
+    };
+
+    applyMic();
+
+    const handler = () => applyMic();
+    window.addEventListener('drocsid-mic-changed', handler);
+    return () => window.removeEventListener('drocsid-mic-changed', handler);
   }, [room]);
 
   // Get video tracks for screen sharing

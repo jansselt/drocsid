@@ -9,6 +9,10 @@ fn main() {
         // Disable DMA-BUF renderer — GBM buffer creation fails under XWayland,
         // causing invisible webview content
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        // Identify audio streams as "Drocsid" in PipeWire/PulseAudio
+        // (inherited by child WebKitWebProcess)
+        std::env::set_var("PULSE_PROP_application.name", "Drocsid");
+        std::env::set_var("PULSE_PROP_application.icon_name", "drocsid");
     }
 
     drocsid_lib::run();

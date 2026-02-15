@@ -18,7 +18,7 @@ import {
 } from '../../utils/browserNotifications';
 import * as api from '../../api/client';
 import type { RegistrationCode, Channel } from '../../types';
-import { listAudioOutputs, saveSpeaker, type AudioOutputDevice } from '../../utils/audioDevices';
+import { listAudioOutputs, listAudioInputs, saveSpeaker, saveMicrophone, type AudioOutputDevice, type AudioInputDevice } from '../../utils/audioDevices';
 import { SHORTCUT_CATEGORIES, mod } from '../common/KeyboardShortcutsDialog';
 import '../common/KeyboardShortcutsDialog.css';
 import './UserSettings.css';
@@ -471,7 +471,7 @@ function NotificationSettings() {
 }
 
 function VoiceVideoSettings() {
-  const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([]);
+  const [audioInputs, setAudioInputs] = useState<AudioInputDevice[]>([]);
   const [audioOutputs, setAudioOutputs] = useState<AudioOutputDevice[]>([]);
   const [videoInputs, setVideoInputs] = useState<MediaDeviceInfo[]>([]);
   const [selectedMic, setSelectedMic] = useState(() => localStorage.getItem('drocsid_mic') || '');
@@ -507,14 +507,14 @@ function VoiceVideoSettings() {
       }
       try {
         const devices = await navigator.mediaDevices.enumerateDevices();
-        setAudioInputs(devices.filter((d) => d.kind === 'audioinput'));
         setVideoInputs(devices.filter((d) => d.kind === 'videoinput'));
       } catch {
         // enumerateDevices not available
       }
     }
-    // Audio outputs: use platform abstraction (PulseAudio on Tauri/Linux, enumerateDevices on web)
-    const outputs = await listAudioOutputs();
+    // Audio inputs/outputs: use platform abstraction (PipeWire/pactl on Tauri/Linux, enumerateDevices on web)
+    const [inputs, outputs] = await Promise.all([listAudioInputs(), listAudioOutputs()]);
+    setAudioInputs(inputs);
     setAudioOutputs(outputs);
   }, []);
 
@@ -603,11 +603,11 @@ function VoiceVideoSettings() {
       <h3>Input Device</h3>
       <div className="profile-field">
         <label>Microphone</label>
-        <select value={selectedMic} onChange={(e) => { setSelectedMic(e.target.value); localStorage.setItem('drocsid_mic', e.target.value); }}>
+        <select value={selectedMic} onChange={(e) => { setSelectedMic(e.target.value); saveMicrophone(e.target.value); }}>
           <option value="">Default</option>
           {audioInputs.map((d) => (
-            <option key={d.deviceId} value={d.deviceId}>
-              {d.label || `Microphone ${d.deviceId.slice(0, 8)}`}
+            <option key={d.id} value={d.id}>
+              {d.label}
             </option>
           ))}
         </select>

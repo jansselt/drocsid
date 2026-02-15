@@ -114,6 +114,210 @@ pub async fn set_audio_sink(sink_name: String) -> Result<u32, String> {
     Ok(moved)
 }
 
+// ---------------------------------------------------------------------------
+// Audio sources (microphone / input devices)
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize, Clone, Debug)]
+pub struct AudioSource {
+    pub name: String,
+    pub description: String,
+    pub index: u32,
+}
+
+#[tauri::command]
+pub async fn list_audio_sources() -> Result<Vec<AudioSource>, String> {
+    let output = Command::new("pactl")
+        .args(["-f", "json", "list", "sources"])
+        .output()
+        .map_err(|e| format!("Failed to run pactl: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "pactl failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let json_str = String::from_utf8_lossy(&output.stdout);
+    let raw: Vec<serde_json::Value> =
+        serde_json::from_str(&json_str).map_err(|e| format!("Parse error: {e}"))?;
+
+    let sources = raw
+        .iter()
+        .filter_map(|s| {
+            let name = s.get("name")?.as_str()?.to_string();
+            // Filter out monitor sources (loopback of output sinks)
+            if name.contains(".monitor") {
+                return None;
+            }
+            Some(AudioSource {
+                name,
+                description: s
+                    .get("description")
+                    .and_then(|d| d.as_str())
+                    .unwrap_or("Unknown")
+                    .to_string(),
+                index: s.get("index")?.as_u64()? as u32,
+            })
+        })
+        .collect();
+
+    Ok(sources)
+}
+
+#[tauri::command]
+pub async fn get_default_audio_source() -> Result<String, String> {
+    let output = Command::new("pactl")
+        .args(["get-default-source"])
+        .output()
+        .map_err(|e| format!("Failed to run pactl: {e}"))?;
+
+    if !output.status.success() {
+        return Err("pactl get-default-source failed".into());
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+#[tauri::command]
+pub async fn set_audio_source(source_name: String) -> Result<u32, String> {
+    let our_pid = std::process::id();
+    let child_pids = get_descendant_pids(our_pid);
+
+    let output = Command::new("pactl")
+        .args(["-f", "json", "list", "source-outputs"])
+        .output()
+        .map_err(|e| format!("Failed to run pactl: {e}"))?;
+
+    if !output.status.success() {
+        return Err("pactl list source-outputs failed".into());
+    }
+
+    let json_str = String::from_utf8_lossy(&output.stdout);
+    let outputs: Vec<serde_json::Value> =
+        serde_json::from_str(&json_str).map_err(|e| format!("Parse error: {e}"))?;
+
+    let mut moved = 0u32;
+
+    for entry in &outputs {
+        let props = entry.get("properties").unwrap_or(entry);
+        let pid_str = props
+            .get("application.process.id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        if let Ok(pid) = pid_str.parse::<u32>() {
+            if pid == our_pid || child_pids.contains(&pid) {
+                let output_index = entry
+                    .get("index")
+                    .and_then(|v| v.as_u64())
+                    .ok_or("Missing source-output index")?;
+
+                let status = Command::new("pactl")
+                    .args([
+                        "move-source-output",
+                        &output_index.to_string(),
+                        &source_name,
+                    ])
+                    .status()
+                    .map_err(|e| format!("pactl move-source-output failed: {e}"))?;
+
+                if !status.success() {
+                    return Err(format!(
+                        "Failed to move source-output {output_index} to {source_name}"
+                    ));
+                }
+                moved += 1;
+            }
+        }
+    }
+
+    Ok(moved)
+}
+
+// ---------------------------------------------------------------------------
+// PipeWire per-stream naming via pw-cli / pw-dump
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn label_audio_streams() -> Result<u32, String> {
+    // Check if pw-cli is available
+    if Command::new("pw-cli").arg("--version").output().is_err() {
+        return Ok(0);
+    }
+
+    let output = Command::new("pw-dump")
+        .output()
+        .map_err(|e| format!("Failed to run pw-dump: {e}"))?;
+
+    if !output.status.success() {
+        return Ok(0); // graceful fallback
+    }
+
+    let json_str = String::from_utf8_lossy(&output.stdout);
+    let objects: Vec<serde_json::Value> =
+        serde_json::from_str(&json_str).map_err(|e| format!("pw-dump parse error: {e}"))?;
+
+    let our_pid = std::process::id();
+    let child_pids = get_descendant_pids(our_pid);
+
+    let mut labeled = 0u32;
+
+    for obj in &objects {
+        let obj_type = obj
+            .get("type")
+            .and_then(|t| t.as_str())
+            .unwrap_or("");
+        if obj_type != "PipeWire:Interface:Node" {
+            continue;
+        }
+
+        let props = match obj.pointer("/info/props") {
+            Some(p) => p,
+            None => continue,
+        };
+
+        // Check if this node belongs to our process tree
+        let pid_str = props
+            .get("application.process.id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let pid = match pid_str.parse::<u32>() {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        if pid != our_pid && !child_pids.contains(&pid) {
+            continue;
+        }
+
+        let node_id = match obj.get("id").and_then(|v| v.as_u64()) {
+            Some(id) => id,
+            None => continue,
+        };
+
+        let media_class = props
+            .get("media.class")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        let label = match media_class {
+            "Stream/Input/Audio" => "Drocsid Voice Sound In",
+            "Stream/Output/Audio" => "Drocsid Voice Sound Out",
+            _ => continue,
+        };
+
+        let param = format!(r#"{{ "media.name": "{label}" }}"#);
+        let _ = Command::new("pw-cli")
+            .args(["set-param", &node_id.to_string(), "Props", &param])
+            .status();
+
+        labeled += 1;
+    }
+
+    Ok(labeled)
+}
+
 /// Walk /proc to find all descendant PIDs of `parent`.
 fn get_descendant_pids(parent: u32) -> Vec<u32> {
     let mut result = Vec::new();
