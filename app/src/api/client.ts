@@ -656,6 +656,23 @@ export async function deleteRegistrationCode(code: string): Promise<void> {
   return request(`/admin/registration-codes/${code}`, { method: 'DELETE' });
 }
 
+// ── Admin: User & Channel Management ─────────────────
+
+export async function adminDeleteUser(userId: string): Promise<void> {
+  return request(`/admin/users/${userId}`, { method: 'DELETE' });
+}
+
+export async function adminSetUserAdmin(userId: string, isAdmin: boolean): Promise<{ is_admin: boolean }> {
+  return request(`/admin/users/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ is_admin: isAdmin }),
+  });
+}
+
+export async function adminPurgeChannel(channelId: string): Promise<{ purged: number }> {
+  return request(`/admin/channels/${channelId}/messages`, { method: 'DELETE' });
+}
+
 // ── Notification Preferences ──────────────────────────
 
 export async function getNotificationPreferences(): Promise<NotificationPreference[]> {

@@ -1070,6 +1070,15 @@ export const useServerStore = create<ServerState>((set, get) => ({
         case 'MESSAGE_DELETE':
           get().deleteMessage(data as MessageDeleteEvent);
           break;
+        case 'CHANNEL_MESSAGES_PURGE': {
+          const { channel_id } = data as { channel_id: string };
+          set((state) => {
+            const messages = new Map(state.messages);
+            messages.set(channel_id, []);
+            return { messages };
+          });
+          break;
+        }
         case 'REACTION_ADD': {
           const reaction = data as ReactionAddEvent;
           set((state) => {

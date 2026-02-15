@@ -22,6 +22,15 @@ pub fn routes() -> Router<AppState> {
             "/registration-codes/{code}",
             axum::routing::delete(delete_registration_code),
         )
+        .route(
+            "/users/{user_id}",
+            axum::routing::patch(admin_set_user_admin)
+                .delete(admin_delete_user),
+        )
+        .route(
+            "/channels/{channel_id}/messages",
+            axum::routing::delete(admin_purge_channel),
+        )
 }
 
 fn generate_code() -> String {
@@ -79,4 +88,90 @@ async fn delete_registration_code(
     require_admin(&state, user.user_id).await?;
     queries::delete_registration_code(&state.db, &code).await?;
     Ok(Json(serde_json::json!({ "deleted": true })))
+}
+
+#[derive(serde::Deserialize)]
+struct SetAdminRequest {
+    is_admin: bool,
+}
+
+async fn admin_set_user_admin(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(target_user_id): Path<Uuid>,
+    Json(body): Json<SetAdminRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    require_admin(&state, user.user_id).await?;
+
+    if target_user_id == user.user_id {
+        return Err(ApiError::InvalidInput(
+            "Cannot change your own admin status".into(),
+        ));
+    }
+
+    let _target = queries::get_user_by_id(&state.db, target_user_id)
+        .await?
+        .ok_or(ApiError::NotFound("User"))?;
+
+    queries::set_user_admin(&state.db, target_user_id, body.is_admin).await?;
+
+    Ok(Json(serde_json::json!({ "is_admin": body.is_admin })))
+}
+
+async fn admin_delete_user(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(target_user_id): Path<Uuid>,
+) -> Result<impl IntoResponse, ApiError> {
+    require_admin(&state, user.user_id).await?;
+
+    // Prevent self-deletion via admin endpoint
+    if target_user_id == user.user_id {
+        return Err(ApiError::InvalidInput(
+            "Cannot delete your own account via admin endpoint".into(),
+        ));
+    }
+
+    let _target = queries::get_user_by_id(&state.db, target_user_id)
+        .await?
+        .ok_or(ApiError::NotFound("User"))?;
+
+    // Delete all servers owned by target user
+    let servers = queries::get_user_servers(&state.db, target_user_id).await?;
+    for server in &servers {
+        if server.owner_id == target_user_id {
+            queries::delete_server(&state.db, server.id).await?;
+        }
+    }
+
+    queries::delete_user(&state.db, target_user_id).await?;
+    state.gateway.disconnect_user(target_user_id);
+
+    Ok(Json(serde_json::json!({ "deleted": true })))
+}
+
+async fn admin_purge_channel(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(channel_id): Path<Uuid>,
+) -> Result<impl IntoResponse, ApiError> {
+    require_admin(&state, user.user_id).await?;
+
+    let channel = queries::get_channel_by_id(&state.db, channel_id)
+        .await?
+        .ok_or(ApiError::NotFound("Channel"))?;
+
+    let count = queries::delete_channel_messages(&state.db, channel_id).await?;
+
+    // Broadcast purge event so connected clients clear messages
+    if let Some(sid) = channel.server_id {
+        state.gateway.broadcast_to_server(
+            sid,
+            "CHANNEL_MESSAGES_PURGE",
+            &serde_json::json!({ "channel_id": channel_id }),
+            None,
+        );
+    }
+
+    Ok(Json(serde_json::json!({ "purged": count })))
 }

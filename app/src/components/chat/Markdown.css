@@ -39,6 +39,7 @@
 
 .md-image-link {
   display: block;
+  width: fit-content;
   margin: 0.25rem 0;
 }
 

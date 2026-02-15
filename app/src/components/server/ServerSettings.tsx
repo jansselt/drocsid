@@ -283,7 +283,20 @@ export function ServerSettings({ serverId, onClose }: ServerSettingsProps) {
                     <button
                       key={role.id}
                       className={`role-item ${selectedRole?.id === role.id ? 'active' : ''}`}
-                      onClick={() => setSelectedRole(role)}
+                      onClick={async () => {
+                        if (selectedRole && selectedRole.id !== role.id && hasChanges) {
+                          try {
+                            await api.updateRole(serverId, selectedRole.id, {
+                              name: editName !== selectedRole.name ? editName : undefined,
+                              permissions: editPerms !== selectedRole.permissions ? editPerms : undefined,
+                              color: editColor !== selectedRole.color ? editColor : undefined,
+                            });
+                          } catch {
+                            // Error handled silently
+                          }
+                        }
+                        setSelectedRole(role);
+                      }}
                     >
                       <span
                         className="role-color-dot"

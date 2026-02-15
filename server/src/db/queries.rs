@@ -766,6 +766,14 @@ pub async fn delete_message(pool: &PgPool, message_id: Uuid) -> Result<(), sqlx:
     Ok(())
 }
 
+pub async fn delete_channel_messages(pool: &PgPool, channel_id: Uuid) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query("DELETE FROM messages WHERE channel_id = $1")
+        .bind(channel_id)
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected())
+}
+
 pub async fn get_message_by_id(
     pool: &PgPool,
     message_id: Uuid,

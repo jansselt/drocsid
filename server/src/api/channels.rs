@@ -432,23 +432,27 @@ async fn delete_message(
         return Err(ApiError::NotFound("Message"));
     }
 
-    // Author can delete own messages; MANAGE_MESSAGES can delete any
+    // Author can delete own messages; MANAGE_MESSAGES or global admin can delete any
     if message.author_id != user.user_id {
-        if let (Some(sid), Some(oid)) = (server_id, owner_id) {
-            if !perm_service::has_channel_permission(
-                &state.db,
-                sid,
-                channel_id,
-                user.user_id,
-                oid,
-                Permissions::MANAGE_MESSAGES,
-            )
-            .await?
-            {
+        let caller = queries::get_user_by_id(&state.db, user.user_id).await?;
+        let is_global_admin = caller.map(|u| u.is_admin).unwrap_or(false);
+        if !is_global_admin {
+            if let (Some(sid), Some(oid)) = (server_id, owner_id) {
+                if !perm_service::has_channel_permission(
+                    &state.db,
+                    sid,
+                    channel_id,
+                    user.user_id,
+                    oid,
+                    Permissions::MANAGE_MESSAGES,
+                )
+                .await?
+                {
+                    return Err(ApiError::Forbidden);
+                }
+            } else {
                 return Err(ApiError::Forbidden);
             }
-        } else {
-            return Err(ApiError::Forbidden);
         }
     }
 

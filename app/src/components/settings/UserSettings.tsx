@@ -17,7 +17,7 @@ import {
   requestNotificationPermission,
 } from '../../utils/browserNotifications';
 import * as api from '../../api/client';
-import type { RegistrationCode } from '../../types';
+import type { RegistrationCode, Channel } from '../../types';
 import './UserSettings.css';
 
 interface UserSettingsProps {
@@ -837,6 +837,219 @@ function AdminPanel() {
           })}
         </div>
       )}
+
+      <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '1.5rem 0' }} />
+      <AdminDeleteUser />
+
+      <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '1.5rem 0' }} />
+      <AdminPurgeChannel />
     </div>
+  );
+}
+
+function AdminDeleteUser() {
+  const currentUser = useAuthStore((s) => s.user);
+  const [search, setSearch] = useState('');
+  const [results, setResults] = useState<{ id: string; username: string; is_admin: boolean }[]>([]);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [togglingAdmin, setTogglingAdmin] = useState<string | null>(null);
+
+  const handleSearch = async () => {
+    if (!search.trim()) return;
+    try {
+      const users = await api.searchUsers(search.trim());
+      setResults(users.map((u) => ({ id: u.id, username: u.username, is_admin: !!u.is_admin })));
+    } catch {
+      // silently fail
+    }
+  };
+
+  const handleDelete = async (userId: string) => {
+    setDeleting(userId);
+    try {
+      await api.adminDeleteUser(userId);
+      setResults((prev) => prev.filter((u) => u.id !== userId));
+      setConfirmId(null);
+    } catch {
+      // silently fail
+    }
+    setDeleting(null);
+  };
+
+  const handleToggleAdmin = async (userId: string, currentlyAdmin: boolean) => {
+    setTogglingAdmin(userId);
+    try {
+      const res = await api.adminSetUserAdmin(userId, !currentlyAdmin);
+      setResults((prev) => prev.map((u) => u.id === userId ? { ...u, is_admin: res.is_admin } : u));
+    } catch {
+      // silently fail
+    }
+    setTogglingAdmin(null);
+  };
+
+  return (
+    <>
+      <h3>User Management</h3>
+      <p style={{ color: 'var(--text-muted)', marginBottom: '1rem', fontSize: '0.85rem' }}>
+        Search for users to manage admin privileges or delete accounts.
+      </p>
+      <div className="admin-create-row">
+        <div className="profile-field" style={{ flex: 1 }}>
+          <label>Username</label>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+            placeholder="Search users..."
+          />
+        </div>
+        <button
+          className="profile-save-btn"
+          onClick={handleSearch}
+          disabled={!search.trim()}
+          style={{ alignSelf: 'flex-end', marginBottom: '0.25rem' }}
+        >
+          Search
+        </button>
+      </div>
+      {results.length > 0 && (
+        <div className="admin-codes-list" style={{ marginTop: '0.75rem' }}>
+          {results.map((u) => {
+            const isSelf = u.id === currentUser?.id;
+            return (
+              <div key={u.id} className="admin-code-item">
+                <div className="admin-code-info">
+                  <span className="admin-code-value">
+                    {u.username}
+                    {u.is_admin && <span style={{ color: 'var(--accent)', marginLeft: '0.5rem', fontSize: '0.75rem' }}>ADMIN</span>}
+                  </span>
+                  <span className="admin-code-meta">{u.id}</span>
+                </div>
+                <div className="admin-code-actions">
+                  {confirmId === u.id ? (
+                    <>
+                      <button
+                        className="admin-code-delete"
+                        onClick={() => handleDelete(u.id)}
+                        disabled={deleting === u.id}
+                      >
+                        {deleting === u.id ? 'Deleting...' : 'Confirm Delete'}
+                      </button>
+                      <button className="admin-code-copy" onClick={() => setConfirmId(null)}>
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {!isSelf && (
+                        <button
+                          className="admin-code-copy"
+                          onClick={() => handleToggleAdmin(u.id, u.is_admin)}
+                          disabled={togglingAdmin === u.id}
+                        >
+                          {togglingAdmin === u.id ? '...' : u.is_admin ? 'Revoke Admin' : 'Make Admin'}
+                        </button>
+                      )}
+                      {!isSelf && (
+                        <button className="admin-code-delete" onClick={() => setConfirmId(u.id)}>
+                          Delete
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
+function AdminPurgeChannel() {
+  const servers = useServerStore((s) => s.servers);
+  const channels = useServerStore((s) => s.channels);
+  const [selectedServer, setSelectedServer] = useState('');
+  const [selectedChannel, setSelectedChannel] = useState('');
+  const [confirming, setConfirming] = useState(false);
+  const [purging, setPurging] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  const serverChannels: Channel[] = selectedServer
+    ? (channels.get(selectedServer) || []).filter((c) => c.channel_type === 'text')
+    : [];
+
+  const handlePurge = async () => {
+    if (!selectedChannel) return;
+    setPurging(true);
+    setResult(null);
+    try {
+      const res = await api.adminPurgeChannel(selectedChannel);
+      setResult(`Purged ${res.purged} messages`);
+      setConfirming(false);
+    } catch {
+      setResult('Failed to purge channel');
+    }
+    setPurging(false);
+  };
+
+  return (
+    <>
+      <h3>Purge Channel Messages</h3>
+      <p style={{ color: 'var(--text-muted)', marginBottom: '1rem', fontSize: '0.85rem' }}>
+        Permanently delete all messages in a channel.
+      </p>
+      <div className="admin-create-row">
+        <div className="profile-field" style={{ flex: 1 }}>
+          <label>Server</label>
+          <select
+            value={selectedServer}
+            onChange={(e) => { setSelectedServer(e.target.value); setSelectedChannel(''); setConfirming(false); setResult(null); }}
+          >
+            <option value="">Select server...</option>
+            {servers.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        </div>
+        <div className="profile-field" style={{ flex: 1 }}>
+          <label>Channel</label>
+          <select
+            value={selectedChannel}
+            onChange={(e) => { setSelectedChannel(e.target.value); setConfirming(false); setResult(null); }}
+            disabled={!selectedServer}
+          >
+            <option value="">Select channel...</option>
+            {serverChannels.map((c) => (
+              <option key={c.id} value={c.id}>#{c.name}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        {confirming ? (
+          <>
+            <button className="admin-code-delete" onClick={handlePurge} disabled={purging}>
+              {purging ? 'Purging...' : 'Confirm Purge'}
+            </button>
+            <button className="admin-code-copy" onClick={() => setConfirming(false)}>
+              Cancel
+            </button>
+          </>
+        ) : (
+          <button
+            className="admin-code-delete"
+            onClick={() => setConfirming(true)}
+            disabled={!selectedChannel}
+          >
+            Purge All Messages
+          </button>
+        )}
+        {result && <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{result}</span>}
+      </div>
+    </>
   );
 }

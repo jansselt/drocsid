@@ -303,7 +303,7 @@ export function MessageList({ channelId }: MessageListProps) {
                       Edit
                     </button>
                   )}
-                  {isOwn && (
+                  {(isOwn || currentUser?.is_admin) && (
                     <button className="message-action-btn danger" title="Delete" onClick={() => handleDelete(msg.id)}>
                       Del
                     </button>
