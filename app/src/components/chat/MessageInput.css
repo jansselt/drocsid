@@ -119,6 +119,14 @@
   border-color: var(--danger);
 }
 
+.upload-thumb {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
 .upload-name {
   color: var(--text-primary);
   max-width: 200px;

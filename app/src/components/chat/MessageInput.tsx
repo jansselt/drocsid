@@ -150,6 +150,14 @@ export function MessageInput({ channelId }: MessageInputProps) {
     }
   }, [addFiles]);
 
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const files = e.clipboardData.files;
+    if (files.length > 0) {
+      e.preventDefault();
+      addFiles(files);
+    }
+  }, [addFiles]);
+
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       addFiles(e.target.files);
@@ -225,6 +233,14 @@ export function MessageInput({ channelId }: MessageInputProps) {
         <div className="upload-previews">
           {uploads.map((upload, i) => (
             <div key={i} className={`upload-preview ${upload.progress}`}>
+              {upload.file.type.startsWith('image/') && (
+                <img
+                  className="upload-thumb"
+                  src={URL.createObjectURL(upload.file)}
+                  alt=""
+                  onLoad={(e) => URL.revokeObjectURL((e.target as HTMLImageElement).src)}
+                />
+              )}
               <span className="upload-name">{upload.name}</span>
               <span className="upload-size">{formatSize(upload.file.size)}</span>
               {upload.progress === 'pending' && (
@@ -311,6 +327,7 @@ export function MessageInput({ channelId }: MessageInputProps) {
           ref={inputRef}
           className="message-input"
           value={content}
+          onPaste={handlePaste}
           onChange={(e) => {
             setContent(e.target.value);
             updateMentionQuery(e.target.value, e.target.selectionStart ?? e.target.value.length);
