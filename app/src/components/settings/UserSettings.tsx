@@ -17,8 +17,8 @@ import {
   requestNotificationPermission,
 } from '../../utils/browserNotifications';
 import * as api from '../../api/client';
-import { isTauri } from '../../api/instance';
 import type { RegistrationCode, Channel } from '../../types';
+import { listAudioOutputs, saveSpeaker, type AudioOutputDevice } from '../../utils/audioDevices';
 import './UserSettings.css';
 
 interface UserSettingsProps {
@@ -439,7 +439,7 @@ function NotificationSettings() {
 
 function VoiceVideoSettings() {
   const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([]);
-  const [audioOutputs, setAudioOutputs] = useState<MediaDeviceInfo[]>([]);
+  const [audioOutputs, setAudioOutputs] = useState<AudioOutputDevice[]>([]);
   const [videoInputs, setVideoInputs] = useState<MediaDeviceInfo[]>([]);
   const [selectedMic, setSelectedMic] = useState(() => localStorage.getItem('drocsid_mic') || '');
   const [selectedSpeaker, setSelectedSpeaker] = useState(() => localStorage.getItem('drocsid_speaker') || '');
@@ -462,24 +462,27 @@ function VoiceVideoSettings() {
   const cameraStreamRef = useRef<MediaStream | null>(null);
 
   const loadDevices = useCallback(async () => {
-    if (!navigator.mediaDevices) return;
-    try {
-      // Request permission first so device labels are available
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true }).catch(
-        () => navigator.mediaDevices.getUserMedia({ audio: true }),
-      );
-      stream?.getTracks().forEach((t) => t.stop());
-    } catch {
-      // Permission denied — enumerate anyway for whatever labels we can get
+    if (navigator.mediaDevices) {
+      try {
+        // Request permission first so device labels are available
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true }).catch(
+          () => navigator.mediaDevices.getUserMedia({ audio: true }),
+        );
+        stream?.getTracks().forEach((t) => t.stop());
+      } catch {
+        // Permission denied — enumerate anyway for whatever labels we can get
+      }
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        setAudioInputs(devices.filter((d) => d.kind === 'audioinput'));
+        setVideoInputs(devices.filter((d) => d.kind === 'videoinput'));
+      } catch {
+        // enumerateDevices not available
+      }
     }
-    try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      setAudioInputs(devices.filter((d) => d.kind === 'audioinput'));
-      setAudioOutputs(devices.filter((d) => d.kind === 'audiooutput'));
-      setVideoInputs(devices.filter((d) => d.kind === 'videoinput'));
-    } catch {
-      // enumerateDevices not available
-    }
+    // Audio outputs: use platform abstraction (PulseAudio on Tauri/Linux, enumerateDevices on web)
+    const outputs = await listAudioOutputs();
+    setAudioOutputs(outputs);
   }, []);
 
   useEffect(() => {
@@ -657,17 +660,14 @@ function VoiceVideoSettings() {
       <h3>Output Device</h3>
       <div className="profile-field">
         <label>Speaker</label>
-        <select value={selectedSpeaker} onChange={(e) => { setSelectedSpeaker(e.target.value); localStorage.setItem('drocsid_speaker', e.target.value); }}>
+        <select value={selectedSpeaker} onChange={(e) => { setSelectedSpeaker(e.target.value); saveSpeaker(e.target.value); }}>
           <option value="">Default</option>
           {audioOutputs.map((d) => (
-            <option key={d.deviceId} value={d.deviceId}>
-              {d.label || `Speaker ${d.deviceId.slice(0, 8)}`}
+            <option key={d.id} value={d.id}>
+              {d.label}
             </option>
           ))}
         </select>
-        {audioOutputs.length === 0 && isTauri() && (
-          <span className="profile-field-hint">Output device selection is managed by your system audio settings in the desktop app.</span>
-        )}
       </div>
       <div className="profile-field">
         <label>Output Volume</label>

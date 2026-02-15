@@ -1,3 +1,6 @@
+#[cfg(target_os = "linux")]
+mod audio;
+
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -56,6 +59,14 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .invoke_handler(tauri::generate_handler![
+            #[cfg(target_os = "linux")]
+            audio::list_audio_sinks,
+            #[cfg(target_os = "linux")]
+            audio::set_audio_sink,
+            #[cfg(target_os = "linux")]
+            audio::get_default_audio_sink,
+        ])
         .setup(|app| {
             // Open devtools in debug builds
             if cfg!(debug_assertions) {

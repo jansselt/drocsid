@@ -4,11 +4,14 @@ import {
   RoomAudioRenderer,
   useLocalParticipant,
   useParticipants,
+  useRoomContext,
   useTracks,
   VideoTrack,
 } from '@livekit/components-react';
 import { Track } from 'livekit-client';
 import { useServerStore } from '../../stores/serverStore';
+import { isTauri } from '../../api/instance';
+import { applyAudioOutputTauri } from '../../utils/audioDevices';
 import './VoicePanel.css';
 
 export function VoicePanel({ compact }: { compact?: boolean } = {}) {
@@ -128,6 +131,42 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
       setSpeakingUsers(new Set());
     };
   }, [participants, setSpeakingUsers]);
+
+  // Apply saved audio output device selection
+  const room = useRoomContext();
+  useEffect(() => {
+    if (!room) return;
+
+    const applySpeaker = async () => {
+      const deviceId = localStorage.getItem('drocsid_speaker');
+      if (!deviceId) return;
+
+      if (isTauri()) {
+        // Tauri/Linux: route via PulseAudio — retry since sink-input may appear after a delay
+        for (let attempt = 0; attempt < 5; attempt++) {
+          try {
+            await applyAudioOutputTauri(deviceId);
+            break;
+          } catch {
+            await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+          }
+        }
+      } else {
+        // Web: use LiveKit SDK's setSinkId-based switching
+        try {
+          await room.switchActiveDevice('audiooutput', deviceId);
+        } catch (e) {
+          console.warn('[VoicePanel] Failed to switch audio output:', e);
+        }
+      }
+    };
+
+    applySpeaker();
+
+    const handler = () => applySpeaker();
+    window.addEventListener('drocsid-speaker-changed', handler);
+    return () => window.removeEventListener('drocsid-speaker-changed', handler);
+  }, [room]);
 
   // Get video tracks for screen sharing
   const screenShareTracks = useTracks([Track.Source.ScreenShare]);
