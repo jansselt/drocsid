@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import { useAuthStore } from '../../stores/authStore';
 import type { Message, ReactionGroup } from '../../types';
@@ -12,8 +12,6 @@ interface MessageListProps {
 const EMOJI_QUICK_PICKS = ['\u{1F44D}', '\u{2764}\u{FE0F}', '\u{1F602}', '\u{1F44E}', '\u{1F389}', '\u{1F440}'];
 const EMPTY_MESSAGES: Message[] = [];
 const AT_BOTTOM_THRESHOLD = 150;
-const GRACE_DURATION = 5000;
-const GRACE_POLL_MS = 200;
 
 export function MessageList({ channelId }: MessageListProps) {
   const messages = useServerStore((s) => s.messages.get(channelId) ?? EMPTY_MESSAGES);
@@ -40,9 +38,6 @@ export function MessageList({ channelId }: MessageListProps) {
   const isLoadingMore = useRef(false);
   const atBottomRef = useRef(true);
   const prevMsgCountRef = useRef(0);
-  const graceRef = useRef(true);
-  const graceTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const scrollDebounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -58,7 +53,7 @@ export function MessageList({ channelId }: MessageListProps) {
     el.scrollTo({ top: el.scrollHeight, behavior });
   }, []);
 
-  // ── Channel switch: reset state, start grace period ─────────────────
+  // ── Channel switch: reset state ──────────────────────────────────────
 
   useEffect(() => {
     setEditingId(null);
@@ -68,37 +63,10 @@ export function MessageList({ channelId }: MessageListProps) {
     isLoadingMore.current = false;
     atBottomRef.current = true;
     prevMsgCountRef.current = 0;
-
-    // Grace period: poll every 200ms for 5s to catch ALL content expansion
-    // (cached images, async GIFs, layout shifts). No reliance on load events.
-    graceRef.current = true;
-    clearTimeout(graceTimerRef.current);
-    const interval = setInterval(() => {
-      const el = scrollRef.current;
-      if (!el) return;
-      const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
-      if (gap > 1) {
-        el.scrollTop = el.scrollHeight;
-      }
-    }, GRACE_POLL_MS);
-    graceTimerRef.current = setTimeout(() => {
-      graceRef.current = false;
-      clearInterval(interval);
-    }, GRACE_DURATION);
-
-    return () => {
-      clearInterval(interval);
-      clearTimeout(graceTimerRef.current);
-    };
   }, [channelId]);
 
-  // ── Scroll to bottom on initial render & when messages arrive ───────
+  // ── Scroll to bottom when messages arrive ─────────────────────────────
 
-  useLayoutEffect(() => {
-    scrollToBottom();
-  }, [channelId, scrollToBottom]);
-
-  // When new messages arrive, auto-scroll if at bottom or own message
   useEffect(() => {
     const count = messages.length;
     const prevCount = prevMsgCountRef.current;
@@ -109,32 +77,22 @@ export function MessageList({ channelId }: MessageListProps) {
     const lastMsg = messages[count - 1];
     const isOwn = lastMsg?.author_id === currentUser?.id;
 
-    if (atBottomRef.current || isOwn || graceRef.current) {
-      // Use rAF to ensure DOM has updated with new messages
+    if (atBottomRef.current || isOwn) {
       requestAnimationFrame(() => scrollToBottom(isOwn && !atBottomRef.current ? 'smooth' : 'instant'));
     }
   }, [messages.length, messages, currentUser?.id, scrollToBottom]);
 
-  // ── Post-grace media load handler ───────────────────────────────────
-
+  // When images/embeds finish loading they expand content height.
+  // Scroll to bottom if user hasn't scrolled away. Each image fires load
+  // exactly once (no virtualization = no re-mounting = no loops).
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-
     const handleLoad = () => {
-      if (graceRef.current) return; // grace polling handles it
-      if (!atBottomRef.current) return;
-
-      clearTimeout(scrollDebounceRef.current);
-      scrollDebounceRef.current = setTimeout(() => {
-        const container = scrollRef.current;
-        if (!container) return;
-        const gap = container.scrollHeight - container.scrollTop - container.clientHeight;
-        if (gap < 1) return;
-        container.scrollTop = container.scrollHeight;
-      }, 150);
+      if (atBottomRef.current) {
+        el.scrollTop = el.scrollHeight;
+      }
     };
-
     el.addEventListener('load', handleLoad, true);
     return () => el.removeEventListener('load', handleLoad, true);
   }, [channelId, messages.length]);
