@@ -475,6 +475,16 @@ export interface GifSearchResponse {
   provider: string;
 }
 
+// ── Link Preview ────────────────────────────────────────
+
+export interface LinkPreviewData {
+  url: string;
+  title: string | null;
+  description: string | null;
+  image: string | null;
+  site_name: string | null;
+}
+
 // ── Permission Constants ──────────────────────────────
 
 export const Permissions = {

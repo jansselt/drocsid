@@ -2,13 +2,14 @@ import { useMemo } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import { useAuthStore } from '../../stores/authStore';
 import { SHORTCODE_MAP } from './EmojiPicker';
+import { LinkPreview } from './LinkPreview';
 import './Markdown.css';
 
 interface MarkdownProps {
   content: string;
 }
 
-type TokenType = 'text' | 'bold' | 'italic' | 'bolditalic' | 'code' | 'codeblock' | 'link' | 'image' | 'youtube' | 'mention' | 'br';
+type TokenType = 'text' | 'bold' | 'italic' | 'bolditalic' | 'code' | 'codeblock' | 'link' | 'image' | 'youtube' | 'twitter' | 'tiktok' | 'instagram' | 'threads' | 'bluesky' | 'mention' | 'br';
 
 interface Token {
   type: TokenType;
@@ -19,8 +20,36 @@ interface Token {
 
 function getYouTubeId(url: string): string | null {
   // youtube.com/watch?v=ID, youtu.be/ID, youtube.com/embed/ID, youtube.com/shorts/ID
-  let m = url.match(/(?:youtube\.com\/(?:watch\?.*v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/);
+  const m = url.match(/(?:youtube\.com\/(?:watch\?.*v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/);
   return m ? m[1] : null;
+}
+
+function getTwitterId(url: string): string | null {
+  const m = url.match(/(?:twitter\.com|x\.com)\/\w+\/status\/(\d+)/);
+  return m ? m[1] : null;
+}
+
+function getTikTokId(url: string): string | null {
+  const m = url.match(/tiktok\.com\/@[\w.]+\/video\/(\d+)/);
+  return m ? m[1] : null;
+}
+
+function getInstagramInfo(url: string): { shortcode: string; kind: string } | null {
+  let m = url.match(/instagram\.com\/p\/([\w-]+)/);
+  if (m) return { shortcode: m[1], kind: 'p' };
+  m = url.match(/instagram\.com\/reel\/([\w-]+)/);
+  if (m) return { shortcode: m[1], kind: 'reel' };
+  return null;
+}
+
+function getThreadsInfo(url: string): { user: string; id: string } | null {
+  const m = url.match(/threads\.net\/@([\w.]+)\/post\/([\w-]+)/);
+  return m ? { user: m[1], id: m[2] } : null;
+}
+
+function getBlueskyInfo(url: string): { handle: string; rkey: string } | null {
+  const m = url.match(/bsky\.app\/profile\/([\w.:]+)\/post\/([\w]+)/);
+  return m ? { handle: m[1], rkey: m[2] } : null;
 }
 
 function tokenize(text: string): Token[] {
@@ -81,9 +110,24 @@ function tokenize(text: string): Token[] {
       const pathPart = url.split('?')[0];
       const isImage = /\.(gif|png|jpe?g|webp)$/i.test(pathPart);
       const ytId = getYouTubeId(url);
+      const tweetId = getTwitterId(url);
+      const tikTokId = getTikTokId(url);
+      const igInfo = getInstagramInfo(url);
+      const threadsInfo = getThreadsInfo(url);
+      const bskyInfo = getBlueskyInfo(url);
 
       if (ytId) {
         tokens.push({ type: 'youtube', text: ytId, href: url });
+      } else if (tweetId) {
+        tokens.push({ type: 'twitter', text: tweetId, href: url });
+      } else if (tikTokId) {
+        tokens.push({ type: 'tiktok', text: tikTokId, href: url });
+      } else if (igInfo) {
+        tokens.push({ type: 'instagram', text: igInfo.shortcode, href: url, lang: igInfo.kind });
+      } else if (threadsInfo) {
+        tokens.push({ type: 'threads', text: `@${threadsInfo.user}/post/${threadsInfo.id}`, href: url });
+      } else if (bskyInfo) {
+        tokens.push({ type: 'bluesky', text: `${bskyInfo.handle}/app.bsky.feed.post/${bskyInfo.rkey}`, href: url });
       } else if (isImage) {
         tokens.push({ type: 'image', text: url, href: url });
       } else {
@@ -185,11 +229,74 @@ export function Markdown({ content }: MarkdownProps) {
                 />
               </div>
             );
+          case 'twitter':
+            return (
+              <div key={i} className="md-embed">
+                <a className="md-link md-embed-source" href={token.href} target="_blank" rel="noopener noreferrer">{token.href}</a>
+                <iframe
+                  className="md-social-embed md-twitter"
+                  src={`https://platform.twitter.com/embed/Tweet.html?id=${token.text}&dnt=true&theme=dark`}
+                  title="Tweet"
+                  sandbox="allow-scripts allow-same-origin allow-popups"
+                />
+              </div>
+            );
+          case 'tiktok':
+            return (
+              <div key={i} className="md-embed">
+                <a className="md-link md-embed-source" href={token.href} target="_blank" rel="noopener noreferrer">{token.href}</a>
+                <iframe
+                  className="md-social-embed md-tiktok"
+                  src={`https://www.tiktok.com/embed/v2/${token.text}`}
+                  title="TikTok"
+                  sandbox="allow-scripts allow-same-origin allow-popups"
+                />
+              </div>
+            );
+          case 'instagram':
+            return (
+              <div key={i} className="md-embed">
+                <a className="md-link md-embed-source" href={token.href} target="_blank" rel="noopener noreferrer">{token.href}</a>
+                <iframe
+                  className="md-social-embed md-instagram"
+                  src={`https://www.instagram.com/${token.lang}/${token.text}/embed/`}
+                  title="Instagram"
+                  sandbox="allow-scripts allow-same-origin allow-popups"
+                />
+              </div>
+            );
+          case 'threads':
+            return (
+              <div key={i} className="md-embed">
+                <a className="md-link md-embed-source" href={token.href} target="_blank" rel="noopener noreferrer">{token.href}</a>
+                <iframe
+                  className="md-social-embed md-threads"
+                  src={`https://www.threads.net/${token.text}/embed`}
+                  title="Threads"
+                  sandbox="allow-scripts allow-same-origin allow-popups"
+                />
+              </div>
+            );
+          case 'bluesky':
+            return (
+              <div key={i} className="md-embed">
+                <a className="md-link md-embed-source" href={token.href} target="_blank" rel="noopener noreferrer">{token.href}</a>
+                <iframe
+                  className="md-social-embed md-bluesky"
+                  src={`https://embed.bsky.app/embed/${token.text}`}
+                  title="Bluesky"
+                  sandbox="allow-scripts allow-same-origin allow-popups"
+                />
+              </div>
+            );
           case 'link':
             return (
-              <a key={i} className="md-link" href={token.href} target="_blank" rel="noopener noreferrer">
-                {token.text}
-              </a>
+              <span key={i} className="md-link-wrapper">
+                <a className="md-link" href={token.href} target="_blank" rel="noopener noreferrer">
+                  {token.text}
+                </a>
+                <LinkPreview url={token.href!} />
+              </span>
             );
           case 'mention': {
             if (token.href === 'special') {

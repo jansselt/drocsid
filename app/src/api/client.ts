@@ -3,7 +3,7 @@ import type {
   UploadUrlResponse, RelationshipWithUser, SearchResult, ThreadMetadata, User,
   VoiceTokenResponse, VoiceState, Invite, InviteResolve, Ban, AuditLogEntry,
   Webhook, GifSearchResponse, ServerMemberWithUser, RegistrationCode,
-  NotificationPreference, NotificationLevel,
+  NotificationPreference, NotificationLevel, LinkPreviewData,
 } from '../types';
 
 import { getApiUrl } from './instance';
@@ -626,6 +626,12 @@ export async function gifSearch(query: string, limit = 25, offset = 0): Promise<
 export async function gifTrending(limit = 25, offset = 0): Promise<GifSearchResponse> {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   return request(`/gif/trending?${params}`);
+}
+
+// ── Link Unfurl ──────────────────────────────────
+
+export async function unfurlUrl(url: string): Promise<LinkPreviewData> {
+  return request(`/unfurl?url=${encodeURIComponent(url)}`);
 }
 
 // ── Bug Reports ──────────────────────────────────

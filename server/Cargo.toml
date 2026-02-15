@@ -59,9 +59,10 @@ aws-credential-types = "1"
 # Voice (LiveKit)
 livekit-api = "0.4"
 
-# HTTP client (GIF proxy)
+# HTTP client (GIF proxy, link unfurl)
 reqwest = { version = "0.12", features = ["json"] }
 urlencoding = "2"
+scraper = "0.22"
 
 # Regex
 regex = "1"

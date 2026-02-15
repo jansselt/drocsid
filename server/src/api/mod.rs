@@ -10,6 +10,7 @@ pub mod relationships;
 pub mod roles;
 pub mod search;
 pub mod servers;
+pub mod unfurl;
 pub mod voice;
 pub mod webhooks;
 
@@ -53,6 +54,7 @@ fn api_routes() -> Router<AppState> {
         .merge(invites::resolve_routes())
         .merge(webhooks::execute_routes())
         .merge(bug_reports::routes())
+        .merge(unfurl::routes())
 }
 
 fn user_routes() -> Router<AppState> {
