@@ -79,7 +79,7 @@ pub fn run() {
             #[cfg(target_os = "linux")]
             audio::destroy_voice_input_sink,
             #[cfg(target_os = "linux")]
-            audio::link_voice_input_sink,
+            audio::set_default_audio_source,
         ])
         .setup(|app| {
             // Open devtools in debug builds

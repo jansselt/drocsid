@@ -152,12 +152,20 @@ export async function createVoiceInputSink(): Promise<void> {
 }
 
 /**
- * Link the virtual sink's monitor output to the app's capture input via pw-link.
- * Returns true if linked, false if capture stream doesn't exist yet.
+ * Get the current PipeWire/PulseAudio default audio source name (Tauri/Linux only).
  */
-export async function linkVoiceInputSink(): Promise<boolean> {
+export async function getDefaultAudioSourceTauri(): Promise<string> {
   const { invoke } = await import('@tauri-apps/api/core');
-  return invoke<boolean>('link_voice_input_sink');
+  return invoke<string>('get_default_audio_source');
+}
+
+/**
+ * Set the PipeWire/PulseAudio default audio source (Tauri/Linux only).
+ * Used to point getUserMedia at the virtual sink's monitor before connecting.
+ */
+export async function setDefaultAudioSourceTauri(sourceName: string): Promise<void> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('set_default_audio_source', { sourceName });
 }
 
 /**

@@ -11,7 +11,7 @@ import {
 import { Track, RemoteParticipant } from 'livekit-client';
 import { useServerStore } from '../../stores/serverStore';
 import { isTauri } from '../../api/instance';
-import { applyAudioOutputTauri, labelAudioStreamsTauri, createVoiceInputSink, destroyVoiceInputSink, linkVoiceInputSink } from '../../utils/audioDevices';
+import { applyAudioOutputTauri, labelAudioStreamsTauri, createVoiceInputSink, destroyVoiceInputSink, getDefaultAudioSourceTauri, setDefaultAudioSourceTauri } from '../../utils/audioDevices';
 import './VoicePanel.css';
 
 export function VoicePanel({ compact }: { compact?: boolean } = {}) {
@@ -21,8 +21,50 @@ export function VoicePanel({ compact }: { compact?: boolean } = {}) {
   const voiceLeave = useServerStore((s) => s.voiceLeave);
   const channels = useServerStore((s) => s.channels);
 
-  // Read saved device selection for mic
-  // On Tauri/Linux, mic routing is handled via pactl post-connect, so just use default here
+  // On Tauri/Linux, we create a virtual PipeWire sink and set its monitor as the
+  // default audio source BEFORE LiveKit connects. This way getUserMedia({ audio: true })
+  // picks up the monitor automatically. The user routes their physical mic to the
+  // virtual sink in qpwgraph / Helvum / pavucontrol.
+  const [sinkReady, setSinkReady] = useState(!isTauri());
+  const savedDefaultSourceRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!isTauri() || !voiceToken) return;
+    let cancelled = false;
+
+    const setup = async () => {
+      try {
+        // Save the current default source so we can restore it on disconnect
+        savedDefaultSourceRef.current = await getDefaultAudioSourceTauri();
+
+        // Create the virtual null-sink (appears in qpwgraph as "Drocsid Voice Sound In")
+        await createVoiceInputSink();
+
+        // Brief delay for PipeWire to register the monitor source
+        await new Promise((r) => setTimeout(r, 300));
+
+        // Set the monitor as default so getUserMedia picks it up
+        await setDefaultAudioSourceTauri('drocsid_voice_in.monitor');
+      } catch (e) {
+        console.warn('[VoicePanel] Tauri audio sink setup failed:', e);
+      }
+      if (!cancelled) setSinkReady(true);
+    };
+
+    setup();
+
+    return () => {
+      cancelled = true;
+      // Restore previous default source and clean up the virtual sink
+      const prev = savedDefaultSourceRef.current;
+      if (prev) {
+        setDefaultAudioSourceTauri(prev).catch(() => {});
+      }
+      destroyVoiceInputSink().catch(() => {});
+    };
+  }, [voiceToken]);
+
+  // Read saved device selection for mic (web only — Tauri uses virtual sink monitor)
   const audioOptions = useMemo(() => {
     if (isTauri()) return true as const;
     const savedMic = localStorage.getItem('drocsid_mic');
@@ -46,7 +88,7 @@ export function VoicePanel({ compact }: { compact?: boolean } = {}) {
     <LiveKitRoom
       token={voiceToken}
       serverUrl={voiceUrl}
-      connect={true}
+      connect={sinkReady}
       audio={audioOptions}
       video={false}
       onDisconnected={() => voiceLeave()}
@@ -230,31 +272,13 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
     return () => window.removeEventListener('drocsid-speaker-changed', handler);
   }, [room]);
 
-  // Create virtual PipeWire sink for mic input, link monitor → app capture via pw-link
+  // Label PipeWire audio streams with distinct names (best-effort, after connection)
   useEffect(() => {
     if (!room || !isTauri()) return;
 
-    const setup = async () => {
-      // Create "Drocsid Voice Sound In" node in PipeWire graph
-      try {
-        await createVoiceInputSink();
-      } catch (e) {
-        console.warn('[VoicePanel] Failed to create voice input sink:', e);
-      }
-
-      // Link the sink's monitor output → app's capture input via pw-link
-      // Retry because the capture stream may appear after a delay
-      for (let attempt = 0; attempt < 8; attempt++) {
-        try {
-          const linked = await linkVoiceInputSink();
-          if (linked) break;
-        } catch {
-          // pw-link failed or nodes not ready yet
-        }
-        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
-      }
-
-      // Label all audio streams with distinct PipeWire names (best-effort)
+    const label = async () => {
+      // Wait a moment for audio streams to register in PipeWire
+      await new Promise((r) => setTimeout(r, 1500));
       try {
         await labelAudioStreamsTauri();
       } catch {
@@ -262,15 +286,7 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
       }
     };
 
-    setup();
-
-    const handler = () => setup();
-    window.addEventListener('drocsid-mic-changed', handler);
-    return () => {
-      window.removeEventListener('drocsid-mic-changed', handler);
-      // Clean up virtual sink on voice disconnect
-      destroyVoiceInputSink().catch(() => {});
-    };
+    label();
   }, [room]);
 
   // Get video tracks for screen sharing
