@@ -68,3 +68,7 @@ regex = "1"
 
 # Config
 config = "0.15"
+
+[dev-dependencies]
+axum-test = "16"
+tower = { version = "0.5", features = ["util"] }

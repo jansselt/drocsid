@@ -326,3 +326,137 @@ pub async fn complete_password_reset(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_config() -> AppConfig {
+        AppConfig {
+            server: crate::config::ServerConfig {
+                host: "127.0.0.1".into(),
+                port: 3000,
+            },
+            database: crate::config::DatabaseConfig {
+                url: "postgres://localhost/test".into(),
+                max_connections: 5,
+            },
+            redis: crate::config::RedisConfig {
+                url: "redis://localhost".into(),
+            },
+            auth: crate::config::AuthConfig {
+                jwt_secret: "test-secret-key-for-unit-tests-only".into(),
+                access_token_ttl_secs: 3600,
+                refresh_token_ttl_secs: 604800,
+            },
+            instance: crate::config::InstanceConfig {
+                domain: "test.local".into(),
+                name: "Test".into(),
+            },
+            s3: None,
+            livekit: None,
+            gif: None,
+            email: None,
+        }
+    }
+
+    #[test]
+    fn hash_token_is_deterministic() {
+        let a = hash_token("my-refresh-token");
+        let b = hash_token("my-refresh-token");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn hash_token_is_hex_sha256() {
+        let hash = hash_token("test");
+        // SHA-256 hex output is always 64 chars
+        assert_eq!(hash.len(), 64);
+        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn different_tokens_produce_different_hashes() {
+        let a = hash_token("token-a");
+        let b = hash_token("token-b");
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn jwt_roundtrip_works() {
+        let config = test_config();
+        let user_id = Uuid::now_v7();
+        let now = Utc::now().timestamp();
+
+        let claims = JwtClaims {
+            sub: user_id,
+            iat: now,
+            exp: now + 3600,
+        };
+
+        let token = encode(
+            &Header::default(),
+            &claims,
+            &EncodingKey::from_secret(config.auth.jwt_secret.as_bytes()),
+        )
+        .expect("encode should succeed");
+
+        let result = validate_access_token(&config, &token);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), user_id);
+    }
+
+    #[test]
+    fn expired_jwt_is_rejected() {
+        let config = test_config();
+        let user_id = Uuid::now_v7();
+        let now = Utc::now().timestamp();
+
+        let claims = JwtClaims {
+            sub: user_id,
+            iat: now - 7200,
+            exp: now - 3600, // expired an hour ago
+        };
+
+        let token = encode(
+            &Header::default(),
+            &claims,
+            &EncodingKey::from_secret(config.auth.jwt_secret.as_bytes()),
+        )
+        .expect("encode should succeed");
+
+        let result = validate_access_token(&config, &token);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn jwt_with_wrong_secret_is_rejected() {
+        let config = test_config();
+        let user_id = Uuid::now_v7();
+        let now = Utc::now().timestamp();
+
+        let claims = JwtClaims {
+            sub: user_id,
+            iat: now,
+            exp: now + 3600,
+        };
+
+        // Sign with wrong secret
+        let token = encode(
+            &Header::default(),
+            &claims,
+            &EncodingKey::from_secret(b"wrong-secret"),
+        )
+        .expect("encode should succeed");
+
+        let result = validate_access_token(&config, &token);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn garbage_jwt_is_rejected() {
+        let config = test_config();
+        let result = validate_access_token(&config, "not-a-jwt");
+        assert!(result.is_err());
+    }
+}
