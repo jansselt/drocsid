@@ -85,10 +85,16 @@ export function MessageList({ channelId }: MessageListProps) {
       const shouldScroll = atBottomRef.current || graceRef.current;
       scrollLog('media loaded', tag, src, '| atBottom:', atBottomRef.current, '| grace:', graceRef.current, '| willScroll:', shouldScroll);
       if (shouldScroll) {
-        scrollLog('re-scrolling after media load → index', messages.length - 1);
-        virtuosoRef.current?.scrollToIndex({
-          index: messages.length - 1,
-          align: 'end',
+        // Use direct DOM scroll instead of Virtuoso's scrollToIndex.
+        // scrollToIndex relies on Virtuoso's cached item heights which may be
+        // stale after media expands content. Direct scrollTop = scrollHeight
+        // always reaches the absolute bottom.
+        requestAnimationFrame(() => {
+          const container = scrollContainerRef.current;
+          if (container) {
+            scrollLog('re-scrolling after media load → scrollTop', container.scrollHeight);
+            container.scrollTop = container.scrollHeight;
+          }
         });
       }
     };
@@ -106,11 +112,10 @@ export function MessageList({ channelId }: MessageListProps) {
     const lastMsg = messages[messages.length - 1];
     if (lastMsg?.author_id === currentUser?.id && !atBottomRef.current) {
       scrollLog('own message sent while scrolled up → scrolling to bottom');
-      virtuosoRef.current?.scrollToIndex({
-        index: messages.length - 1,
-        behavior: 'smooth',
-        align: 'end',
-      });
+      const container = scrollContainerRef.current;
+      if (container) {
+        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+      }
     }
   }, [messages.length, messages, currentUser?.id]);
 
@@ -152,13 +157,12 @@ export function MessageList({ channelId }: MessageListProps) {
   }, []);
 
   const scrollToBottom = useCallback(() => {
-    scrollLog('scrollToBottom button clicked → index', messages.length - 1);
-    virtuosoRef.current?.scrollToIndex({
-      index: messages.length - 1,
-      behavior: 'smooth',
-      align: 'end',
-    });
-  }, [messages.length]);
+    scrollLog('scrollToBottom button clicked');
+    const container = scrollContainerRef.current;
+    if (container) {
+      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+    }
+  }, []);
 
   // Helper functions
   const getAuthor = (msg: Message): { name: string; avatar_url: string | null } => {
