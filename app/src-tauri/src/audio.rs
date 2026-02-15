@@ -152,9 +152,14 @@ pub async fn list_audio_sources() -> Result<Vec<AudioSource>, String> {
         .iter()
         .filter_map(|s| {
             let name = s.get("name")?.as_str()?.to_string();
-            // Filter out monitor sources (loopback of output sinks)
-            if name.contains(".monitor") {
-                return None;
+            // Filter out monitor sources of hardware output sinks (e.g. alsa_output.*.monitor,
+            // bluez_output.*.monitor) but keep monitors of virtual/null sinks (e.g. mic.monitor,
+            // drocsid_voice_in.monitor) which are used for mic routing.
+            if name.ends_with(".monitor") {
+                let base = &name[..name.len() - ".monitor".len()];
+                if base.starts_with("alsa_") || base.starts_with("bluez_") {
+                    return None;
+                }
             }
             Some(AudioSource {
                 name,
