@@ -34,6 +34,8 @@ export function MessageInput({ channelId }: MessageInputProps) {
   const [showGifs, setShowGifs] = useState(false);
   const [showEmojis, setShowEmojis] = useState(false);
   const sendMessage = useServerStore((s) => s.sendMessage);
+  const replyingTo = useServerStore((s) => s.replyingTo);
+  const setReplyingTo = useServerStore((s) => s.setReplyingTo);
   const sendTypingAction = useServerStore((s) => s.sendTyping);
   const activeServerId = useServerStore((s) => s.activeServerId);
   const members = useServerStore((s) => activeServerId ? s.members.get(activeServerId) : undefined);
@@ -47,6 +49,11 @@ export function MessageInput({ channelId }: MessageInputProps) {
   useEffect(() => {
     lastTypingRef.current = 0;
   }, [channelId]);
+
+  // Focus input when replying
+  useEffect(() => {
+    if (replyingTo) inputRef.current?.focus();
+  }, [replyingTo]);
 
   const handleSubmit = async () => {
     let trimmed = content.trim();
@@ -95,7 +102,9 @@ export function MessageInput({ channelId }: MessageInputProps) {
 
         setUploads([]);
         setContent('');
-        await sendMessage(channelId, fileMsg);
+        const replyId = replyingTo?.id;
+        setReplyingTo(null);
+        await sendMessage(channelId, fileMsg, replyId);
         return;
       } catch (err) {
         console.error('Upload failed:', err);
@@ -108,8 +117,10 @@ export function MessageInput({ channelId }: MessageInputProps) {
 
     // No uploads, just send text
     setContent('');
+    const replyId = replyingTo?.id;
+    setReplyingTo(null);
     try {
-      await sendMessage(channelId, trimmed);
+      await sendMessage(channelId, trimmed, replyId);
     } catch (err) {
       setContent(trimmed);
       console.error('Failed to send message:', err);
@@ -120,6 +131,9 @@ export function MessageInput({ channelId }: MessageInputProps) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
+    }
+    if (e.key === 'Escape' && replyingTo) {
+      setReplyingTo(null);
     }
   };
 
@@ -226,6 +240,17 @@ export function MessageInput({ channelId }: MessageInputProps) {
       {isDragging && (
         <div className="drop-overlay">
           Drop files to upload
+        </div>
+      )}
+
+      {replyingTo && (
+        <div className="reply-indicator">
+          <span className="reply-indicator-text">
+            Replying to <strong>{replyingTo.author?.display_name || replyingTo.author?.username || 'Unknown'}</strong>
+          </span>
+          <button className="reply-indicator-close" onClick={() => setReplyingTo(null)}>
+            &times;
+          </button>
         </div>
       )}
 

@@ -25,6 +25,7 @@ export function MessageList({ channelId }: MessageListProps) {
   const pinMessage = useServerStore((s) => s.pinMessage);
   const unpinMessage = useServerStore((s) => s.unpinMessage);
   const loadMoreMessages = useServerStore((s) => s.loadMoreMessages);
+  const setReplyingTo = useServerStore((s) => s.setReplyingTo);
   const activeServerId = useServerStore((s) => s.activeServerId);
   const members = useServerStore((s) => activeServerId ? s.members.get(activeServerId) : undefined);
   const roles = useServerStore((s) => activeServerId ? s.roles.get(activeServerId) : undefined);
@@ -266,6 +267,7 @@ export function MessageList({ channelId }: MessageListProps) {
           return (
             <div
               key={msg.id}
+              id={`msg-${msg.id}`}
               className={`message ${showHeader ? 'with-header' : 'compact'} ${isEditing ? 'editing' : ''}`}
               onMouseEnter={() => setHoveredId(msg.id)}
               onMouseLeave={() => {
@@ -275,6 +277,13 @@ export function MessageList({ channelId }: MessageListProps) {
             >
               {isHovered && !isEditing && (
                 <div className="message-actions">
+                  <button
+                    className="message-action-btn"
+                    title="Reply"
+                    onClick={() => setReplyingTo(msg)}
+                  >
+                    Reply
+                  </button>
                   <button
                     className="message-action-btn"
                     title="Add reaction"
@@ -317,6 +326,27 @@ export function MessageList({ channelId }: MessageListProps) {
                   ))}
                 </div>
               )}
+
+              {msg.reply_to_id && (() => {
+                const replyMsg = messages.find((m) => m.id === msg.reply_to_id);
+                const replyAuthor = replyMsg ? getAuthorName(replyMsg) : null;
+                const replyPreview = replyMsg?.content
+                  ? replyMsg.content.length > 100 ? replyMsg.content.slice(0, 100) + '...' : replyMsg.content
+                  : null;
+                return (
+                  <div
+                    className="reply-context"
+                    onClick={() => {
+                      if (replyMsg) {
+                        document.getElementById(`msg-${replyMsg.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      }
+                    }}
+                  >
+                    <span className="reply-author">@{replyAuthor ?? 'Unknown'}</span>
+                    <span className="reply-preview">{replyPreview ?? 'Message not loaded'}</span>
+                  </div>
+                );
+              })()}
 
               {showHeader && (
                 <div className="message-header">

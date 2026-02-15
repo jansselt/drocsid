@@ -99,6 +99,9 @@ interface ServerState {
   // Notification preferences
   notificationPrefs: Map<string, NotificationPreference>; // target_id -> pref
 
+  // Reply
+  replyingTo: Message | null;
+
   // Voice
   voiceChannelId: string | null; // channel we're connected to
   voiceToken: string | null;
@@ -116,7 +119,8 @@ interface ServerState {
   loadChannels: (serverId: string) => Promise<void>;
   loadMessages: (channelId: string) => Promise<void>;
   loadMoreMessages: (channelId: string) => Promise<boolean>;
-  sendMessage: (channelId: string, content: string) => Promise<void>;
+  setReplyingTo: (msg: Message | null) => void;
+  sendMessage: (channelId: string, content: string, replyToId?: string) => Promise<void>;
   addMessage: (message: MessageCreateEvent) => void;
   updateMessage: (event: MessageUpdateEvent) => void;
   deleteMessage: (event: MessageDeleteEvent) => void;
@@ -264,6 +268,7 @@ export const useServerStore = create<ServerState>((set, get) => ({
   showMemberSidebar: JSON.parse(localStorage.getItem('drocsid_show_member_sidebar') ?? 'true'),
   readStates: new Map(),
   notificationPrefs: new Map(),
+  replyingTo: null,
   voiceChannelId: null,
   voiceToken: null,
   voiceUrl: null,
@@ -382,8 +387,10 @@ export const useServerStore = create<ServerState>((set, get) => ({
     return true;
   },
 
-  sendMessage: async (channelId, content) => {
-    await api.sendMessage(channelId, content);
+  setReplyingTo: (msg) => set({ replyingTo: msg }),
+
+  sendMessage: async (channelId, content, replyToId) => {
+    await api.sendMessage(channelId, content, replyToId);
   },
 
   addMessage: (message) => {

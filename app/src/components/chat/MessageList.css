@@ -280,3 +280,41 @@
   background: var(--bg-tertiary);
   color: var(--text-primary);
 }
+
+/* ── Reply context (quote block above message) ───── */
+
+.reply-context {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding-left: 56px;
+  margin-bottom: 2px;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.reply-context::before {
+  content: '';
+  width: 2px;
+  height: 12px;
+  background: var(--text-muted);
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+
+.reply-context:hover {
+  color: var(--text-primary);
+}
+
+.reply-author {
+  font-weight: 600;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.reply-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
