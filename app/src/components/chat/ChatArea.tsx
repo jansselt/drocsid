@@ -187,6 +187,7 @@ function PinnedMessagesPanel({ channelId, onClose }: { channelId: string; onClos
   }, [loadPins]);
 
   const getAuthorName = (msg: Message) => {
+    if (!msg.author_id) return 'Deleted User';
     if (msg.author) return msg.author.display_name || msg.author.username;
     const cached = users.get(msg.author_id);
     return cached?.display_name || cached?.username || 'Unknown User';

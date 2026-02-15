@@ -84,7 +84,7 @@ export interface Message {
   id: string;
   instance_id: string;
   channel_id: string;
-  author_id: string;
+  author_id: string | null;
   content: string | null;
   reply_to_id: string | null;
   edited_at: string | null;
@@ -336,7 +336,7 @@ export interface SearchResult {
   id: string;
   instance_id: string;
   channel_id: string;
-  author_id: string;
+  author_id: string | null;
   content: string | null;
   reply_to_id: string | null;
   edited_at: string | null;

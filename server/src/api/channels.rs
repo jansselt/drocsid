@@ -385,7 +385,7 @@ async fn edit_message(
     }
 
     // Only the author can edit their own message
-    if message.author_id != user.user_id {
+    if message.author_id != Some(user.user_id) {
         return Err(ApiError::Forbidden);
     }
 
@@ -433,7 +433,7 @@ async fn delete_message(
     }
 
     // Author can delete own messages; MANAGE_MESSAGES or global admin can delete any
-    if message.author_id != user.user_id {
+    if message.author_id != Some(user.user_id) {
         let caller = queries::get_user_by_id(&state.db, user.user_id).await?;
         let is_global_admin = caller.map(|u| u.is_admin).unwrap_or(false);
         if !is_global_admin {

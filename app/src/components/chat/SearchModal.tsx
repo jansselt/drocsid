@@ -58,7 +58,7 @@ export function SearchModal({ serverId, onClose }: SearchModalProps) {
             <div className="search-empty">No results found</div>
           ) : (
             searchResults.map((result) => {
-              const author = users.get(result.author_id);
+              const author = result.author_id ? users.get(result.author_id) : null;
               return (
                 <button
                   key={result.id}
@@ -67,7 +67,7 @@ export function SearchModal({ serverId, onClose }: SearchModalProps) {
                 >
                   <div className="search-result-header">
                     <span className="search-result-author">
-                      {author?.username || 'Unknown'}
+                      {author?.username || (result.author_id ? 'Unknown' : 'Deleted User')}
                     </span>
                     <span className="search-result-date">
                       {new Date(result.created_at).toLocaleDateString()}

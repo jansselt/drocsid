@@ -137,6 +137,7 @@ export function MessageList({ channelId }: MessageListProps) {
   // ── Message rendering helpers ───────────────────────────────────────
 
   const getAuthor = (msg: Message): { name: string; avatar_url: string | null } => {
+    if (!msg.author_id) return { name: 'Deleted User', avatar_url: null };
     const user = msg.author ?? users.get(msg.author_id);
     return {
       name: user?.display_name || user?.username || 'Unknown User',
