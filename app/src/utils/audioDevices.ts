@@ -142,6 +142,24 @@ export async function labelAudioStreamsTauri(): Promise<void> {
 }
 
 /**
+ * Create a virtual PipeWire null-sink ("Drocsid Voice Sound In") that appears
+ * in qpwgraph / Helvum / pavucontrol. The user can route any mic to it.
+ * The app's recording stream is automatically moved to the sink's monitor.
+ */
+export async function createVoiceInputSink(): Promise<void> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('create_voice_input_sink');
+}
+
+/**
+ * Remove the virtual mic input sink (on voice disconnect / app exit).
+ */
+export async function destroyVoiceInputSink(): Promise<void> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('destroy_voice_input_sink');
+}
+
+/**
  * Save microphone selection to localStorage and notify listeners.
  */
 export function saveMicrophone(deviceId: string): void {

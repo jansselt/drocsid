@@ -74,6 +74,10 @@ pub fn run() {
             audio::get_default_audio_source,
             #[cfg(target_os = "linux")]
             audio::label_audio_streams,
+            #[cfg(target_os = "linux")]
+            audio::create_voice_input_sink,
+            #[cfg(target_os = "linux")]
+            audio::destroy_voice_input_sink,
         ])
         .setup(|app| {
             // Open devtools in debug builds

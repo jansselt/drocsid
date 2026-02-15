@@ -1,5 +1,10 @@
 use serde::Serialize;
 use std::process::Command;
+use std::sync::Mutex;
+
+/// Module ID of the virtual null-sink for mic input routing.
+/// Stored so we can unload it on disconnect / app exit.
+static VOICE_INPUT_MODULE: Mutex<Option<u32>> = Mutex::new(None);
 
 #[derive(Serialize, Clone, Debug)]
 pub struct AudioSink {
@@ -234,6 +239,71 @@ pub async fn set_audio_source(source_name: String) -> Result<u32, String> {
     }
 
     Ok(moved)
+}
+
+// ---------------------------------------------------------------------------
+// Virtual PipeWire sink for mic input routing
+// ---------------------------------------------------------------------------
+// Creates a null-sink that appears as a node in qpwgraph / Helvum / pavucontrol.
+// The user can route any physical mic to it. The app reads from the sink's
+// monitor source. Cleaned up on voice disconnect or app exit.
+
+const VOICE_INPUT_SINK: &str = "drocsid_voice_in";
+
+#[tauri::command]
+pub async fn create_voice_input_sink() -> Result<(), String> {
+    // Clean up any stale sink from a previous crash
+    destroy_voice_input_sink_inner();
+
+    let output = Command::new("pactl")
+        .args([
+            "load-module",
+            "module-null-sink",
+            &format!("sink_name={VOICE_INPUT_SINK}"),
+            "rate=48000",
+            "channels=1",
+            &format!(
+                "sink_properties=device.description=\"Drocsid Voice Sound In\" media.class=Audio/Sink/Virtual"
+            ),
+        ])
+        .output()
+        .map_err(|e| format!("Failed to create virtual sink: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "pactl load-module failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let module_id: u32 = String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse()
+        .map_err(|e| format!("Invalid module ID: {e}"))?;
+
+    *VOICE_INPUT_MODULE.lock().unwrap() = Some(module_id);
+
+    // Move the app's recording stream(s) to the virtual sink's monitor source
+    // so audio flows: physical mic → virtual sink → monitor → app
+    let monitor = format!("{VOICE_INPUT_SINK}.monitor");
+    // Best-effort — source-output may not exist yet, VoicePanel retries
+    let _ = set_audio_source(monitor).await;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn destroy_voice_input_sink() -> Result<(), String> {
+    destroy_voice_input_sink_inner();
+    Ok(())
+}
+
+fn destroy_voice_input_sink_inner() {
+    if let Some(module_id) = VOICE_INPUT_MODULE.lock().unwrap().take() {
+        let _ = Command::new("pactl")
+            .args(["unload-module", &module_id.to_string()])
+            .status();
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -11,7 +11,7 @@ import {
 import { Track, RemoteParticipant } from 'livekit-client';
 import { useServerStore } from '../../stores/serverStore';
 import { isTauri } from '../../api/instance';
-import { applyAudioOutputTauri, applyAudioInputTauri, labelAudioStreamsTauri } from '../../utils/audioDevices';
+import { applyAudioOutputTauri, applyAudioInputTauri, labelAudioStreamsTauri, createVoiceInputSink, destroyVoiceInputSink } from '../../utils/audioDevices';
 import './VoicePanel.css';
 
 export function VoicePanel({ compact }: { compact?: boolean } = {}) {
@@ -230,23 +230,30 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
     return () => window.removeEventListener('drocsid-speaker-changed', handler);
   }, [room]);
 
-  // Apply saved audio input (mic) device selection and label PipeWire streams
+  // Create virtual PipeWire sink for mic input, route recording stream to it
   useEffect(() => {
     if (!room || !isTauri()) return;
 
-    const applyMic = async () => {
-      const deviceId = localStorage.getItem('drocsid_mic');
-      if (deviceId) {
-        // Route source-output via PipeWire/PulseAudio — retry since it may appear after a delay
-        for (let attempt = 0; attempt < 5; attempt++) {
-          try {
-            await applyAudioInputTauri(deviceId);
-            break;
-          } catch {
-            await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
-          }
+    const setup = async () => {
+      // Create "Drocsid Voice Sound In" node in PipeWire graph.
+      // This also moves our source-output to the sink's monitor automatically.
+      try {
+        await createVoiceInputSink();
+      } catch (e) {
+        console.warn('[VoicePanel] Failed to create voice input sink:', e);
+      }
+
+      // Retry moving source-output to the virtual sink's monitor
+      // (source-output may appear after a delay)
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          await applyAudioInputTauri('drocsid_voice_in.monitor');
+          break;
+        } catch {
+          await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
         }
       }
+
       // Label all audio streams with distinct PipeWire names (best-effort)
       try {
         await labelAudioStreamsTauri();
@@ -255,11 +262,15 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
       }
     };
 
-    applyMic();
+    setup();
 
-    const handler = () => applyMic();
+    const handler = () => setup();
     window.addEventListener('drocsid-mic-changed', handler);
-    return () => window.removeEventListener('drocsid-mic-changed', handler);
+    return () => {
+      window.removeEventListener('drocsid-mic-changed', handler);
+      // Clean up virtual sink on voice disconnect
+      destroyVoiceInputSink().catch(() => {});
+    };
   }, [room]);
 
   // Get video tracks for screen sharing
