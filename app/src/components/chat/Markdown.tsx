@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import { useAuthStore } from '../../stores/authStore';
 import { SHORTCODE_MAP } from './EmojiPicker';
@@ -255,51 +255,51 @@ export function Markdown({ content }: MarkdownProps) {
             );
           case 'twitter':
             return (
-              <div key={i} className="md-embed">
-                <a className="md-link md-embed-source" href={token.href} target="_blank" rel="noopener noreferrer">{token.href}</a>
-                <iframe
-                  className="md-social-embed md-twitter"
-                  src={`https://platform.twitter.com/embed/Tweet.html?id=${token.text}&dnt=true&theme=dark`}
-                  title="Tweet"
-                  sandbox="allow-scripts allow-same-origin allow-popups"
-                />
-              </div>
+              <SocialEmbed
+                key={i}
+                className="md-social-embed md-twitter"
+                src={`https://platform.twitter.com/embed/Tweet.html?id=${token.text}&dnt=true&theme=dark`}
+                title="Tweet"
+                width={550}
+                href={token.href}
+                sandbox="allow-scripts allow-same-origin allow-popups"
+              />
             );
           case 'tiktok':
             return (
-              <div key={i} className="md-embed">
-                <a className="md-link md-embed-source" href={token.href} target="_blank" rel="noopener noreferrer">{token.href}</a>
-                <iframe
-                  className="md-social-embed md-tiktok"
-                  src={`https://www.tiktok.com/embed/v2/${token.text}`}
-                  title="TikTok"
-                  sandbox="allow-scripts allow-same-origin allow-popups"
-                />
-              </div>
+              <SocialEmbed
+                key={i}
+                className="md-social-embed md-tiktok"
+                src={`https://www.tiktok.com/embed/v2/${token.text}`}
+                title="TikTok"
+                width={325}
+                href={token.href}
+                sandbox="allow-scripts allow-same-origin allow-popups"
+              />
             );
           case 'instagram':
             return (
-              <div key={i} className="md-embed">
-                <a className="md-link md-embed-source" href={token.href} target="_blank" rel="noopener noreferrer">{token.href}</a>
-                <iframe
-                  className="md-social-embed md-instagram"
-                  src={`https://www.instagram.com/${token.lang}/${token.text}/embed/`}
-                  title="Instagram"
-                  sandbox="allow-scripts allow-same-origin allow-popups"
-                />
-              </div>
+              <SocialEmbed
+                key={i}
+                className="md-social-embed md-instagram"
+                src={`https://www.instagram.com/${token.lang}/${token.text}/embed/`}
+                title="Instagram"
+                width={400}
+                href={token.href}
+                sandbox="allow-scripts allow-same-origin allow-popups"
+              />
             );
           case 'threads':
             return (
-              <div key={i} className="md-embed">
-                <a className="md-link md-embed-source" href={token.href} target="_blank" rel="noopener noreferrer">{token.href}</a>
-                <iframe
-                  className="md-social-embed md-threads"
-                  src={`https://www.threads.net/${token.text}/embed`}
-                  title="Threads"
-                  sandbox="allow-scripts allow-same-origin allow-popups"
-                />
-              </div>
+              <SocialEmbed
+                key={i}
+                className="md-social-embed md-threads"
+                src={`https://www.threads.net/${token.text}/embed`}
+                title="Threads"
+                width={400}
+                href={token.href}
+                sandbox="allow-scripts allow-same-origin allow-popups"
+              />
             );
           case 'bluesky': {
             // token.text is "handle/app.bsky.feed.post/rkey"
@@ -360,6 +360,67 @@ export function Markdown({ content }: MarkdownProps) {
   );
 }
 
+/** Iframe wrapper that auto-resizes via postMessage from embed platforms */
+function SocialEmbed({ src, title, className, width, href, sandbox }: {
+  src: string;
+  title: string;
+  className: string;
+  width: number;
+  href?: string;
+  sandbox?: string;
+}) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [height, setHeight] = useState(0);
+
+  const onMessage = useCallback((e: MessageEvent) => {
+    const iframe = iframeRef.current;
+    if (!iframe || e.source !== iframe.contentWindow) return;
+
+    let h: number | undefined;
+
+    // Twitter/X: {"twttr.private.resize": [{height: N}]} or {"method":"resize","params":[{height:N}]}
+    if (typeof e.data === 'string') {
+      try {
+        const parsed = JSON.parse(e.data);
+        h = parsed?.['twttr.private.resize']?.[0]?.height
+          ?? parsed?.params?.[0]?.height;
+      } catch { /* not JSON */ }
+    } else if (typeof e.data === 'object' && e.data) {
+      // TikTok sends {type: "resize", height: N} or similar object messages
+      // Instagram sends {type: "MEASURE", details: {height: N}}
+      // Generic: look for a height property anywhere in the message
+      h = e.data.height
+        ?? e.data?.['twttr.private.resize']?.[0]?.height
+        ?? e.data?.params?.[0]?.height
+        ?? e.data?.details?.height;
+    }
+
+    if (typeof h === 'number' && h > 0) {
+      setHeight(h);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [onMessage]);
+
+  return (
+    <div className="md-embed">
+      {href && <a className="md-link md-embed-source" href={href} target="_blank" rel="noopener noreferrer">{href}</a>}
+      <iframe
+        ref={iframeRef}
+        className={className}
+        src={src}
+        title={title}
+        scrolling="no"
+        style={{ width, height: height > 0 ? height : undefined }}
+        sandbox={sandbox}
+      />
+    </div>
+  );
+}
+
 // Cache resolved DIDs to avoid repeated API calls
 const didCache = new Map<string, string>();
 
@@ -415,14 +476,13 @@ function BlueskyEmbed({ handle, rkey, href }: { handle: string; rkey: string; hr
   }
 
   return (
-    <div className="md-embed">
-      <a className="md-link md-embed-source" href={href} target="_blank" rel="noopener noreferrer">{href}</a>
-      <iframe
-        className="md-social-embed md-bluesky"
-        src={`https://embed.bsky.app/embed/${resolvedDid}/app.bsky.feed.post/${rkey}`}
-        title="Bluesky"
-        sandbox="allow-scripts allow-same-origin allow-popups"
-      />
-    </div>
+    <SocialEmbed
+      className="md-social-embed md-bluesky"
+      src={`https://embed.bsky.app/embed/${resolvedDid}/app.bsky.feed.post/${rkey}`}
+      title="Bluesky"
+      width={400}
+      href={href}
+      sandbox="allow-scripts allow-same-origin allow-popups"
+    />
   );
 }
