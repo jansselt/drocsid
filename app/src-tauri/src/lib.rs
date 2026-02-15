@@ -64,6 +64,39 @@ pub fn run() {
                 }
             }
 
+            // Enable media devices (getUserMedia) and WebRTC in the webview
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.with_webview(|webview| {
+                    #[cfg(target_os = "linux")]
+                    {
+                        use webkit2gtk::{
+                            glib::prelude::ObjectExt, DeviceInfoPermissionRequest,
+                            PermissionRequestExt, SettingsExt,
+                            UserMediaPermissionRequest, WebViewExt,
+                        };
+
+                        let wv = webview.inner();
+                        if let Some(settings) = wv.settings() {
+                            settings.set_enable_media_stream(true);
+                            settings.set_enable_webrtc(true);
+                            settings.set_enable_mediasource(true);
+                            settings.set_enable_media_capabilities(true);
+                        }
+
+                        // Auto-grant camera/mic and device-enumeration permissions
+                        wv.connect_permission_request(|_, request| {
+                            if request.is::<UserMediaPermissionRequest>()
+                                || request.is::<DeviceInfoPermissionRequest>()
+                            {
+                                request.allow();
+                                return true;
+                            }
+                            false // default handling for other permission types
+                        });
+                    }
+                });
+            }
+
             match setup_tray(app) {
                 Ok(()) => {}
                 Err(e) => {
