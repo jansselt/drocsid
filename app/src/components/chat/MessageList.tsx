@@ -1,5 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
+import { useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import { useAuthStore } from '../../stores/authStore';
 import type { Message, ReactionGroup } from '../../types';
@@ -12,9 +11,9 @@ interface MessageListProps {
 
 const EMOJI_QUICK_PICKS = ['\u{1F44D}', '\u{2764}\u{FE0F}', '\u{1F602}', '\u{1F44E}', '\u{1F389}', '\u{1F440}'];
 const EMPTY_MESSAGES: Message[] = [];
-const START_INDEX = 100_000;
-
-const scrollLog = (...args: unknown[]) => console.debug('[scroll]', ...args);
+const AT_BOTTOM_THRESHOLD = 150;
+const GRACE_DURATION = 5000;
+const GRACE_POLL_MS = 200;
 
 export function MessageList({ channelId }: MessageListProps) {
   const messages = useServerStore((s) => s.messages.get(channelId) ?? EMPTY_MESSAGES);
@@ -32,145 +31,153 @@ export function MessageList({ channelId }: MessageListProps) {
   const members = useServerStore((s) => activeServerId ? s.members.get(activeServerId) : undefined);
   const roles = useServerStore((s) => activeServerId ? s.roles.get(activeServerId) : undefined);
 
-  const virtuosoRef = useRef<VirtuosoHandle>(null);
-  const scrollContainerRef = useRef<HTMLElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [emojiPickerForId, setEmojiPickerForId] = useState<string | null>(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
-  const [firstItemIndex, setFirstItemIndex] = useState(START_INDEX);
   const isLoadingMore = useRef(false);
   const atBottomRef = useRef(true);
-  const prevChannelRef = useRef(channelId);
-  const graceRef = useRef(true); // Grace period: always re-scroll on media load
+  const prevMsgCountRef = useRef(0);
+  const graceRef = useRef(true);
   const graceTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const scrollDebounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  // Reset state on channel switch
+  // ── Helpers ──────────────────────────────────────────────────────────
+
+  const isAtBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < AT_BOTTOM_THRESHOLD;
+  }, []);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'instant') => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior });
+  }, []);
+
+  // ── Channel switch: reset state, start grace period ─────────────────
+
   useEffect(() => {
-    scrollLog('channel switch →', channelId, '| msgs:', messages.length);
     setEditingId(null);
     setEmojiPickerForId(null);
     setHoveredId(null);
     setShowScrollBtn(false);
-    setFirstItemIndex(START_INDEX);
     isLoadingMore.current = false;
     atBottomRef.current = true;
-    prevChannelRef.current = channelId;
+    prevMsgCountRef.current = 0;
 
-    // Grace period: for 5s after channel switch, always re-scroll when media
-    // loads regardless of atBottom state. GIFs/images expand content height
-    // after initial scroll, causing atBottom to flicker false before all media
-    // has loaded. Without grace, subsequent loads see atBottom=false and skip
-    // re-scrolling, leaving the user stuck mid-chat.
+    // Grace period: poll every 200ms for 5s to catch ALL content expansion
+    // (cached images, async GIFs, layout shifts). No reliance on load events.
     graceRef.current = true;
     clearTimeout(graceTimerRef.current);
+    const interval = setInterval(() => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (gap > 1) {
+        el.scrollTop = el.scrollHeight;
+      }
+    }, GRACE_POLL_MS);
     graceTimerRef.current = setTimeout(() => {
-      scrollLog('grace period ended');
       graceRef.current = false;
-    }, 5000);
+      clearInterval(interval);
+    }, GRACE_DURATION);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(graceTimerRef.current);
+    };
   }, [channelId]);
 
-  // Re-scroll when images/embeds load (they change scrollHeight).
-  // Virtuoso's followOutput handles new-item scrolling, but async media loads
-  // can increase content height after the initial scroll, pushing the bottom
-  // out of view (e.g. GIF messages). Re-scroll whenever at the bottom.
+  // ── Scroll to bottom on initial render & when messages arrive ───────
+
+  useLayoutEffect(() => {
+    scrollToBottom();
+  }, [channelId, scrollToBottom]);
+
+  // When new messages arrive, auto-scroll if at bottom or own message
   useEffect(() => {
-    const el = scrollContainerRef.current;
+    const count = messages.length;
+    const prevCount = prevMsgCountRef.current;
+    prevMsgCountRef.current = count;
+
+    if (count <= prevCount || count === 0) return;
+
+    const lastMsg = messages[count - 1];
+    const isOwn = lastMsg?.author_id === currentUser?.id;
+
+    if (atBottomRef.current || isOwn || graceRef.current) {
+      // Use rAF to ensure DOM has updated with new messages
+      requestAnimationFrame(() => scrollToBottom(isOwn && !atBottomRef.current ? 'smooth' : 'instant'));
+    }
+  }, [messages.length, messages, currentUser?.id, scrollToBottom]);
+
+  // ── Post-grace media load handler ───────────────────────────────────
+
+  useEffect(() => {
+    const el = scrollRef.current;
     if (!el) return;
 
-    const handleLoad = (e: Event) => {
-      const target = e.target as HTMLElement;
-      // Skip avatar images — they're fixed-size and don't affect scroll height.
-      // Virtuoso re-mounts them on scroll, creating a feedback loop.
-      if (target.closest('.message-avatar')) return;
+    const handleLoad = () => {
+      if (graceRef.current) return; // grace polling handles it
+      if (!atBottomRef.current) return;
 
-      const tag = target.tagName;
-      const src = (target as HTMLImageElement)?.src?.slice(0, 80);
-      const shouldScroll = atBottomRef.current || graceRef.current;
-      scrollLog('media loaded', tag, src, '| atBottom:', atBottomRef.current, '| grace:', graceRef.current, '| willScroll:', shouldScroll);
-      if (shouldScroll) {
-        // Debounce: collapse rapid-fire load events (e.g. multiple GIFs in one
-        // message) into a single scroll after things settle.
-        clearTimeout(scrollDebounceRef.current);
-        scrollDebounceRef.current = setTimeout(() => {
-          const container = scrollContainerRef.current;
-          if (!container) return;
-          const gap = container.scrollHeight - container.scrollTop - container.clientHeight;
-          if (gap < 1) return;
-          scrollLog('re-scrolling after media load → scrollTop', container.scrollHeight, '| gap:', gap);
-          container.scrollTop = container.scrollHeight;
-        }, 150);
-      }
+      clearTimeout(scrollDebounceRef.current);
+      scrollDebounceRef.current = setTimeout(() => {
+        const container = scrollRef.current;
+        if (!container) return;
+        const gap = container.scrollHeight - container.scrollTop - container.clientHeight;
+        if (gap < 1) return;
+        container.scrollTop = container.scrollHeight;
+      }, 150);
     };
 
-    // Capture phase catches load events from descendant img/iframe elements
     el.addEventListener('load', handleLoad, true);
-    return () => {
-      el.removeEventListener('load', handleLoad, true);
-    };
+    return () => el.removeEventListener('load', handleLoad, true);
   }, [channelId, messages.length]);
 
-  // Auto-scroll for own messages even when scrolled up
+  // ── Scroll event: track atBottom + load-more-on-scroll-up ───────────
+
   useEffect(() => {
-    if (messages.length === 0) return;
-    const lastMsg = messages[messages.length - 1];
-    if (lastMsg?.author_id === currentUser?.id && !atBottomRef.current) {
-      scrollLog('own message sent while scrolled up → scrolling to bottom');
-      const container = scrollContainerRef.current;
-      if (container) {
-        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const handleScroll = () => {
+      const bottom = isAtBottom();
+      if (atBottomRef.current !== bottom) {
+        atBottomRef.current = bottom;
+        setShowScrollBtn(!bottom);
       }
-    }
-  }, [messages.length, messages, currentUser?.id]);
 
-  // Virtuoso callbacks
-  const handleAtBottomChange = useCallback((atBottom: boolean) => {
-    if (atBottomRef.current !== atBottom) {
-      scrollLog('atBottom changed:', atBottomRef.current, '→', atBottom);
-    }
-    atBottomRef.current = atBottom;
-    setShowScrollBtn(!atBottom);
-  }, []);
+      // Load more when near top
+      if (el.scrollTop < 200 && !isLoadingMore.current && messages.length > 0) {
+        isLoadingMore.current = true;
+        const prevHeight = el.scrollHeight;
+        loadMoreMessages(channelId)
+          .then((hasMore) => {
+            if (hasMore !== false) {
+              // Preserve scroll position after prepending older messages
+              requestAnimationFrame(() => {
+                el.scrollTop = el.scrollHeight - prevHeight;
+              });
+            }
+            isLoadingMore.current = false;
+          })
+          .catch(() => {
+            isLoadingMore.current = false;
+          });
+      }
+    };
 
-  const handleStartReached = useCallback(() => {
-    if (isLoadingMore.current || messages.length === 0) return;
-    scrollLog('startReached — loading older messages, current count:', messages.length);
-    isLoadingMore.current = true;
-    const prevCount = messages.length;
-    loadMoreMessages(channelId)
-      .then((hasMore) => {
-        if (hasMore !== false) {
-          const newCount = useServerStore.getState().messages.get(channelId)?.length ?? 0;
-          const added = newCount - prevCount;
-          scrollLog('loaded', added, 'older messages, total:', newCount);
-          if (added > 0) {
-            setFirstItemIndex((prev) => prev - added);
-          }
-        } else {
-          scrollLog('no more messages to load');
-        }
-        isLoadingMore.current = false;
-      })
-      .catch(() => {
-        isLoadingMore.current = false;
-      });
-  }, [channelId, loadMoreMessages, messages.length]);
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, [channelId, messages.length, isAtBottom, loadMoreMessages]);
 
-  const scrollerRefCallback = useCallback((el: HTMLElement | Window | null) => {
-    scrollContainerRef.current = el as HTMLElement;
-  }, []);
+  // ── Message rendering helpers ───────────────────────────────────────
 
-  const scrollToBottom = useCallback(() => {
-    scrollLog('scrollToBottom button clicked');
-    const container = scrollContainerRef.current;
-    if (container) {
-      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
-    }
-  }, []);
-
-  // Helper functions
   const getAuthor = (msg: Message): { name: string; avatar_url: string | null } => {
     const user = msg.author ?? users.get(msg.author_id);
     return {
@@ -199,7 +206,6 @@ export function MessageList({ channelId }: MessageListProps) {
     const date = new Date(iso);
     const now = new Date();
     const isToday = date.toDateString() === now.toDateString();
-
     if (isToday) {
       return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
@@ -207,14 +213,16 @@ export function MessageList({ channelId }: MessageListProps) {
       ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  const shouldShowHeader = (msg: Message, index: number): boolean => {
-    const arrayIndex = index - firstItemIndex;
-    if (arrayIndex <= 0) return true;
-    const prev = messages[arrayIndex - 1];
+  const shouldShowHeader = (index: number): boolean => {
+    if (index <= 0) return true;
+    const msg = messages[index];
+    const prev = messages[index - 1];
     if (!prev || prev.author_id !== msg.author_id) return true;
     const diff = new Date(msg.created_at).getTime() - new Date(prev.created_at).getTime();
     return diff > 5 * 60 * 1000;
   };
+
+  // ── Action handlers ─────────────────────────────────────────────────
 
   const startEditing = useCallback((msg: Message) => {
     setEditingId(msg.id);
@@ -280,146 +288,9 @@ export function MessageList({ channelId }: MessageListProps) {
     }
   }, [channelId, pinMessage, unpinMessage]);
 
-  const itemContent = useCallback(
-    (index: number, msg: Message) => {
-      const showHeader = shouldShowHeader(msg, index);
-      const isOwn = msg.author_id === currentUser?.id;
-      const isEditing = editingId === msg.id;
-      const isHovered = hoveredId === msg.id;
-      const msgReactions = reactions.get(msg.id) || [];
-
-      return (
-        <div
-          className={`message ${showHeader ? 'with-header' : 'compact'} ${isEditing ? 'editing' : ''}`}
-          onMouseEnter={() => setHoveredId(msg.id)}
-          onMouseLeave={() => {
-            setHoveredId(null);
-            if (emojiPickerForId === msg.id) setEmojiPickerForId(null);
-          }}
-        >
-          {isHovered && !isEditing && (
-            <div className="message-actions">
-              <button
-                className="message-action-btn"
-                title="Add reaction"
-                onClick={() => setEmojiPickerForId(emojiPickerForId === msg.id ? null : msg.id)}
-              >
-                +
-              </button>
-              {msg.pinned ? (
-                <button className="message-action-btn" title="Unpin" onClick={() => handlePin(msg.id, true)}>
-                  Unpin
-                </button>
-              ) : (
-                <button className="message-action-btn" title="Pin" onClick={() => handlePin(msg.id, false)}>
-                  Pin
-                </button>
-              )}
-              {isOwn && (
-                <button className="message-action-btn" title="Edit" onClick={() => startEditing(msg)}>
-                  Edit
-                </button>
-              )}
-              {isOwn && (
-                <button className="message-action-btn danger" title="Delete" onClick={() => handleDelete(msg.id)}>
-                  Del
-                </button>
-              )}
-            </div>
-          )}
-
-          {emojiPickerForId === msg.id && (
-            <div className="emoji-quick-picker">
-              {EMOJI_QUICK_PICKS.map((emoji) => (
-                <button
-                  key={emoji}
-                  className="emoji-pick-btn"
-                  onClick={() => handleReaction(msg.id, emoji)}
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {showHeader && (
-            <div className="message-header">
-              <div className="message-avatar">
-                {getAuthor(msg).avatar_url ? (
-                  <img src={getAuthor(msg).avatar_url!} alt="" />
-                ) : (
-                  getAuthorName(msg).charAt(0).toUpperCase()
-                )}
-              </div>
-              <div className="message-meta">
-                <span
-                  className={`message-author ${isOwn ? 'own' : ''}`}
-                  style={!isOwn ? { color: getAuthorRoleColor(msg) } : undefined}
-                >
-                  {getAuthorName(msg)}
-                </span>
-                <span className="message-timestamp">
-                  {formatTime(msg.created_at)}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {isEditing ? (
-            <div className="message-edit-wrapper">
-              <textarea
-                className="message-edit-input"
-                value={editContent}
-                onChange={(e) => setEditContent(e.target.value)}
-                onKeyDown={handleEditKeyDown}
-                autoFocus
-                rows={1}
-              />
-              <div className="message-edit-actions">
-                <span className="message-edit-hint">
-                  Escape to cancel, Enter to save
-                </span>
-              </div>
-            </div>
-          ) : (
-            <div className="message-content">
-              {msg.pinned && <span className="message-pin-badge">Pinned</span>}
-              {msg.content && <Markdown content={msg.content} />}
-              {msg.edited_at && <span className="message-edited">(edited)</span>}
-            </div>
-          )}
-
-          {msgReactions.length > 0 && (
-            <div className="message-reactions">
-              {msgReactions.map((r: ReactionGroup) => (
-                <button
-                  key={r.emoji_name}
-                  className={`reaction-chip ${r.me ? 'me' : ''}`}
-                  onClick={() =>
-                    r.me
-                      ? handleRemoveReaction(msg.id, r.emoji_name)
-                      : handleReaction(msg.id, r.emoji_name)
-                  }
-                >
-                  <span className="reaction-emoji">{r.emoji_name}</span>
-                  <span className="reaction-count">{r.count}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      );
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      messages, currentUser?.id, editingId, editContent, hoveredId,
-      emojiPickerForId, reactions, users, channelId, handleEditKeyDown,
-      handleDelete, handleReaction, handleRemoveReaction, handlePin, startEditing,
-    ],
-  );
+  // ── Render ──────────────────────────────────────────────────────────
 
   if (messages.length === 0) {
-    scrollLog('render: no messages, showing empty state');
     return (
       <div className="message-list-wrapper">
         <div className="message-list">
@@ -431,34 +302,145 @@ export function MessageList({ channelId }: MessageListProps) {
     );
   }
 
-  scrollLog('render: mounting Virtuoso | msgs:', messages.length, '| initialIndex:', messages.length - 1, '| firstItemIndex:', firstItemIndex);
-
   return (
     <div className="message-list-wrapper">
-      <Virtuoso
-        key={channelId}
-        ref={virtuosoRef}
-        className="message-list"
-        data={messages}
-        firstItemIndex={firstItemIndex}
-        initialTopMostItemIndex={messages.length - 1}
-        followOutput={(isAtBottom: boolean) => {
-          const result = isAtBottom ? 'smooth' : false;
-          scrollLog('followOutput called | atBottom:', isAtBottom, '→', result);
-          return result;
-        }}
-        startReached={handleStartReached}
-        atBottomStateChange={handleAtBottomChange}
-        atBottomThreshold={150}
-        scrollerRef={scrollerRefCallback}
-        increaseViewportBy={{ top: 200, bottom: 200 }}
-        itemContent={itemContent}
-      />
+      <div key={channelId} ref={scrollRef} className="message-list">
+        {messages.map((msg, index) => {
+          const showHeader = shouldShowHeader(index);
+          const isOwn = msg.author_id === currentUser?.id;
+          const isEditing = editingId === msg.id;
+          const isHovered = hoveredId === msg.id;
+          const msgReactions = reactions.get(msg.id) || [];
+
+          return (
+            <div
+              key={msg.id}
+              className={`message ${showHeader ? 'with-header' : 'compact'} ${isEditing ? 'editing' : ''}`}
+              onMouseEnter={() => setHoveredId(msg.id)}
+              onMouseLeave={() => {
+                setHoveredId(null);
+                if (emojiPickerForId === msg.id) setEmojiPickerForId(null);
+              }}
+            >
+              {isHovered && !isEditing && (
+                <div className="message-actions">
+                  <button
+                    className="message-action-btn"
+                    title="Add reaction"
+                    onClick={() => setEmojiPickerForId(emojiPickerForId === msg.id ? null : msg.id)}
+                  >
+                    +
+                  </button>
+                  {msg.pinned ? (
+                    <button className="message-action-btn" title="Unpin" onClick={() => handlePin(msg.id, true)}>
+                      Unpin
+                    </button>
+                  ) : (
+                    <button className="message-action-btn" title="Pin" onClick={() => handlePin(msg.id, false)}>
+                      Pin
+                    </button>
+                  )}
+                  {isOwn && (
+                    <button className="message-action-btn" title="Edit" onClick={() => startEditing(msg)}>
+                      Edit
+                    </button>
+                  )}
+                  {isOwn && (
+                    <button className="message-action-btn danger" title="Delete" onClick={() => handleDelete(msg.id)}>
+                      Del
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {emojiPickerForId === msg.id && (
+                <div className="emoji-quick-picker">
+                  {EMOJI_QUICK_PICKS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      className="emoji-pick-btn"
+                      onClick={() => handleReaction(msg.id, emoji)}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {showHeader && (
+                <div className="message-header">
+                  <div className="message-avatar">
+                    {getAuthor(msg).avatar_url ? (
+                      <img src={getAuthor(msg).avatar_url!} alt="" />
+                    ) : (
+                      getAuthorName(msg).charAt(0).toUpperCase()
+                    )}
+                  </div>
+                  <div className="message-meta">
+                    <span
+                      className={`message-author ${isOwn ? 'own' : ''}`}
+                      style={!isOwn ? { color: getAuthorRoleColor(msg) } : undefined}
+                    >
+                      {getAuthorName(msg)}
+                    </span>
+                    <span className="message-timestamp">
+                      {formatTime(msg.created_at)}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {isEditing ? (
+                <div className="message-edit-wrapper">
+                  <textarea
+                    className="message-edit-input"
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    onKeyDown={handleEditKeyDown}
+                    autoFocus
+                    rows={1}
+                  />
+                  <div className="message-edit-actions">
+                    <span className="message-edit-hint">
+                      Escape to cancel, Enter to save
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="message-content">
+                  {msg.pinned && <span className="message-pin-badge">Pinned</span>}
+                  {msg.content && <Markdown content={msg.content} />}
+                  {msg.edited_at && <span className="message-edited">(edited)</span>}
+                </div>
+              )}
+
+              {msgReactions.length > 0 && (
+                <div className="message-reactions">
+                  {msgReactions.map((r: ReactionGroup) => (
+                    <button
+                      key={r.emoji_name}
+                      className={`reaction-chip ${r.me ? 'me' : ''}`}
+                      onClick={() =>
+                        r.me
+                          ? handleRemoveReaction(msg.id, r.emoji_name)
+                          : handleReaction(msg.id, r.emoji_name)
+                      }
+                    >
+                      <span className="reaction-emoji">{r.emoji_name}</span>
+                      <span className="reaction-count">{r.count}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
 
       {showScrollBtn && (
         <button
           className="scroll-to-bottom-btn"
-          onClick={scrollToBottom}
+          onClick={() => scrollToBottom('smooth')}
           title="Jump to latest messages"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
