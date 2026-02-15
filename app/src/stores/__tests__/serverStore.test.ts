@@ -43,23 +43,30 @@ vi.mock('../../utils/browserNotifications', () => ({
 }));
 
 import { useServerStore } from '../serverStore';
-import type { Message, ReactionGroup } from '../../types';
+import type { Message, ReactionGroup, User } from '../../types';
+
+const TEST_USER: User = {
+  id: 'user-1',
+  username: 'testuser',
+  display_name: null,
+  avatar_url: null,
+  bio: null,
+  status: 'online',
+  custom_status: null,
+  bot: false,
+};
 
 function makeMessage(id: string, channelId: string, authorId: string = 'user-1'): Message {
   return {
     id,
+    instance_id: 'inst-1',
     channel_id: channelId,
     author_id: authorId,
     content: `Message ${id}`,
     created_at: new Date().toISOString(),
     edited_at: null,
     pinned: false,
-    thread_id: null,
-    attachment_url: null,
-    attachment_filename: null,
-    attachment_content_type: null,
-    attachment_size: null,
-    webhook_id: null,
+    reply_to_id: null,
   };
 }
 
@@ -74,7 +81,6 @@ describe('Server Store — LRU Message Cache', () => {
   });
 
   it('should track channel access order', () => {
-    const store = useServerStore.getState();
     // Simulate accessing channels by setting messages
     const messages = new Map<string, Message[]>();
     messages.set('ch-1', [makeMessage('m1', 'ch-1')]);
@@ -136,7 +142,7 @@ describe('Server Store — Message Management', () => {
 
     useServerStore.getState().addMessage({
       ...makeMessage('m2', 'ch-1'),
-      author: null,
+      author: TEST_USER,
     });
 
     const updated = useServerStore.getState().messages.get('ch-1');
@@ -157,7 +163,7 @@ describe('Server Store — Message Management', () => {
     // Try adding same message again
     useServerStore.getState().addMessage({
       ...makeMessage('m1', 'ch-1'),
-      author: null,
+      author: TEST_USER,
     });
 
     const updated = useServerStore.getState().messages.get('ch-1');
@@ -169,7 +175,7 @@ describe('Server Store — Message Management', () => {
     messages.set('ch-1', [makeMessage('m1', 'ch-1'), makeMessage('m2', 'ch-1')]);
     useServerStore.setState({ messages });
 
-    useServerStore.getState().deleteMessage({ channel_id: 'ch-1', id: 'm1' });
+    useServerStore.getState().deleteMessage({ channel_id: 'ch-1', id: 'm1', server_id: null });
 
     const updated = useServerStore.getState().messages.get('ch-1');
     expect(updated?.length).toBe(1);
@@ -182,10 +188,11 @@ describe('Server Store — Message Management', () => {
     useServerStore.setState({ messages });
 
     useServerStore.getState().updateMessage({
-      id: 'm1',
-      channel_id: 'ch-1',
+      ...makeMessage('m1', 'ch-1'),
       content: 'Updated content',
       edited_at: new Date().toISOString(),
+      attachments: [],
+      reactions: [],
     });
 
     const updated = useServerStore.getState().messages.get('ch-1');
@@ -235,8 +242,8 @@ describe('Server Store — Reactions', () => {
   it('should track reaction groups per message', () => {
     const reactions = new Map<string, ReactionGroup[]>();
     reactions.set('m1', [
-      { emoji_name: '👍', count: 2, me: true },
-      { emoji_name: '❤️', count: 1, me: false },
+      { emoji_name: '👍', emoji_id: null, count: 2, me: true },
+      { emoji_name: '❤️', emoji_id: null, count: 1, me: false },
     ]);
     useServerStore.setState({ reactions });
 
