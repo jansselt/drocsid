@@ -440,9 +440,9 @@ function VoiceVideoSettings() {
   const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([]);
   const [audioOutputs, setAudioOutputs] = useState<MediaDeviceInfo[]>([]);
   const [videoInputs, setVideoInputs] = useState<MediaDeviceInfo[]>([]);
-  const [selectedMic, setSelectedMic] = useState('');
-  const [selectedSpeaker, setSelectedSpeaker] = useState('');
-  const [selectedCamera, setSelectedCamera] = useState('');
+  const [selectedMic, setSelectedMic] = useState(() => localStorage.getItem('drocsid_mic') || '');
+  const [selectedSpeaker, setSelectedSpeaker] = useState(() => localStorage.getItem('drocsid_speaker') || '');
+  const [selectedCamera, setSelectedCamera] = useState(() => localStorage.getItem('drocsid_camera') || '');
   const [micVolume, setMicVolume] = useState(100);
   const [speakerVolume, setSpeakerVolume] = useState(100);
   const [micTesting, setMicTesting] = useState(false);
@@ -461,29 +461,32 @@ function VoiceVideoSettings() {
   const cameraStreamRef = useRef<MediaStream | null>(null);
 
   const loadDevices = useCallback(async () => {
+    if (!navigator.mediaDevices) return;
     try {
       // Request permission first so device labels are available
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true }).catch(
         () => navigator.mediaDevices.getUserMedia({ audio: true }),
       );
       stream?.getTracks().forEach((t) => t.stop());
-
+    } catch {
+      // Permission denied — enumerate anyway for whatever labels we can get
+    }
+    try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       setAudioInputs(devices.filter((d) => d.kind === 'audioinput'));
       setAudioOutputs(devices.filter((d) => d.kind === 'audiooutput'));
       setVideoInputs(devices.filter((d) => d.kind === 'videoinput'));
     } catch {
-      // Permission denied — show whatever labels we can
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      setAudioInputs(devices.filter((d) => d.kind === 'audioinput'));
-      setAudioOutputs(devices.filter((d) => d.kind === 'audiooutput'));
-      setVideoInputs(devices.filter((d) => d.kind === 'videoinput'));
+      // enumerateDevices not available
     }
   }, []);
 
   useEffect(() => {
     loadDevices();
+    const onChange = () => loadDevices();
+    navigator.mediaDevices?.addEventListener('devicechange', onChange);
     return () => {
+      navigator.mediaDevices?.removeEventListener('devicechange', onChange);
       stopMicTest();
       stopCameraPreview();
     };
@@ -563,7 +566,7 @@ function VoiceVideoSettings() {
       <h3>Input Device</h3>
       <div className="profile-field">
         <label>Microphone</label>
-        <select value={selectedMic} onChange={(e) => setSelectedMic(e.target.value)}>
+        <select value={selectedMic} onChange={(e) => { setSelectedMic(e.target.value); localStorage.setItem('drocsid_mic', e.target.value); }}>
           <option value="">Default</option>
           {audioInputs.map((d) => (
             <option key={d.deviceId} value={d.deviceId}>
@@ -653,7 +656,7 @@ function VoiceVideoSettings() {
       <h3>Output Device</h3>
       <div className="profile-field">
         <label>Speaker</label>
-        <select value={selectedSpeaker} onChange={(e) => setSelectedSpeaker(e.target.value)}>
+        <select value={selectedSpeaker} onChange={(e) => { setSelectedSpeaker(e.target.value); localStorage.setItem('drocsid_speaker', e.target.value); }}>
           <option value="">Default</option>
           {audioOutputs.map((d) => (
             <option key={d.deviceId} value={d.deviceId}>
@@ -677,7 +680,7 @@ function VoiceVideoSettings() {
       <h3>Video</h3>
       <div className="profile-field">
         <label>Camera</label>
-        <select value={selectedCamera} onChange={(e) => setSelectedCamera(e.target.value)}>
+        <select value={selectedCamera} onChange={(e) => { setSelectedCamera(e.target.value); localStorage.setItem('drocsid_camera', e.target.value); }}>
           <option value="">Default</option>
           {videoInputs.map((d) => (
             <option key={d.deviceId} value={d.deviceId}>

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import {
   LiveKitRoom,
   RoomAudioRenderer,
@@ -18,6 +18,13 @@ export function VoicePanel({ compact }: { compact?: boolean } = {}) {
   const voiceLeave = useServerStore((s) => s.voiceLeave);
   const channels = useServerStore((s) => s.channels);
 
+  // Read saved device selection for mic
+  const audioOptions = useMemo(() => {
+    const savedMic = localStorage.getItem('drocsid_mic');
+    if (savedMic) return { deviceId: { exact: savedMic } } as MediaTrackConstraints;
+    return true as const;
+  }, []);
+
   if (!voiceToken || !voiceUrl || !voiceChannelId) return null;
 
   // Find channel name
@@ -35,7 +42,7 @@ export function VoicePanel({ compact }: { compact?: boolean } = {}) {
       token={voiceToken}
       serverUrl={voiceUrl}
       connect={true}
-      audio={true}
+      audio={audioOptions}
       video={false}
       onDisconnected={() => voiceLeave()}
     >

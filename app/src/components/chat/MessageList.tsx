@@ -14,6 +14,8 @@ const EMOJI_QUICK_PICKS = ['\u{1F44D}', '\u{2764}\u{FE0F}', '\u{1F602}', '\u{1F4
 const EMPTY_MESSAGES: Message[] = [];
 const START_INDEX = 100_000;
 
+const scrollLog = (...args: unknown[]) => console.debug('[scroll]', ...args);
+
 export function MessageList({ channelId }: MessageListProps) {
   const messages = useServerStore((s) => s.messages.get(channelId) ?? EMPTY_MESSAGES);
   const reactions = useServerStore((s) => s.reactions);
@@ -44,6 +46,7 @@ export function MessageList({ channelId }: MessageListProps) {
 
   // Reset state on channel switch
   useEffect(() => {
+    scrollLog('channel switch →', channelId, '| msgs:', messages.length);
     setEditingId(null);
     setEmojiPickerForId(null);
     setHoveredId(null);
@@ -62,8 +65,12 @@ export function MessageList({ channelId }: MessageListProps) {
     const el = scrollContainerRef.current;
     if (!el) return;
 
-    const handleLoad = () => {
+    const handleLoad = (e: Event) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      const src = (e.target as HTMLImageElement)?.src?.slice(0, 80);
+      scrollLog('media loaded', tag, src, '| atBottom:', atBottomRef.current);
       if (atBottomRef.current) {
+        scrollLog('re-scrolling after media load → index', messages.length - 1);
         virtuosoRef.current?.scrollToIndex({
           index: messages.length - 1,
           align: 'end',
@@ -83,6 +90,7 @@ export function MessageList({ channelId }: MessageListProps) {
     if (messages.length === 0) return;
     const lastMsg = messages[messages.length - 1];
     if (lastMsg?.author_id === currentUser?.id && !atBottomRef.current) {
+      scrollLog('own message sent while scrolled up → scrolling to bottom');
       virtuosoRef.current?.scrollToIndex({
         index: messages.length - 1,
         behavior: 'smooth',
@@ -93,23 +101,29 @@ export function MessageList({ channelId }: MessageListProps) {
 
   // Virtuoso callbacks
   const handleAtBottomChange = useCallback((atBottom: boolean) => {
+    if (atBottomRef.current !== atBottom) {
+      scrollLog('atBottom changed:', atBottomRef.current, '→', atBottom);
+    }
     atBottomRef.current = atBottom;
     setShowScrollBtn(!atBottom);
   }, []);
 
   const handleStartReached = useCallback(() => {
     if (isLoadingMore.current || messages.length === 0) return;
+    scrollLog('startReached — loading older messages, current count:', messages.length);
     isLoadingMore.current = true;
     const prevCount = messages.length;
     loadMoreMessages(channelId)
       .then((hasMore) => {
         if (hasMore !== false) {
-          // Messages were prepended — adjust firstItemIndex
           const newCount = useServerStore.getState().messages.get(channelId)?.length ?? 0;
           const added = newCount - prevCount;
+          scrollLog('loaded', added, 'older messages, total:', newCount);
           if (added > 0) {
             setFirstItemIndex((prev) => prev - added);
           }
+        } else {
+          scrollLog('no more messages to load');
         }
         isLoadingMore.current = false;
       })
@@ -123,6 +137,7 @@ export function MessageList({ channelId }: MessageListProps) {
   }, []);
 
   const scrollToBottom = useCallback(() => {
+    scrollLog('scrollToBottom button clicked → index', messages.length - 1);
     virtuosoRef.current?.scrollToIndex({
       index: messages.length - 1,
       behavior: 'smooth',
@@ -379,6 +394,7 @@ export function MessageList({ channelId }: MessageListProps) {
   );
 
   if (messages.length === 0) {
+    scrollLog('render: no messages, showing empty state');
     return (
       <div className="message-list-wrapper">
         <div className="message-list">
@@ -390,6 +406,8 @@ export function MessageList({ channelId }: MessageListProps) {
     );
   }
 
+  scrollLog('render: mounting Virtuoso | msgs:', messages.length, '| initialIndex:', messages.length - 1, '| firstItemIndex:', firstItemIndex);
+
   return (
     <div className="message-list-wrapper">
       <Virtuoso
@@ -399,7 +417,11 @@ export function MessageList({ channelId }: MessageListProps) {
         data={messages}
         firstItemIndex={firstItemIndex}
         initialTopMostItemIndex={messages.length - 1}
-        followOutput="smooth"
+        followOutput={(isAtBottom: boolean) => {
+          const result = isAtBottom ? 'smooth' : false;
+          scrollLog('followOutput called | atBottom:', isAtBottom, '→', result);
+          return result;
+        }}
         startReached={handleStartReached}
         atBottomStateChange={handleAtBottomChange}
         atBottomThreshold={150}
