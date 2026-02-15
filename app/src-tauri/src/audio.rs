@@ -283,13 +283,123 @@ pub async fn create_voice_input_sink() -> Result<(), String> {
 
     *VOICE_INPUT_MODULE.lock().unwrap() = Some(module_id);
 
-    // Move the app's recording stream(s) to the virtual sink's monitor source
-    // so audio flows: physical mic → virtual sink → monitor → app
-    let monitor = format!("{VOICE_INPUT_SINK}.monitor");
-    // Best-effort — source-output may not exist yet, VoicePanel retries
-    let _ = set_audio_source(monitor).await;
-
     Ok(())
+}
+
+/// Link the virtual sink's monitor output to the app's capture input using pw-link.
+/// WebKit2GTK uses PipeWire natively, so pactl move-source-output won't work —
+/// we need to link at the PipeWire port level.
+#[tauri::command]
+pub async fn link_voice_input_sink() -> Result<bool, String> {
+    let dump_output = Command::new("pw-dump")
+        .output()
+        .map_err(|e| format!("Failed to run pw-dump: {e}"))?;
+
+    if !dump_output.status.success() {
+        return Err("pw-dump failed".into());
+    }
+
+    let json_str = String::from_utf8_lossy(&dump_output.stdout);
+    let objects: Vec<serde_json::Value> =
+        serde_json::from_str(&json_str).map_err(|e| format!("pw-dump parse error: {e}"))?;
+
+    let our_pid = std::process::id();
+    let child_pids = get_descendant_pids(our_pid);
+
+    // Step 1: Find the virtual sink's node ID
+    let mut sink_node_id: Option<u64> = None;
+    // Step 2: Find the app's capture stream node ID
+    let mut capture_node_id: Option<u64> = None;
+
+    for obj in &objects {
+        let obj_type = obj.get("type").and_then(|t| t.as_str()).unwrap_or("");
+        if obj_type != "PipeWire:Interface:Node" {
+            continue;
+        }
+        let props = match obj.pointer("/info/props") {
+            Some(p) => p,
+            None => continue,
+        };
+        let node_id = obj.get("id").and_then(|v| v.as_u64());
+
+        // Check for our virtual sink node
+        let node_name = props.get("node.name").and_then(|v| v.as_str()).unwrap_or("");
+        if node_name == VOICE_INPUT_SINK {
+            sink_node_id = node_id;
+            continue;
+        }
+
+        // Check for capture stream belonging to our process tree
+        let media_class = props.get("media.class").and_then(|v| v.as_str()).unwrap_or("");
+        if media_class == "Stream/Input/Audio" {
+            let pid_str = props
+                .get("application.process.id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if let Ok(pid) = pid_str.parse::<u32>() {
+                if pid == our_pid || child_pids.contains(&pid) {
+                    capture_node_id = node_id;
+                }
+            }
+        }
+    }
+
+    let sink_nid = match sink_node_id {
+        Some(id) => id,
+        None => return Err("Virtual sink node not found in PipeWire".into()),
+    };
+    let capture_nid = match capture_node_id {
+        Some(id) => id,
+        None => return Ok(false), // capture stream not yet created
+    };
+
+    // Step 3: Find the monitor output port on the sink node
+    let mut monitor_port_id: Option<u64> = None;
+    // Step 4: Find the capture input port on the app's stream node
+    let mut capture_port_id: Option<u64> = None;
+
+    for obj in &objects {
+        let obj_type = obj.get("type").and_then(|t| t.as_str()).unwrap_or("");
+        if obj_type != "PipeWire:Interface:Port" {
+            continue;
+        }
+        let props = match obj.pointer("/info/props") {
+            Some(p) => p,
+            None => continue,
+        };
+        let port_node_id = props.get("node.id").and_then(|v| v.as_u64()).unwrap_or(0);
+        let direction = props.get("port.direction").and_then(|v| v.as_str()).unwrap_or("");
+        let port_id = obj.get("id").and_then(|v| v.as_u64());
+
+        if port_node_id == sink_nid && direction == "out" {
+            // Monitor output port of the virtual sink
+            monitor_port_id = port_id;
+        } else if port_node_id == capture_nid && direction == "in" {
+            // Capture input port of the app's recording stream
+            capture_port_id = port_id;
+        }
+    }
+
+    let monitor_pid = match monitor_port_id {
+        Some(id) => id,
+        None => return Err("Monitor port not found".into()),
+    };
+    let capture_pid = match capture_port_id {
+        Some(id) => id,
+        None => return Err("Capture port not found".into()),
+    };
+
+    // Step 5: Link monitor → capture
+    let status = Command::new("pw-link")
+        .args([&monitor_pid.to_string(), &capture_pid.to_string()])
+        .status()
+        .map_err(|e| format!("pw-link failed: {e}"))?;
+
+    if !status.success() {
+        return Err("pw-link returned non-zero".into());
+    }
+
+    Ok(true)
 }
 
 #[tauri::command]

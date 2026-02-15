@@ -78,6 +78,8 @@ pub fn run() {
             audio::create_voice_input_sink,
             #[cfg(target_os = "linux")]
             audio::destroy_voice_input_sink,
+            #[cfg(target_os = "linux")]
+            audio::link_voice_input_sink,
         ])
         .setup(|app| {
             // Open devtools in debug builds

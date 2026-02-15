@@ -152,6 +152,15 @@ export async function createVoiceInputSink(): Promise<void> {
 }
 
 /**
+ * Link the virtual sink's monitor output to the app's capture input via pw-link.
+ * Returns true if linked, false if capture stream doesn't exist yet.
+ */
+export async function linkVoiceInputSink(): Promise<boolean> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<boolean>('link_voice_input_sink');
+}
+
+/**
  * Remove the virtual mic input sink (on voice disconnect / app exit).
  */
 export async function destroyVoiceInputSink(): Promise<void> {

@@ -11,7 +11,7 @@ import {
 import { Track, RemoteParticipant } from 'livekit-client';
 import { useServerStore } from '../../stores/serverStore';
 import { isTauri } from '../../api/instance';
-import { applyAudioOutputTauri, applyAudioInputTauri, labelAudioStreamsTauri, createVoiceInputSink, destroyVoiceInputSink } from '../../utils/audioDevices';
+import { applyAudioOutputTauri, labelAudioStreamsTauri, createVoiceInputSink, destroyVoiceInputSink, linkVoiceInputSink } from '../../utils/audioDevices';
 import './VoicePanel.css';
 
 export function VoicePanel({ compact }: { compact?: boolean } = {}) {
@@ -230,28 +230,28 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
     return () => window.removeEventListener('drocsid-speaker-changed', handler);
   }, [room]);
 
-  // Create virtual PipeWire sink for mic input, route recording stream to it
+  // Create virtual PipeWire sink for mic input, link monitor → app capture via pw-link
   useEffect(() => {
     if (!room || !isTauri()) return;
 
     const setup = async () => {
-      // Create "Drocsid Voice Sound In" node in PipeWire graph.
-      // This also moves our source-output to the sink's monitor automatically.
+      // Create "Drocsid Voice Sound In" node in PipeWire graph
       try {
         await createVoiceInputSink();
       } catch (e) {
         console.warn('[VoicePanel] Failed to create voice input sink:', e);
       }
 
-      // Retry moving source-output to the virtual sink's monitor
-      // (source-output may appear after a delay)
-      for (let attempt = 0; attempt < 5; attempt++) {
+      // Link the sink's monitor output → app's capture input via pw-link
+      // Retry because the capture stream may appear after a delay
+      for (let attempt = 0; attempt < 8; attempt++) {
         try {
-          await applyAudioInputTauri('drocsid_voice_in.monitor');
-          break;
+          const linked = await linkVoiceInputSink();
+          if (linked) break;
         } catch {
-          await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+          // pw-link failed or nodes not ready yet
         }
+        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
       }
 
       // Label all audio streams with distinct PipeWire names (best-effort)
