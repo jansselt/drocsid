@@ -43,6 +43,8 @@ export function MessageList({ channelId }: MessageListProps) {
   const isLoadingMore = useRef(false);
   const atBottomRef = useRef(true);
   const prevChannelRef = useRef(channelId);
+  const graceRef = useRef(true); // Grace period: always re-scroll on media load
+  const graceTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Reset state on channel switch
   useEffect(() => {
@@ -55,6 +57,18 @@ export function MessageList({ channelId }: MessageListProps) {
     isLoadingMore.current = false;
     atBottomRef.current = true;
     prevChannelRef.current = channelId;
+
+    // Grace period: for 5s after channel switch, always re-scroll when media
+    // loads regardless of atBottom state. GIFs/images expand content height
+    // after initial scroll, causing atBottom to flicker false before all media
+    // has loaded. Without grace, subsequent loads see atBottom=false and skip
+    // re-scrolling, leaving the user stuck mid-chat.
+    graceRef.current = true;
+    clearTimeout(graceTimerRef.current);
+    graceTimerRef.current = setTimeout(() => {
+      scrollLog('grace period ended');
+      graceRef.current = false;
+    }, 5000);
   }, [channelId]);
 
   // Re-scroll when images/embeds load (they change scrollHeight).
@@ -68,8 +82,9 @@ export function MessageList({ channelId }: MessageListProps) {
     const handleLoad = (e: Event) => {
       const tag = (e.target as HTMLElement)?.tagName;
       const src = (e.target as HTMLImageElement)?.src?.slice(0, 80);
-      scrollLog('media loaded', tag, src, '| atBottom:', atBottomRef.current);
-      if (atBottomRef.current) {
+      const shouldScroll = atBottomRef.current || graceRef.current;
+      scrollLog('media loaded', tag, src, '| atBottom:', atBottomRef.current, '| grace:', graceRef.current, '| willScroll:', shouldScroll);
+      if (shouldScroll) {
         scrollLog('re-scrolling after media load → index', messages.length - 1);
         virtuosoRef.current?.scrollToIndex({
           index: messages.length - 1,
