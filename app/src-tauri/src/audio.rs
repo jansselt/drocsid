@@ -2,9 +2,14 @@ use serde::Serialize;
 use std::process::Command;
 use std::sync::Mutex;
 
-/// Module ID of the virtual null-sink for mic input routing.
-/// Stored so we can unload it on disconnect / app exit.
-static VOICE_INPUT_MODULE: Mutex<Option<u32>> = Mutex::new(None);
+/// Handle for the virtual null-sink, stored for cleanup on disconnect / app exit.
+/// PwNode = PipeWire node ID (from pw-cli), PaModule = PulseAudio module ID (from pactl).
+enum VoiceSinkHandle {
+    PwNode(u32),
+    PaModule(u32),
+}
+
+static VOICE_INPUT_HANDLE: Mutex<Option<VoiceSinkHandle>> = Mutex::new(None);
 
 #[derive(Serialize, Clone, Debug)]
 pub struct AudioSink {
@@ -260,19 +265,67 @@ pub async fn create_voice_input_sink() -> Result<(), String> {
     // Clean up any stale sink from a previous crash
     destroy_voice_input_sink_inner();
 
-    let output = Command::new("pactl")
-        .args([
-            "load-module",
-            "module-null-sink",
-            &format!("sink_name={VOICE_INPUT_SINK}"),
-            "rate=48000",
-            "channels=1",
-            &format!(
-                "sink_properties=device.description=\"Drocsid Voice Sound In\" media.class=Audio/Sink/Virtual"
-            ),
-        ])
+    // Try PipeWire-native creation first (proper naming in qpwgraph)
+    if let Ok(()) = create_sink_pw_cli() {
+        return Ok(());
+    }
+
+    // Fallback to PulseAudio module
+    create_sink_pactl()
+}
+
+/// Create virtual sink via pw-cli for proper PipeWire node naming.
+fn create_sink_pw_cli() -> Result<(), String> {
+    let props = format!(
+        "{{ factory.name = support.null-audio-sink \
+           node.name = {VOICE_INPUT_SINK} \
+           node.description = \"Drocsid Voice Sound In\" \
+           media.class = Audio/Sink \
+           audio.channels = 2 \
+           audio.position = [ FL FR ] \
+           object.linger = true }}"
+    );
+
+    let output = Command::new("pw-cli")
+        .args(["create-node", "adapter", &props])
         .output()
-        .map_err(|e| format!("Failed to create virtual sink: {e}"))?;
+        .map_err(|e| format!("pw-cli: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "pw-cli create-node failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    // Parse node ID from output like "id: 42, type: PipeWire:Interface:Node/4"
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let node_id = stdout
+        .split("id:")
+        .nth(1)
+        .and_then(|s| s.split(',').next())
+        .and_then(|s| s.trim().parse::<u32>().ok())
+        .ok_or("Failed to parse node ID from pw-cli output")?;
+
+    *VOICE_INPUT_HANDLE.lock().unwrap() = Some(VoiceSinkHandle::PwNode(node_id));
+    Ok(())
+}
+
+/// Fallback: create virtual sink via pactl module-null-sink.
+fn create_sink_pactl() -> Result<(), String> {
+    // Use sh -c to handle property string quoting correctly
+    let cmd = format!(
+        "pactl load-module module-null-sink \
+         sink_name={VOICE_INPUT_SINK} \
+         rate=48000 channels=2 \
+         channel_map=front-left,front-right \
+         'sink_properties=device.description=\"Drocsid Voice Sound In\"'"
+    );
+
+    let output = Command::new("sh")
+        .args(["-c", &cmd])
+        .output()
+        .map_err(|e| format!("pactl: {e}"))?;
 
     if !output.status.success() {
         return Err(format!(
@@ -286,8 +339,7 @@ pub async fn create_voice_input_sink() -> Result<(), String> {
         .parse()
         .map_err(|e| format!("Invalid module ID: {e}"))?;
 
-    *VOICE_INPUT_MODULE.lock().unwrap() = Some(module_id);
-
+    *VOICE_INPUT_HANDLE.lock().unwrap() = Some(VoiceSinkHandle::PaModule(module_id));
     Ok(())
 }
 
@@ -317,10 +369,19 @@ pub async fn destroy_voice_input_sink() -> Result<(), String> {
 }
 
 fn destroy_voice_input_sink_inner() {
-    if let Some(module_id) = VOICE_INPUT_MODULE.lock().unwrap().take() {
-        let _ = Command::new("pactl")
-            .args(["unload-module", &module_id.to_string()])
-            .status();
+    if let Some(handle) = VOICE_INPUT_HANDLE.lock().unwrap().take() {
+        match handle {
+            VoiceSinkHandle::PwNode(id) => {
+                let _ = Command::new("pw-cli")
+                    .args(["destroy", &id.to_string()])
+                    .status();
+            }
+            VoiceSinkHandle::PaModule(id) => {
+                let _ = Command::new("pactl")
+                    .args(["unload-module", &id.to_string()])
+                    .status();
+            }
+        }
     }
 }
 

@@ -20,6 +20,7 @@ import {
 import * as api from '../../api/client';
 import type { RegistrationCode, Channel } from '../../types';
 import { listAudioOutputs, listAudioInputs, saveSpeaker, saveMicrophone, type AudioOutputDevice, type AudioInputDevice } from '../../utils/audioDevices';
+import { isTauri } from '../../api/instance';
 import { SHORTCUT_CATEGORIES, mod } from '../common/KeyboardShortcutsDialog';
 import '../common/KeyboardShortcutsDialog.css';
 import './UserSettings.css';
@@ -544,8 +545,10 @@ function VoiceVideoSettings() {
 
   const startMicTest = async () => {
     try {
+      // On Tauri, selectedMic is a PulseAudio source name (not a WebKit device ID),
+      // so pass audio:true and let the system default source handle it.
       const constraints: MediaStreamConstraints = {
-        audio: selectedMic ? { deviceId: { exact: selectedMic } } : true,
+        audio: (!isTauri() && selectedMic) ? { deviceId: { exact: selectedMic } } : true,
       };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       micStreamRef.current = stream;
@@ -567,8 +570,8 @@ function VoiceVideoSettings() {
         animFrameRef.current = requestAnimationFrame(tick);
       };
       tick();
-    } catch {
-      // Mic access denied
+    } catch (e) {
+      console.warn('[Settings] Mic test failed:', e);
     }
   };
 
