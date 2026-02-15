@@ -628,6 +628,19 @@ export async function gifTrending(limit = 25, offset = 0): Promise<GifSearchResp
   return request(`/gif/trending?${params}`);
 }
 
+// ── Bug Reports ──────────────────────────────────
+
+export async function submitBugReport(
+  title: string,
+  description?: string,
+  systemInfo?: string,
+): Promise<{ number: number; url: string }> {
+  return request('/bug-reports', {
+    method: 'POST',
+    body: JSON.stringify({ title, description, system_info: systemInfo }),
+  });
+}
+
 // ── Account Deletion ──────────────────────────────
 
 export async function deleteAccount(password: string): Promise<void> {

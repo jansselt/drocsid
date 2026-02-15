@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod auth;
 pub mod bans;
+pub mod bug_reports;
 pub mod channels;
 pub mod dms;
 pub mod gif;
@@ -51,6 +52,7 @@ fn api_routes() -> Router<AppState> {
         .merge(gif::routes())
         .merge(invites::resolve_routes())
         .merge(webhooks::execute_routes())
+        .merge(bug_reports::routes())
 }
 
 fn user_routes() -> Router<AppState> {

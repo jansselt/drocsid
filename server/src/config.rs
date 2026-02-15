@@ -11,6 +11,7 @@ pub struct AppConfig {
     pub livekit: Option<LiveKitConfig>,
     pub gif: Option<GifConfig>,
     pub email: Option<EmailConfig>,
+    pub github: Option<GitHubConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -73,6 +74,12 @@ pub struct EmailConfig {
     pub resend_api_key: String,
     pub from_address: String,
     pub reset_token_ttl_secs: Option<i64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GitHubConfig {
+    pub token: String,
+    pub repo: String,
 }
 
 impl AppConfig {
