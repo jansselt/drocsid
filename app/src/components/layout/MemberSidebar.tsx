@@ -41,13 +41,18 @@ export function MemberSidebar() {
     status: presences.get(m.user_id) || m.status,
   }));
 
-  // Split into online and offline groups
+  // Split into online and offline groups, sort offline alphabetically
   const online = withPresence.filter((m) => m.status !== 'offline');
   const offline = withPresence.filter((m) => m.status === 'offline');
+  offline.sort((a, b) => a.user.username.localeCompare(b.user.username));
 
-  // Sort online by status priority: online > idle > dnd
+  // Sort online by status priority: online > idle > dnd, then by username for stability
   const statusOrder: Record<string, number> = { online: 0, idle: 1, dnd: 2 };
-  online.sort((a, b) => (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3));
+  online.sort((a, b) => {
+    const s = (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3);
+    if (s !== 0) return s;
+    return a.user.username.localeCompare(b.user.username);
+  });
 
   // Build hoisted role groups from online members
   const hoistedRoles = (roles || [])

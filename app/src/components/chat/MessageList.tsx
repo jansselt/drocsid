@@ -268,7 +268,7 @@ export function MessageList({ channelId }: MessageListProps) {
             <div
               key={msg.id}
               id={`msg-${msg.id}`}
-              className={`message ${showHeader ? 'with-header' : 'compact'} ${isEditing ? 'editing' : ''}`}
+              className={`message ${showHeader ? 'with-header' : 'compact'} ${isEditing ? 'editing' : ''} ${msg.pinned ? 'pinned' : ''}`}
               onMouseEnter={() => setHoveredId(msg.id)}
               onMouseLeave={() => {
                 setHoveredId(null);

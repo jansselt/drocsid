@@ -239,14 +239,14 @@ function TypingIndicator({ channelId }: { channelId: string }) {
     (t) => t.userId !== currentUser?.id,
   );
 
-  if (typing.length === 0) return null;
-
   const names = typing
     .map((t) => users.get(t.userId)?.username || 'Someone')
     .slice(0, 3);
 
   let text: string;
-  if (names.length === 1) {
+  if (names.length === 0) {
+    text = '\u00A0';
+  } else if (names.length === 1) {
     text = `${names[0]} is typing...`;
   } else if (names.length === 2) {
     text = `${names[0]} and ${names[1]} are typing...`;
@@ -254,5 +254,5 @@ function TypingIndicator({ channelId }: { channelId: string }) {
     text = 'Several people are typing...';
   }
 
-  return <div className="typing-indicator">{text}</div>;
+  return <div className="typing-indicator" style={typing.length === 0 ? { visibility: 'hidden' } : undefined}>{text}</div>;
 }

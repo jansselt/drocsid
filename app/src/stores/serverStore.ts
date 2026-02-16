@@ -606,11 +606,63 @@ export const useServerStore = create<ServerState>((set, get) => ({
   },
 
   pinMessage: async (channelId, messageId) => {
-    await api.pinMessage(channelId, messageId);
+    // Optimistic update
+    set((state) => {
+      const messages = new Map(state.messages);
+      const channelMessages = messages.get(channelId);
+      if (channelMessages) {
+        messages.set(channelId, channelMessages.map((m) =>
+          m.id === messageId ? { ...m, pinned: true } : m,
+        ));
+      }
+      return { messages };
+    });
+    try {
+      await api.pinMessage(channelId, messageId);
+    } catch (err) {
+      // Revert on failure
+      set((state) => {
+        const messages = new Map(state.messages);
+        const channelMessages = messages.get(channelId);
+        if (channelMessages) {
+          messages.set(channelId, channelMessages.map((m) =>
+            m.id === messageId ? { ...m, pinned: false } : m,
+          ));
+        }
+        return { messages };
+      });
+      throw err;
+    }
   },
 
   unpinMessage: async (channelId, messageId) => {
-    await api.unpinMessage(channelId, messageId);
+    // Optimistic update
+    set((state) => {
+      const messages = new Map(state.messages);
+      const channelMessages = messages.get(channelId);
+      if (channelMessages) {
+        messages.set(channelId, channelMessages.map((m) =>
+          m.id === messageId ? { ...m, pinned: false } : m,
+        ));
+      }
+      return { messages };
+    });
+    try {
+      await api.unpinMessage(channelId, messageId);
+    } catch (err) {
+      // Revert on failure
+      set((state) => {
+        const messages = new Map(state.messages);
+        const channelMessages = messages.get(channelId);
+        if (channelMessages) {
+          messages.set(channelId, channelMessages.map((m) =>
+            m.id === messageId ? { ...m, pinned: true } : m,
+          ));
+        }
+        return { messages };
+      });
+      throw err;
+    }
   },
 
   // ── DM Actions ───────────────────────────────────────
@@ -1405,17 +1457,22 @@ export const useServerStore = create<ServerState>((set, get) => ({
             const voiceStates = new Map(state.voiceStates);
 
             if (ev.channel_id) {
-              // User joined/updated in a channel
-              const channelStates = (voiceStates.get(ev.channel_id) || []).filter(
-                (s) => s.user_id !== ev.user_id,
-              );
-              channelStates.push({
+              // User joined/updated in a channel — update in place to preserve order
+              const channelStates = voiceStates.get(ev.channel_id) || [];
+              const idx = channelStates.findIndex((s) => s.user_id === ev.user_id);
+              const newState = {
                 user_id: ev.user_id,
                 channel_id: ev.channel_id,
                 self_mute: ev.self_mute,
                 self_deaf: ev.self_deaf,
-              });
-              voiceStates.set(ev.channel_id, channelStates);
+              };
+              if (idx >= 0) {
+                const updated = [...channelStates];
+                updated[idx] = newState;
+                voiceStates.set(ev.channel_id, updated);
+              } else {
+                voiceStates.set(ev.channel_id, [...channelStates, newState]);
+              }
             }
 
             // Remove from any other channels (user can only be in one)
