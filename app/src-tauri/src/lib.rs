@@ -80,6 +80,10 @@ pub fn run() {
             voice::voice_set_deaf,
             #[cfg(target_os = "linux")]
             voice::voice_set_user_volume,
+            #[cfg(target_os = "linux")]
+            voice::voice_list_input_devices,
+            #[cfg(target_os = "linux")]
+            voice::voice_list_output_devices,
         ])
         .setup(|app| {
             // Register voice managed state (Linux only — uses native LiveKit + cpal)

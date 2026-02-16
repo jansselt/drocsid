@@ -69,14 +69,14 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
 
     const connect = async () => {
       try {
-        const micDeviceId = localStorage.getItem('drocsid_mic') || undefined;
-        const speakerDeviceId = localStorage.getItem('drocsid_speaker') || undefined;
+        const micDeviceId = localStorage.getItem('drocsid_mic') || null;
+        const speakerDeviceId = localStorage.getItem('drocsid_speaker') || null;
 
         await invoke('voice_connect', {
           url,
           token,
-          micDeviceId: micDeviceId === 'default' ? null : micDeviceId,
-          speakerDeviceId: speakerDeviceId === 'default' ? null : speakerDeviceId,
+          micDeviceId,
+          speakerDeviceId,
         });
 
         if (!cancelled) {

@@ -8,7 +8,7 @@ export interface AudioOutputDevice {
 
 /**
  * Enumerate audio output devices.
- * Tauri/Linux: enumerates PulseAudio/PipeWire sinks via pactl.
+ * Tauri/Linux: uses cpal device enumeration (ALSA IDs).
  * Web: uses navigator.mediaDevices.enumerateDevices().
  */
 export async function listAudioOutputs(): Promise<AudioOutputDevice[]> {
@@ -37,17 +37,14 @@ async function listAudioOutputsWeb(): Promise<AudioOutputDevice[]> {
 async function listAudioOutputsTauri(): Promise<AudioOutputDevice[]> {
   try {
     const { invoke } = await import('@tauri-apps/api/core');
-    const [sinks, defaultSink] = await Promise.all([
-      invoke<Array<{ name: string; description: string; index: number }>>('list_audio_sinks'),
-      invoke<string>('get_default_audio_sink'),
-    ]);
-    return sinks.map((s) => ({
-      id: s.name,
-      label: s.description,
-      isDefault: s.name === defaultSink,
+    const devices = await invoke<Array<{ id: string; name: string; is_default: boolean }>>('voice_list_output_devices');
+    return devices.map((d) => ({
+      id: d.id,
+      label: d.name,
+      isDefault: d.is_default,
     }));
   } catch (e) {
-    console.warn('[audioDevices] Failed to list Tauri audio sinks:', e);
+    console.warn('[audioDevices] Failed to list cpal output devices:', e);
     return [];
   }
 }
@@ -80,10 +77,17 @@ export interface AudioInputDevice {
 
 /**
  * Enumerate audio input devices (microphones).
- * Uses navigator.mediaDevices.enumerateDevices() on all platforms so that
- * device IDs can be passed directly to getUserMedia / LiveKit.
+ * Tauri/Linux: uses cpal device enumeration (ALSA IDs).
+ * Web: uses navigator.mediaDevices.enumerateDevices().
  */
 export async function listAudioInputs(): Promise<AudioInputDevice[]> {
+  if (isTauri()) {
+    return listAudioInputsTauri();
+  }
+  return listAudioInputsWeb();
+}
+
+async function listAudioInputsWeb(): Promise<AudioInputDevice[]> {
   if (!navigator.mediaDevices?.enumerateDevices) return [];
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
@@ -95,6 +99,21 @@ export async function listAudioInputs(): Promise<AudioInputDevice[]> {
         isDefault: d.deviceId === 'default',
       }));
   } catch {
+    return [];
+  }
+}
+
+async function listAudioInputsTauri(): Promise<AudioInputDevice[]> {
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const devices = await invoke<Array<{ id: string; name: string; is_default: boolean }>>('voice_list_input_devices');
+    return devices.map((d) => ({
+      id: d.id,
+      label: d.name,
+      isDefault: d.is_default,
+    }));
+  } catch (e) {
+    console.warn('[audioDevices] Failed to list cpal input devices:', e);
     return [];
   }
 }

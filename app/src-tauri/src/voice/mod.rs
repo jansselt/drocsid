@@ -7,9 +7,7 @@ use tokio::sync::Mutex;
 
 use manager::VoiceManager;
 
-// Device enumeration (used in Phase 2)
-#[allow(unused_imports)]
-pub use audio_io::{list_input_devices, list_output_devices, AudioDevice};
+pub use audio_io::AudioDevice;
 
 /// Managed Tauri state holding the active voice session (if any).
 pub struct VoiceState(pub Arc<Mutex<Option<VoiceManager>>>);
@@ -87,4 +85,14 @@ pub async fn voice_set_user_volume(
         mgr.set_user_volume(&identity, volume_percent).await;
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn voice_list_input_devices() -> Result<Vec<AudioDevice>, String> {
+    audio_io::list_input_devices()
+}
+
+#[tauri::command]
+pub fn voice_list_output_devices() -> Result<Vec<AudioDevice>, String> {
+    audio_io::list_output_devices()
 }
