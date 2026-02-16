@@ -712,16 +712,15 @@ pub async fn set_default_audio_source(source_name: String) -> Result<(), String>
 fn set_default_source_wpctl(source_name: &str) -> Result<(), String> {
     let objects = pw_dump_all()?;
 
-    // For "foo.monitor", find the sink node "foo" and use its ID
-    // For regular sources, find the source node directly
-    let target_name = if source_name.ends_with(".monitor") {
-        &source_name[..source_name.len() - ".monitor".len()]
-    } else {
-        source_name
-    };
-
-    let node_id = find_node_by_name(&objects, target_name)
-        .ok_or_else(|| format!("Node not found: {target_name}"))?;
+    // Look for the node by exact name. For regular sources this finds the
+    // source node directly. For pactl-created monitors (e.g. "foo.monitor")
+    // this finds the monitor source node that pactl auto-creates.
+    //
+    // IMPORTANT: Do NOT strip ".monitor" and use the sink node ID — that would
+    // call `wpctl set-default <sink_id>` which sets the default OUTPUT (speaker),
+    // not the default INPUT source.
+    let node_id = find_node_by_name(&objects, source_name)
+        .ok_or_else(|| format!("wpctl: node not found: {source_name}"))?;
 
     let status = Command::new("wpctl")
         .args(["set-default", &node_id.to_string()])
