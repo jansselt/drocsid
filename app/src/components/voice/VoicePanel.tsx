@@ -12,6 +12,7 @@ import { Track, RoomEvent, RemoteParticipant, type Participant } from 'livekit-c
 import { useServerStore } from '../../stores/serverStore';
 import { isTauri } from '../../api/instance';
 import { applyAudioOutputTauri, labelAudioStreamsTauri } from '../../utils/audioDevices';
+import { NativeVoicePanel } from './NativeVoicePanel';
 import './VoicePanel.css';
 
 export function VoicePanel({ compact }: { compact?: boolean } = {}) {
@@ -41,6 +42,18 @@ export function VoicePanel({ compact }: { compact?: boolean } = {}) {
       channelName = ch.name;
       break;
     }
+  }
+
+  // Tauri/Linux: use native LiveKit + cpal (WebKit2GTK WebRTC is broken)
+  if (isTauri()) {
+    return (
+      <NativeVoicePanel
+        token={voiceToken}
+        url={voiceUrl}
+        channelName={channelName}
+        compact={compact}
+      />
+    );
   }
 
   return (

@@ -1,5 +1,7 @@
 #[cfg(target_os = "linux")]
 mod audio;
+#[cfg(target_os = "linux")]
+mod voice;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -68,8 +70,22 @@ pub fn run() {
             audio::get_default_audio_sink,
             #[cfg(target_os = "linux")]
             audio::label_audio_streams,
+            #[cfg(target_os = "linux")]
+            voice::voice_connect,
+            #[cfg(target_os = "linux")]
+            voice::voice_disconnect,
+            #[cfg(target_os = "linux")]
+            voice::voice_set_mute,
+            #[cfg(target_os = "linux")]
+            voice::voice_set_deaf,
+            #[cfg(target_os = "linux")]
+            voice::voice_set_user_volume,
         ])
         .setup(|app| {
+            // Register voice managed state (Linux only — uses native LiveKit + cpal)
+            #[cfg(target_os = "linux")]
+            app.manage(voice::VoiceState::new());
+
             // Open devtools in debug builds
             if cfg!(debug_assertions) {
                 if let Some(window) = app.get_webview_window("main") {
