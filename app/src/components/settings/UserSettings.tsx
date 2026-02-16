@@ -11,6 +11,7 @@ import {
   getNotificationVolume,
   setNotificationVolume,
 } from '../../utils/notificationSounds';
+import { isTauri } from '../../api/instance';
 import {
   getBrowserNotificationsEnabled,
   setBrowserNotificationsEnabled,
@@ -543,8 +544,29 @@ function VoiceVideoSettings() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const micTestUnlistenRef = useRef<(() => void) | null>(null);
+
   const startMicTest = async () => {
     try {
+      if (isTauri()) {
+        if (!selectedMic) {
+          console.warn('[Settings] No microphone selected');
+          return;
+        }
+        if (!selectedSpeaker) {
+          console.warn('[Settings] No speaker selected');
+          return;
+        }
+        const { invoke } = await import('@tauri-apps/api/core');
+        const { listen } = await import('@tauri-apps/api/event');
+        const unlisten = await listen<number>('voice:mic-level', (event) => {
+          setMicLevel(Math.min(100, event.payload * (micVolume / 100)));
+        });
+        micTestUnlistenRef.current = unlisten;
+        await invoke('voice_mic_test_start', { deviceId: selectedMic, speakerDeviceId: selectedSpeaker });
+        setMicTesting(true);
+        return;
+      }
       const constraints: MediaStreamConstraints = {
         audio: (selectedMic && selectedMic !== 'default') ? { deviceId: { exact: selectedMic } } : true,
       };
@@ -576,7 +598,20 @@ function VoiceVideoSettings() {
     }
   };
 
-  const stopMicTest = () => {
+  const stopMicTest = async () => {
+    if (isTauri()) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('voice_mic_test_stop');
+      } catch (e) {
+        console.warn('[Settings] Failed to stop mic test:', e);
+      }
+      micTestUnlistenRef.current?.();
+      micTestUnlistenRef.current = null;
+      setMicTesting(false);
+      setMicLevel(0);
+      return;
+    }
     micStreamRef.current?.getTracks().forEach((t) => t.stop());
     micStreamRef.current = null;
     audioCtxRef.current?.close().catch(() => {});

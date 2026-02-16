@@ -84,11 +84,17 @@ pub fn run() {
             voice::voice_list_input_devices,
             #[cfg(target_os = "linux")]
             voice::voice_list_output_devices,
+            #[cfg(target_os = "linux")]
+            voice::voice_mic_test_start,
+            #[cfg(target_os = "linux")]
+            voice::voice_mic_test_stop,
         ])
         .setup(|app| {
             // Register voice managed state (Linux only — uses native LiveKit + cpal)
             #[cfg(target_os = "linux")]
             app.manage(voice::VoiceState::new());
+            #[cfg(target_os = "linux")]
+            app.manage(voice::MicTestState::new());
 
             // Open devtools in debug builds
             if cfg!(debug_assertions) {

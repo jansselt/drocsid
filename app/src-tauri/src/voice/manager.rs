@@ -206,7 +206,9 @@ impl VoiceManager {
                             num_channels: NUM_CHANNELS,
                             samples_per_channel: buf.len() as u32,
                         };
-                        let _ = audio_source.capture_frame(&frame).await;
+                        if let Err(e) = audio_source.capture_frame(&frame).await {
+                            eprintln!("[voice] capture_frame error: {e}");
+                        }
                     }
                     _ = shutdown_rx.recv() => break,
                 }
@@ -290,6 +292,7 @@ impl VoiceManager {
                             ConnectionState::Reconnecting => "reconnecting",
                             ConnectionState::Disconnected => "disconnected",
                         };
+                        eprintln!("[voice] ConnectionStateChanged → {state_str}");
                         let _ = app.emit(
                             "voice:connection-state",
                             ConnectionStatePayload {

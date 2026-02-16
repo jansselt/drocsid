@@ -18,6 +18,15 @@ impl VoiceState {
     }
 }
 
+/// Managed Tauri state for the mic test stream.
+pub struct MicTestState(pub Arc<Mutex<Option<audio_io::MicTest>>>);
+
+impl MicTestState {
+    pub fn new() -> Self {
+        Self(Arc::new(Mutex::new(None)))
+    }
+}
+
 #[tauri::command]
 pub async fn voice_connect(
     app: tauri::AppHandle,
@@ -34,6 +43,11 @@ pub async fn voice_connect(
         old.disconnect().await;
     }
 
+    eprintln!(
+        "[voice] voice_connect: mic={:?} speaker={:?}",
+        mic_device_id, speaker_device_id
+    );
+
     let mgr = VoiceManager::connect(
         app,
         &url,
@@ -43,12 +57,14 @@ pub async fn voice_connect(
     )
     .await?;
 
+    eprintln!("[voice] voice_connect: success");
     *guard = Some(mgr);
     Ok(())
 }
 
 #[tauri::command]
 pub async fn voice_disconnect(state: State<'_, VoiceState>) -> Result<(), String> {
+    eprintln!("[voice] voice_disconnect called");
     let mut guard = state.0.lock().await;
     if let Some(mgr) = guard.take() {
         mgr.disconnect().await;
@@ -95,4 +111,31 @@ pub fn voice_list_input_devices() -> Result<Vec<AudioDevice>, String> {
 #[tauri::command]
 pub fn voice_list_output_devices() -> Result<Vec<AudioDevice>, String> {
     audio_io::list_output_devices()
+}
+
+#[tauri::command]
+pub async fn voice_mic_test_start(
+    app: tauri::AppHandle,
+    state: State<'_, MicTestState>,
+    device_id: String,
+    speaker_device_id: String,
+) -> Result<(), String> {
+    let mut guard = state.0.lock().await;
+    // Stop any existing test
+    if let Some(old) = guard.take() {
+        old.stop();
+    }
+    let test = audio_io::MicTest::start(&device_id, &speaker_device_id, app)?;
+    *guard = Some(test);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn voice_mic_test_stop(state: State<'_, MicTestState>) -> Result<(), String> {
+    let mut guard = state.0.lock().await;
+    if let Some(test) = guard.take() {
+        test.stop();
+    }
+    Ok(()
+)
 }

@@ -63,9 +63,19 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
     }
   }, [setSpeakingUsers]);
 
+  // Track whether we intentionally disconnected (to ignore the resulting state event)
+  const intentionalDisconnectRef = useRef(false);
+  // Generation counter to handle StrictMode double-invocation and stale connects
+  const connectGenRef = useRef(0);
+
   // Connect to native voice on mount
   useEffect(() => {
-    let cancelled = false;
+    const gen = ++connectGenRef.current;
+    let connected = false;
+    let abandoned = false;
+
+    // Suppress disconnected events during connect (old session being replaced is expected)
+    intentionalDisconnectRef.current = true;
 
     const connect = async () => {
       try {
@@ -79,12 +89,27 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
           speakerDeviceId,
         });
 
-        if (!cancelled) {
-          setConnectionState('connected');
+        if (gen !== connectGenRef.current) {
+          // A newer connect was issued (StrictMode or dep change).
+          // The newer voice_connect already replaced our session in Rust.
+          // Do NOT send voice_disconnect — it would kill the newer session.
+          return;
         }
+
+        if (abandoned) {
+          // Component unmounted while we were connecting, and no re-mount happened.
+          // Clean up the session we just created.
+          invoke('voice_disconnect').catch(() => {});
+          return;
+        }
+
+        connected = true;
+        setConnectionState('connected');
+        // Now connected — future disconnected events are unexpected (server kicked us)
+        intentionalDisconnectRef.current = false;
       } catch (e) {
         console.error('[NativeVoicePanel] voice_connect failed:', e);
-        if (!cancelled) {
+        if (gen === connectGenRef.current && !abandoned) {
           setConnectionState('disconnected');
         }
       }
@@ -93,8 +118,14 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
     connect();
 
     return () => {
-      cancelled = true;
-      invoke('voice_disconnect').catch(() => {});
+      if (connected) {
+        // Already connected — disconnect immediately
+        intentionalDisconnectRef.current = true;
+        invoke('voice_disconnect').catch(() => {});
+      } else {
+        // Connect still in progress — mark abandoned so callback handles it
+        abandoned = true;
+      }
     };
   }, [url, token]);
 
@@ -161,7 +192,8 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
       unlisteners.push(
         await listen<{ state: string }>('voice:connection-state', (event) => {
           setConnectionState(event.payload.state);
-          if (event.payload.state === 'disconnected') {
+          if (event.payload.state === 'disconnected' && !intentionalDisconnectRef.current) {
+            // Only leave the channel if the server disconnected us, not if we did it ourselves
             voiceLeave();
           }
         })
