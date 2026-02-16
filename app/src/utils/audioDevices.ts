@@ -80,17 +80,10 @@ export interface AudioInputDevice {
 
 /**
  * Enumerate audio input devices (microphones).
- * Tauri/Linux: enumerates PipeWire/PulseAudio sources via pactl.
- * Web: uses navigator.mediaDevices.enumerateDevices().
+ * Uses navigator.mediaDevices.enumerateDevices() on all platforms so that
+ * device IDs can be passed directly to getUserMedia / LiveKit.
  */
 export async function listAudioInputs(): Promise<AudioInputDevice[]> {
-  if (isTauri()) {
-    return listAudioInputsTauri();
-  }
-  return listAudioInputsWeb();
-}
-
-async function listAudioInputsWeb(): Promise<AudioInputDevice[]> {
   if (!navigator.mediaDevices?.enumerateDevices) return [];
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
@@ -104,33 +97,6 @@ async function listAudioInputsWeb(): Promise<AudioInputDevice[]> {
   } catch {
     return [];
   }
-}
-
-async function listAudioInputsTauri(): Promise<AudioInputDevice[]> {
-  try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    const [sources, defaultSource] = await Promise.all([
-      invoke<Array<{ name: string; description: string; index: number }>>('list_audio_sources'),
-      invoke<string>('get_default_audio_source'),
-    ]);
-    return sources.map((s) => ({
-      id: s.name,
-      label: s.description,
-      isDefault: s.name === defaultSource,
-    }));
-  } catch (e) {
-    console.warn('[audioDevices] Failed to list Tauri audio sources:', e);
-    return [];
-  }
-}
-
-/**
- * Route the app's recording streams to the given PipeWire/PulseAudio source (Tauri/Linux only).
- * Returns the number of source-outputs that were moved.
- */
-export async function applyAudioInputTauri(sourceName: string): Promise<number> {
-  const { invoke } = await import('@tauri-apps/api/core');
-  return invoke<number>('set_audio_source', { sourceName });
 }
 
 /**

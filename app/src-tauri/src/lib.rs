@@ -67,12 +67,6 @@ pub fn run() {
             #[cfg(target_os = "linux")]
             audio::get_default_audio_sink,
             #[cfg(target_os = "linux")]
-            audio::list_audio_sources,
-            #[cfg(target_os = "linux")]
-            audio::get_default_audio_source,
-            #[cfg(target_os = "linux")]
-            audio::set_audio_source,
-            #[cfg(target_os = "linux")]
             audio::label_audio_streams,
         ])
         .setup(|app| {

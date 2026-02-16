@@ -546,10 +546,8 @@ function VoiceVideoSettings() {
 
   const startMicTest = async () => {
     try {
-      // On Tauri, selectedMic is a PulseAudio source name (not a WebKit device ID),
-      // so pass audio:true and let the system default source handle it.
       const constraints: MediaStreamConstraints = {
-        audio: (!isTauri() && selectedMic) ? { deviceId: { exact: selectedMic } } : true,
+        audio: (selectedMic && selectedMic !== 'default') ? { deviceId: { exact: selectedMic } } : true,
       };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       micStreamRef.current = stream;

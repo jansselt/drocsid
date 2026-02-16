@@ -11,7 +11,7 @@ import {
 import { Track, RoomEvent, RemoteParticipant, type Participant } from 'livekit-client';
 import { useServerStore } from '../../stores/serverStore';
 import { isTauri } from '../../api/instance';
-import { applyAudioOutputTauri, applyAudioInputTauri, labelAudioStreamsTauri } from '../../utils/audioDevices';
+import { applyAudioOutputTauri, labelAudioStreamsTauri } from '../../utils/audioDevices';
 import './VoicePanel.css';
 
 export function VoicePanel({ compact }: { compact?: boolean } = {}) {
@@ -21,17 +21,13 @@ export function VoicePanel({ compact }: { compact?: boolean } = {}) {
   const voiceLeave = useServerStore((s) => s.voiceLeave);
   const channels = useServerStore((s) => s.channels);
 
-  // No pre-connect setup needed on Tauri/Linux. LiveKit connects immediately and
-  // calls getUserMedia (captures from PipeWire default source). After the capture
-  // stream exists, we re-route it to the user's selected mic via pw-link.
-
-  // Read saved device selection for mic.
-  // Web: pass WebKit device ID as constraint. Tauri: use system default
-  // (post-connect pw-link routing handles the selected mic).
+  // Pass saved device ID directly to getUserMedia via LiveKit.
+  // enumerateDevices() provides browser-native device IDs on all platforms.
   const audioOptions = useMemo(() => {
-    if (isTauri()) return true as const;
     const savedMic = localStorage.getItem('drocsid_mic');
-    if (savedMic) return { deviceId: { exact: savedMic } } as MediaTrackConstraints;
+    if (savedMic && savedMic !== 'default') {
+      return { deviceId: { exact: savedMic } } as MediaTrackConstraints;
+    }
     return true as const;
   }, []);
 
@@ -329,34 +325,26 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
     return () => window.removeEventListener('drocsid-speaker-changed', handler);
   }, [room]);
 
-  // Route the app's capture stream to the user's selected mic (Tauri/Linux only).
-  // After LiveKit calls getUserMedia, our capture stream appears in PipeWire.
-  // We use pw-link to re-route it from the default source to the selected mic.
-  // If the user chose "default", we skip re-routing.
+  // Re-publish mic track when user changes mic selection in settings.
   useEffect(() => {
-    if (!room || !isTauri()) return;
+    if (!room || !localParticipant) return;
 
-    const applyMic = async () => {
+    const handler = async () => {
       const deviceId = localStorage.getItem('drocsid_mic');
-      if (!deviceId || deviceId === 'default') return;
-
-      for (let attempt = 0; attempt < 8; attempt++) {
-        try {
-          const moved = await applyAudioInputTauri(deviceId);
-          if (moved > 0) break;
-        } catch {
-          // Capture stream may not exist in PipeWire yet
-        }
-        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+      const constraints: MediaTrackConstraints = (deviceId && deviceId !== 'default')
+        ? { deviceId: { exact: deviceId } }
+        : {};
+      try {
+        await localParticipant.setMicrophoneEnabled(false);
+        await localParticipant.setMicrophoneEnabled(true, constraints);
+      } catch (e) {
+        console.warn('[VoicePanel] Failed to switch mic:', e);
       }
     };
 
-    applyMic();
-
-    const handler = () => applyMic();
     window.addEventListener('drocsid-mic-changed', handler);
     return () => window.removeEventListener('drocsid-mic-changed', handler);
-  }, [room]);
+  }, [room, localParticipant]);
 
   // Label PipeWire audio streams with distinct names (best-effort, after connection)
   useEffect(() => {
