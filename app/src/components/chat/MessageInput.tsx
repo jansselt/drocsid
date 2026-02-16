@@ -42,6 +42,7 @@ export function MessageInput({ channelId }: MessageInputProps) {
   const sendTypingAction = useServerStore((s) => s.sendTyping);
   const activeServerId = useServerStore((s) => s.activeServerId);
   const members = useServerStore((s) => activeServerId ? s.members.get(activeServerId) : undefined);
+  const users = useServerStore((s) => s.users);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [mentionQuery, setMentionQuery] = useState<{ query: string; startPos: number } | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
@@ -234,14 +235,18 @@ export function MessageInput({ channelId }: MessageInputProps) {
     setMentionIndex(0);
   }, []);
 
-  const insertMention = useCallback((userId: string, _displayName: string) => {
+  const insertMention = useCallback((userId: string, displayName: string) => {
     if (!mentionQuery) return;
     const before = content.slice(0, mentionQuery.startPos);
     const after = content.slice(mentionQuery.startPos + mentionQuery.query.length + 1);
-    setContent(before + `<@${userId}> ` + after);
+    // Use @username format — readable in the textarea and handled by both backend
+    // mention parser and frontend Markdown renderer
+    const user = users.get(userId);
+    const username = user?.username || displayName;
+    setContent(before + `@${username} ` + after);
     setMentionQuery(null);
     inputRef.current?.focus();
-  }, [mentionQuery, content]);
+  }, [mentionQuery, content, users]);
 
   return (
     <div
