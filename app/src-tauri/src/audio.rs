@@ -1,9 +1,7 @@
 use serde::Serialize;
 use std::process::Command;
-use std::sync::Mutex;
 
 /// PipeWire node ID of the virtual null-sink, stored for cleanup on disconnect / app exit.
-static VOICE_INPUT_NODE_ID: Mutex<Option<u32>> = Mutex::new(None);
 
 // ---------------------------------------------------------------------------
 // PipeWire helpers (pw-dump / pw-link)
@@ -370,25 +368,16 @@ pub async fn list_audio_sources() -> Result<Vec<AudioSource>, String> {
 
 #[tauri::command]
 pub async fn get_default_audio_source() -> Result<String, String> {
-    let output = Command::new("pw-metadata")
-        .args(["-n", "default"])
+    let output = Command::new("pactl")
+        .args(["get-default-source"])
         .output()
-        .map_err(|e| format!("pw-metadata failed: {e}"))?;
+        .map_err(|e| format!("Failed to run pactl: {e}"))?;
 
-    // Parse: update: id:0 key:'default.audio.source' value:'{"name":"foo"}' type:...
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
-        if line.contains("default.audio.source") && !line.contains("configured") {
-            if let Some(start) = line.find("\"name\":\"") {
-                let rest = &line[start + 8..];
-                if let Some(end) = rest.find('"') {
-                    return Ok(rest[..end].to_string());
-                }
-            }
-        }
+    if !output.status.success() {
+        return Err("pactl get-default-source failed".into());
     }
 
-    Err("Could not read default audio source from pw-metadata".into())
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 /// Route the app's capture streams to the given source via pw-dump + pw-link.
@@ -447,163 +436,6 @@ pub async fn set_audio_source(source_name: String) -> Result<u32, String> {
     }
 
     Ok(moved)
-}
-
-// ---------------------------------------------------------------------------
-// Virtual PipeWire sink for mic input routing
-// ---------------------------------------------------------------------------
-// Creates a null-sink that appears as a node in qpwgraph / Helvum / pavucontrol.
-// The user can route any physical mic to it. The app reads from the sink's
-// monitor source. Cleaned up on voice disconnect or app exit.
-
-const VOICE_INPUT_SINK: &str = "drocsid_voice_in";
-
-#[tauri::command]
-pub async fn create_voice_input_sink() -> Result<(), String> {
-    // Clean up tracked handle from a previous call in this process
-    destroy_voice_input_sink_inner();
-
-    // Also clean up stale nodes from previous app runs (object.linger survives crashes)
-    if let Ok(objects) = pw_dump_all() {
-        for obj in &objects {
-            if obj.get("type").and_then(|t| t.as_str()) != Some("PipeWire:Interface:Node") {
-                continue;
-            }
-            let props = obj.pointer("/info/props").unwrap_or(obj);
-            if props.get("node.name").and_then(|v| v.as_str()) == Some(VOICE_INPUT_SINK) {
-                if let Some(id) = obj.get("id").and_then(|v| v.as_u64()) {
-                    let _ = Command::new("pw-cli")
-                        .args(["destroy", &id.to_string()])
-                        .status();
-                }
-            }
-        }
-    }
-
-    create_sink_pw_cli()
-}
-
-fn create_sink_pw_cli() -> Result<(), String> {
-    let props = format!(
-        "{{ factory.name = support.null-audio-sink \
-           node.name = {VOICE_INPUT_SINK} \
-           node.description = \"Drocsid Voice Sound In\" \
-           media.class = Audio/Sink \
-           audio.channels = 2 \
-           audio.position = [ FL FR ] \
-           object.linger = true }}"
-    );
-
-    let output = Command::new("pw-cli")
-        .args(["create-node", "adapter", &props])
-        .output()
-        .map_err(|e| format!("pw-cli: {e}"))?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "pw-cli create-node failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-
-    // Parse node ID from output like "id: 42, type: PipeWire:Interface:Node/4"
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let node_id = stdout
-        .split("id:")
-        .nth(1)
-        .and_then(|s| s.split(',').next())
-        .and_then(|s| s.trim().parse::<u32>().ok())
-        .ok_or("Failed to parse node ID from pw-cli output")?;
-
-    *VOICE_INPUT_NODE_ID.lock().unwrap() = Some(node_id);
-    Ok(())
-}
-
-/// Set the PipeWire default audio source via pw-metadata.
-/// Works for both regular sources and sink monitors (e.g. "drocsid_voice_in.monitor")
-/// because pw-metadata sets the default by name, not by node ID.
-#[tauri::command]
-pub async fn set_default_audio_source(source_name: String) -> Result<(), String> {
-    let value = format!(r#"{{ "name": "{source_name}" }}"#);
-
-    // Set both the configured preference and the active default
-    for key in [
-        "default.configured.audio.source",
-        "default.audio.source",
-    ] {
-        let status = Command::new("pw-metadata")
-            .args(["-n", "default", "0", key, &value])
-            .status()
-            .map_err(|e| format!("pw-metadata failed: {e}"))?;
-
-        if !status.success() {
-            return Err(format!("pw-metadata set {key} failed"));
-        }
-    }
-
-    Ok(())
-}
-
-/// Route a given audio source to the virtual voice input sink via PipeWire pw-link.
-/// This connects the source's output ports to the sink's input ports so that audio
-/// flows: physical mic → virtual sink → monitor → getUserMedia.
-/// Returns the number of port pairs linked.
-#[tauri::command]
-pub async fn route_mic_to_voice_sink(source_name: String) -> Result<u32, String> {
-    let objects = pw_dump_all()?;
-
-    // Find the virtual sink
-    let sink_id = find_node_by_name(&objects, VOICE_INPUT_SINK)
-        .ok_or("Virtual sink not found — call create_voice_input_sink first")?;
-    let sink_input_ports = find_node_ports(&objects, sink_id, "input");
-    if sink_input_ports.is_empty() {
-        return Err("Virtual sink has no input ports".into());
-    }
-
-    // Resolve the source: "foo.monitor" → sink "foo" output ports, "foo" → source "foo" output ports
-    let target_name = if source_name.ends_with(".monitor") {
-        &source_name[..source_name.len() - ".monitor".len()]
-    } else {
-        &source_name
-    };
-
-    let source_id = find_node_by_name(&objects, target_name)
-        .ok_or_else(|| format!("Source node not found: {target_name}"))?;
-    let source_output_ports = find_node_ports(&objects, source_id, "output");
-    if source_output_ports.is_empty() {
-        return Err(format!("No output ports on source {target_name}"));
-    }
-
-    // Disconnect any existing links going into the virtual sink's input ports
-    for port in &sink_input_ports {
-        for link_id in find_links_to_input_port(&objects, port.id) {
-            pw_destroy_link(link_id);
-        }
-    }
-
-    // Create new links: source output → virtual sink input
-    let pairs = match_ports(&source_output_ports, &sink_input_ports);
-    let mut linked = 0u32;
-    for (out_port, in_port) in pairs {
-        pw_create_link(out_port, in_port)?;
-        linked += 1;
-    }
-
-    Ok(linked)
-}
-
-#[tauri::command]
-pub async fn destroy_voice_input_sink() -> Result<(), String> {
-    destroy_voice_input_sink_inner();
-    Ok(())
-}
-
-fn destroy_voice_input_sink_inner() {
-    if let Some(node_id) = VOICE_INPUT_NODE_ID.lock().unwrap().take() {
-        let _ = Command::new("pw-cli")
-            .args(["destroy", &node_id.to_string()])
-            .status();
-    }
 }
 
 // ---------------------------------------------------------------------------

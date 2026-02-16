@@ -143,51 +143,6 @@ export async function labelAudioStreamsTauri(): Promise<void> {
 }
 
 /**
- * Create a virtual PipeWire null-sink ("Drocsid Voice Sound In") that appears
- * in qpwgraph / Helvum / pavucontrol. The user can route any mic to it.
- * The app's recording stream is automatically moved to the sink's monitor.
- */
-export async function createVoiceInputSink(): Promise<void> {
-  const { invoke } = await import('@tauri-apps/api/core');
-  await invoke('create_voice_input_sink');
-}
-
-/**
- * Get the current PipeWire/PulseAudio default audio source name (Tauri/Linux only).
- */
-export async function getDefaultAudioSourceTauri(): Promise<string> {
-  const { invoke } = await import('@tauri-apps/api/core');
-  return invoke<string>('get_default_audio_source');
-}
-
-/**
- * Set the PipeWire/PulseAudio default audio source (Tauri/Linux only).
- * Used to point getUserMedia at the virtual sink's monitor before connecting.
- */
-export async function setDefaultAudioSourceTauri(sourceName: string): Promise<void> {
-  const { invoke } = await import('@tauri-apps/api/core');
-  await invoke('set_default_audio_source', { sourceName });
-}
-
-/**
- * Route a given audio source to the virtual voice input sink via PipeWire pw-link.
- * Audio path: physical mic → virtual sink → monitor → getUserMedia.
- * Returns the number of port pairs linked.
- */
-export async function routeMicToVoiceSink(sourceName: string): Promise<number> {
-  const { invoke } = await import('@tauri-apps/api/core');
-  return invoke<number>('route_mic_to_voice_sink', { sourceName });
-}
-
-/**
- * Remove the virtual mic input sink (on voice disconnect / app exit).
- */
-export async function destroyVoiceInputSink(): Promise<void> {
-  const { invoke } = await import('@tauri-apps/api/core');
-  await invoke('destroy_voice_input_sink');
-}
-
-/**
  * Save microphone selection to localStorage and notify listeners.
  */
 export function saveMicrophone(deviceId: string): void {

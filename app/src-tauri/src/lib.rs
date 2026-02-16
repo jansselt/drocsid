@@ -69,19 +69,11 @@ pub fn run() {
             #[cfg(target_os = "linux")]
             audio::list_audio_sources,
             #[cfg(target_os = "linux")]
-            audio::set_audio_source,
-            #[cfg(target_os = "linux")]
             audio::get_default_audio_source,
             #[cfg(target_os = "linux")]
+            audio::set_audio_source,
+            #[cfg(target_os = "linux")]
             audio::label_audio_streams,
-            #[cfg(target_os = "linux")]
-            audio::create_voice_input_sink,
-            #[cfg(target_os = "linux")]
-            audio::destroy_voice_input_sink,
-            #[cfg(target_os = "linux")]
-            audio::set_default_audio_source,
-            #[cfg(target_os = "linux")]
-            audio::route_mic_to_voice_sink,
         ])
         .setup(|app| {
             // Open devtools in debug builds
