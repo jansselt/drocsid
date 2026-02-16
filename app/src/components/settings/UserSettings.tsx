@@ -20,7 +20,6 @@ import {
 import * as api from '../../api/client';
 import type { RegistrationCode, Channel } from '../../types';
 import { listAudioOutputs, listAudioInputs, saveSpeaker, saveMicrophone, type AudioOutputDevice, type AudioInputDevice } from '../../utils/audioDevices';
-import { isTauri } from '../../api/instance';
 import { SHORTCUT_CATEGORIES, mod } from '../common/KeyboardShortcutsDialog';
 import '../common/KeyboardShortcutsDialog.css';
 import './UserSettings.css';
