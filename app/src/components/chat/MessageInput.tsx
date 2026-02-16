@@ -264,7 +264,7 @@ export function MessageInput({ channelId }: MessageInputProps) {
       {replyingTo && (
         <div className="reply-indicator">
           <span className="reply-indicator-text">
-            Replying to <strong>{replyingTo.author?.display_name || replyingTo.author?.username || 'Unknown'}</strong>
+            Replying to <strong>{(() => { const u = replyingTo.author_id ? users.get(replyingTo.author_id) : null; return u?.display_name || u?.username || replyingTo.author?.display_name || replyingTo.author?.username || 'Unknown'; })()}</strong>
           </span>
           <button className="reply-indicator-close" onClick={() => setReplyingTo(null)}>
             &times;
