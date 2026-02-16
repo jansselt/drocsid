@@ -126,10 +126,11 @@ async function listAudioInputsTauri(): Promise<AudioInputDevice[]> {
 
 /**
  * Route the app's recording streams to the given PipeWire/PulseAudio source (Tauri/Linux only).
+ * Returns the number of source-outputs that were moved.
  */
-export async function applyAudioInputTauri(sourceName: string): Promise<void> {
+export async function applyAudioInputTauri(sourceName: string): Promise<number> {
   const { invoke } = await import('@tauri-apps/api/core');
-  await invoke('set_audio_source', { sourceName });
+  return invoke<number>('set_audio_source', { sourceName });
 }
 
 /**

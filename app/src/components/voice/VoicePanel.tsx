@@ -11,7 +11,7 @@ import {
 import { Track, RoomEvent, RemoteParticipant, type Participant } from 'livekit-client';
 import { useServerStore } from '../../stores/serverStore';
 import { isTauri } from '../../api/instance';
-import { applyAudioOutputTauri, labelAudioStreamsTauri, createVoiceInputSink, destroyVoiceInputSink, getDefaultAudioSourceTauri, setDefaultAudioSourceTauri } from '../../utils/audioDevices';
+import { applyAudioOutputTauri, applyAudioInputTauri, labelAudioStreamsTauri, createVoiceInputSink, destroyVoiceInputSink, getDefaultAudioSourceTauri, setDefaultAudioSourceTauri } from '../../utils/audioDevices';
 import './VoicePanel.css';
 
 export function VoicePanel({ compact }: { compact?: boolean } = {}) {
@@ -56,18 +56,8 @@ export function VoicePanel({ compact }: { compact?: boolean } = {}) {
 
     setup();
 
-    // Re-run when user changes mic in settings
-    const handleMicChanged = () => {
-      const mic = localStorage.getItem('drocsid_mic');
-      if (mic) {
-        setDefaultAudioSourceTauri(mic).catch(() => {});
-      }
-    };
-    window.addEventListener('drocsid-mic-changed', handleMicChanged);
-
     return () => {
       cancelled = true;
-      window.removeEventListener('drocsid-mic-changed', handleMicChanged);
       // Restore previous default source and clean up the virtual sink
       const prev = savedDefaultSourceRef.current;
       if (prev) {
@@ -377,6 +367,34 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
     const handler = () => applySpeaker();
     window.addEventListener('drocsid-speaker-changed', handler);
     return () => window.removeEventListener('drocsid-speaker-changed', handler);
+  }, [room]);
+
+  // Apply saved audio input (mic) device selection (Tauri/Linux: route via PulseAudio)
+  // Mirrors the speaker routing above — after connect, move our source-output to the
+  // selected PipeWire source. Retries until the capture stream appears in PipeWire.
+  useEffect(() => {
+    if (!room || !isTauri()) return;
+
+    const applyMic = async () => {
+      const deviceId = localStorage.getItem('drocsid_mic');
+      if (!deviceId) return;
+
+      for (let attempt = 0; attempt < 8; attempt++) {
+        try {
+          const moved = await applyAudioInputTauri(deviceId);
+          if (moved > 0) break;
+        } catch {
+          // pactl may not be ready yet
+        }
+        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+      }
+    };
+
+    applyMic();
+
+    const handler = () => applyMic();
+    window.addEventListener('drocsid-mic-changed', handler);
+    return () => window.removeEventListener('drocsid-mic-changed', handler);
   }, [room]);
 
   // Label PipeWire audio streams with distinct names (best-effort, after connection)
