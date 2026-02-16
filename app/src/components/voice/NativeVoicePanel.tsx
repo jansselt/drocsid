@@ -43,7 +43,7 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
 
   const [connectionState, setConnectionState] = useState<string>('connecting');
   const [participants, setParticipants] = useState<Map<string, ParticipantInfo>>(new Map());
-  const [localIdentity, setLocalIdentity] = useState<string | null>(null);
+  const [localIdentity] = useState<string | null>(null);
 
   // Per-user volume
   const [volumeMenu, setVolumeMenu] = useState<{ identity: string; x: number; y: number } | null>(null);
