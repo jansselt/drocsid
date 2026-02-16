@@ -306,6 +306,7 @@ export function MessageInput({ channelId }: MessageInputProps) {
             <button
               key={cmd}
               className={`slash-suggestion ${i === slashIndex ? 'active' : ''}`}
+              ref={i === slashIndex ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}
               onMouseDown={(e) => {
                 e.preventDefault();
                 setContent(cmd + ' ');
@@ -330,6 +331,7 @@ export function MessageInput({ channelId }: MessageInputProps) {
               <button
                 key={m.user_id}
                 className={`slash-suggestion ${i === mentionIndex ? 'active' : ''}`}
+                ref={i === mentionIndex ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   insertMention(m.user_id, name);
