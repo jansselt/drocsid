@@ -80,6 +80,8 @@ pub fn run() {
             audio::destroy_voice_input_sink,
             #[cfg(target_os = "linux")]
             audio::set_default_audio_source,
+            #[cfg(target_os = "linux")]
+            audio::route_mic_to_voice_sink,
         ])
         .setup(|app| {
             // Open devtools in debug builds

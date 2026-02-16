@@ -587,8 +587,25 @@ const VOICE_INPUT_SINK: &str = "drocsid_voice_in";
 
 #[tauri::command]
 pub async fn create_voice_input_sink() -> Result<(), String> {
-    // Clean up any stale sink from a previous crash
+    // Clean up tracked handle from a previous call in this process
     destroy_voice_input_sink_inner();
+
+    // Also clean up stale nodes from previous app runs (object.linger survives crashes)
+    if let Ok(objects) = pw_dump_all() {
+        for obj in &objects {
+            if obj.get("type").and_then(|t| t.as_str()) != Some("PipeWire:Interface:Node") {
+                continue;
+            }
+            let props = obj.pointer("/info/props").unwrap_or(obj);
+            if props.get("node.name").and_then(|v| v.as_str()) == Some(VOICE_INPUT_SINK) {
+                if let Some(id) = obj.get("id").and_then(|v| v.as_u64()) {
+                    let _ = Command::new("pw-cli")
+                        .args(["destroy", &id.to_string()])
+                        .status();
+                }
+            }
+        }
+    }
 
     // Try PipeWire-native creation first (proper naming in qpwgraph)
     if let Ok(()) = create_sink_pw_cli() {
@@ -716,6 +733,54 @@ fn set_default_source_wpctl(source_name: &str) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// Route a given audio source to the virtual voice input sink via PipeWire pw-link.
+/// This connects the source's output ports to the sink's input ports so that audio
+/// flows: physical mic → virtual sink → monitor → getUserMedia.
+/// Returns the number of port pairs linked.
+#[tauri::command]
+pub async fn route_mic_to_voice_sink(source_name: String) -> Result<u32, String> {
+    let objects = pw_dump_all()?;
+
+    // Find the virtual sink
+    let sink_id = find_node_by_name(&objects, VOICE_INPUT_SINK)
+        .ok_or("Virtual sink not found — call create_voice_input_sink first")?;
+    let sink_input_ports = find_node_ports(&objects, sink_id, "input");
+    if sink_input_ports.is_empty() {
+        return Err("Virtual sink has no input ports".into());
+    }
+
+    // Resolve the source: "foo.monitor" → sink "foo" output ports, "foo" → source "foo" output ports
+    let target_name = if source_name.ends_with(".monitor") {
+        &source_name[..source_name.len() - ".monitor".len()]
+    } else {
+        &source_name
+    };
+
+    let source_id = find_node_by_name(&objects, target_name)
+        .ok_or_else(|| format!("Source node not found: {target_name}"))?;
+    let source_output_ports = find_node_ports(&objects, source_id, "output");
+    if source_output_ports.is_empty() {
+        return Err(format!("No output ports on source {target_name}"));
+    }
+
+    // Disconnect any existing links going into the virtual sink's input ports
+    for port in &sink_input_ports {
+        for link_id in find_links_to_input_port(&objects, port.id) {
+            pw_destroy_link(link_id);
+        }
+    }
+
+    // Create new links: source output → virtual sink input
+    let pairs = match_ports(&source_output_ports, &sink_input_ports);
+    let mut linked = 0u32;
+    for (out_port, in_port) in pairs {
+        pw_create_link(out_port, in_port)?;
+        linked += 1;
+    }
+
+    Ok(linked)
 }
 
 #[tauri::command]

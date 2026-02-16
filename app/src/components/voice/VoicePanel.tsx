@@ -11,7 +11,7 @@ import {
 import { Track, RoomEvent, RemoteParticipant, type Participant } from 'livekit-client';
 import { useServerStore } from '../../stores/serverStore';
 import { isTauri } from '../../api/instance';
-import { applyAudioOutputTauri, applyAudioInputTauri, labelAudioStreamsTauri, createVoiceInputSink, destroyVoiceInputSink, getDefaultAudioSourceTauri, setDefaultAudioSourceTauri } from '../../utils/audioDevices';
+import { applyAudioOutputTauri, labelAudioStreamsTauri, createVoiceInputSink, destroyVoiceInputSink, getDefaultAudioSourceTauri, setDefaultAudioSourceTauri, routeMicToVoiceSink } from '../../utils/audioDevices';
 import './VoicePanel.css';
 
 export function VoicePanel({ compact }: { compact?: boolean } = {}) {
@@ -40,13 +40,22 @@ export function VoicePanel({ compact }: { compact?: boolean } = {}) {
         // Create the virtual null-sink (appears in qpwgraph as "Drocsid Voice Sound In")
         await createVoiceInputSink();
 
-        // If user selected a specific mic in settings, set it as default source.
-        // This works for both physical mics and drocsid_voice_in.monitor.
-        // If nothing selected, leave the default unchanged (real mic works automatically).
+        // Wait for PipeWire to register the new sink
+        await new Promise((r) => setTimeout(r, 300));
+
+        // Always set the virtual sink's monitor as the default source so
+        // getUserMedia picks it up (WebKit2GTK reads the PipeWire default).
+        await setDefaultAudioSourceTauri('drocsid_voice_in.monitor');
+
+        // Route the selected mic (or system default) to the virtual sink via pw-link.
+        // Audio path: physical mic → pw-link → virtual sink → monitor → getUserMedia
         const selectedMic = localStorage.getItem('drocsid_mic');
         if (selectedMic) {
-          await new Promise((r) => setTimeout(r, 300));
-          await setDefaultAudioSourceTauri(selectedMic);
+          try {
+            await routeMicToVoiceSink(selectedMic);
+          } catch (e) {
+            console.warn('[VoicePanel] Pre-connect mic→sink routing failed:', e);
+          }
         }
       } catch (e) {
         console.warn('[VoicePanel] Tauri audio sink setup failed:', e);
@@ -369,9 +378,9 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
     return () => window.removeEventListener('drocsid-speaker-changed', handler);
   }, [room]);
 
-  // Apply saved audio input (mic) device selection (Tauri/Linux: route via PulseAudio)
-  // Mirrors the speaker routing above — after connect, move our source-output to the
-  // selected PipeWire source. Retries until the capture stream appears in PipeWire.
+  // Route selected mic → virtual PipeWire sink (Tauri/Linux only).
+  // Audio path: physical mic → pw-link → drocsid_voice_in → monitor → getUserMedia.
+  // Retries because the virtual sink may not have ports registered yet.
   useEffect(() => {
     if (!room || !isTauri()) return;
 
@@ -381,10 +390,10 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
 
       for (let attempt = 0; attempt < 8; attempt++) {
         try {
-          const moved = await applyAudioInputTauri(deviceId);
-          if (moved > 0) break;
+          const linked = await routeMicToVoiceSink(deviceId);
+          if (linked > 0) break;
         } catch {
-          // pactl may not be ready yet
+          // pw-link / virtual sink may not be ready yet
         }
         await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
       }

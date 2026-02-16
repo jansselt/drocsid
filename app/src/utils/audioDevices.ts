@@ -170,6 +170,16 @@ export async function setDefaultAudioSourceTauri(sourceName: string): Promise<vo
 }
 
 /**
+ * Route a given audio source to the virtual voice input sink via PipeWire pw-link.
+ * Audio path: physical mic → virtual sink → monitor → getUserMedia.
+ * Returns the number of port pairs linked.
+ */
+export async function routeMicToVoiceSink(sourceName: string): Promise<number> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<number>('route_mic_to_voice_sink', { sourceName });
+}
+
+/**
  * Remove the virtual mic input sink (on voice disconnect / app exit).
  */
 export async function destroyVoiceInputSink(): Promise<void> {
