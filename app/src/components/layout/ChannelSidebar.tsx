@@ -107,7 +107,7 @@ export function ChannelSidebar() {
                     onClick={() => setActiveDmChannel(dm.id)}
                   >
                     <span className="dm-avatar">
-                      {dm.channel_type === 'groupdm' ? 'G' : otherUsers[0]?.avatar_url
+                      {dm.channel_type !== 'groupdm' && otherUsers[0]?.avatar_url
                         ? <img src={otherUsers[0].avatar_url} alt="" />
                         : displayName.slice(0, 1).toUpperCase()}
                     </span>
