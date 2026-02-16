@@ -370,16 +370,25 @@ pub async fn list_audio_sources() -> Result<Vec<AudioSource>, String> {
 
 #[tauri::command]
 pub async fn get_default_audio_source() -> Result<String, String> {
-    let output = Command::new("pactl")
-        .args(["get-default-source"])
+    let output = Command::new("pw-metadata")
+        .args(["-n", "default"])
         .output()
-        .map_err(|e| format!("Failed to run pactl: {e}"))?;
+        .map_err(|e| format!("pw-metadata failed: {e}"))?;
 
-    if !output.status.success() {
-        return Err("pactl get-default-source failed".into());
+    // Parse: update: id:0 key:'default.audio.source' value:'{"name":"foo"}' type:...
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        if line.contains("default.audio.source") && !line.contains("configured") {
+            if let Some(start) = line.find("\"name\":\"") {
+                let rest = &line[start + 8..];
+                if let Some(end) = rest.find('"') {
+                    return Ok(rest[..end].to_string());
+                }
+            }
+        }
     }
 
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    Err("Could not read default audio source from pw-metadata".into())
 }
 
 /// Route the app's capture streams to the given source via pw-dump + pw-link.
@@ -510,28 +519,26 @@ fn create_sink_pw_cli() -> Result<(), String> {
     Ok(())
 }
 
-/// Set the PipeWire default audio source via wpctl.
+/// Set the PipeWire default audio source via pw-metadata.
+/// Works for both regular sources and sink monitors (e.g. "drocsid_voice_in.monitor")
+/// because pw-metadata sets the default by name, not by node ID.
 #[tauri::command]
 pub async fn set_default_audio_source(source_name: String) -> Result<(), String> {
-    let objects = pw_dump_all()?;
+    let value = format!(r#"{{ "name": "{source_name}" }}"#);
 
-    // Look for the node by exact name. For regular sources this finds the
-    // source node directly. For monitors (e.g. "foo.monitor") this finds
-    // the monitor source node.
-    //
-    // IMPORTANT: Do NOT strip ".monitor" and use the sink node ID — that would
-    // call `wpctl set-default <sink_id>` which sets the default OUTPUT (speaker),
-    // not the default INPUT source.
-    let node_id = find_node_by_name(&objects, &source_name)
-        .ok_or_else(|| format!("PipeWire node not found: {source_name}"))?;
+    // Set both the configured preference and the active default
+    for key in [
+        "default.configured.audio.source",
+        "default.audio.source",
+    ] {
+        let status = Command::new("pw-metadata")
+            .args(["-n", "default", "0", key, &value])
+            .status()
+            .map_err(|e| format!("pw-metadata failed: {e}"))?;
 
-    let status = Command::new("wpctl")
-        .args(["set-default", &node_id.to_string()])
-        .status()
-        .map_err(|e| format!("wpctl set-default failed: {e}"))?;
-
-    if !status.success() {
-        return Err(format!("wpctl set-default {node_id} failed"));
+        if !status.success() {
+            return Err(format!("pw-metadata set {key} failed"));
+        }
     }
 
     Ok(())
