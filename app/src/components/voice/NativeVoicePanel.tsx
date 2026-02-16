@@ -43,7 +43,8 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
 
   const [connectionState, setConnectionState] = useState<string>('connecting');
   const [participants, setParticipants] = useState<Map<string, ParticipantInfo>>(new Map());
-  const [localIdentity] = useState<string | null>(null);
+  const [localIdentity, setLocalIdentity] = useState<string | null>(null);
+  const localIdentityRef = useRef<string | null>(null);
 
   // Per-user volume
   const [volumeMenu, setVolumeMenu] = useState<{ identity: string; x: number; y: number } | null>(null);
@@ -209,6 +210,48 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
             }
             return next;
           });
+        })
+      );
+
+      // Local identity from Rust (for self-speaking indicator)
+      unlisteners.push(
+        await listen<string>('voice:local-identity', (event) => {
+          localIdentityRef.current = event.payload;
+          setLocalIdentity(event.payload);
+        })
+      );
+
+      // Local mic level for self-speaking indicator
+      const SPEAKING_THRESHOLD = 3.0;
+      unlisteners.push(
+        await listen<number>('voice:mic-level', (event) => {
+          const id = localIdentityRef.current;
+          if (!id) return;
+
+          const level = event.payload;
+          if (level > SPEAKING_THRESHOLD) {
+            // Speaking — add immediately, cancel any pending removal
+            const timer = holdTimersRef.current.get(id);
+            if (timer) {
+              clearTimeout(timer);
+              holdTimersRef.current.delete(id);
+            }
+            if (!speakingRef.current.has(id)) {
+              const next = new Set(speakingRef.current);
+              next.add(id);
+              updateSpeakingStore(next);
+            }
+          } else {
+            // Silent — start hold timer if currently marked as speaking
+            if (speakingRef.current.has(id) && !holdTimersRef.current.has(id)) {
+              holdTimersRef.current.set(id, setTimeout(() => {
+                holdTimersRef.current.delete(id);
+                const updated = new Set(speakingRef.current);
+                updated.delete(id);
+                updateSpeakingStore(updated);
+              }, SPEAKING_HOLD_MS));
+            }
+          }
         })
       );
     };

@@ -73,6 +73,10 @@ impl VoiceManager {
             .await
             .map_err(|e| format!("Room connect failed: {e}"))?;
 
+        // Emit local identity so frontend can track self-speaking
+        let local_identity = room.local_participant().identity().to_string();
+        let _ = app.emit("voice:local-identity", &local_identity);
+
         // 2. Create native audio source for mic publishing
         let audio_source = NativeAudioSource::new(
             Default::default(),
@@ -113,6 +117,7 @@ impl VoiceManager {
 
         // 7. Spawn mic forwarder task
         Self::spawn_mic_forwarder(
+            app.clone(),
             mic_consumer,
             audio_source,
             mic_muted.clone(),
@@ -172,6 +177,7 @@ impl VoiceManager {
     // -- Internal tasks --
 
     fn spawn_mic_forwarder(
+        app: tauri::AppHandle,
         mut consumer: rtrb::Consumer<i16>,
         audio_source: NativeAudioSource,
         mic_muted: Arc<AtomicBool>,
@@ -188,6 +194,7 @@ impl VoiceManager {
                         if mic_muted.load(Ordering::Relaxed) {
                             // Drain the ring buffer but don't send
                             while consumer.pop().is_ok() {}
+                            let _ = app.emit("voice:mic-level", 0.0_f64);
                             continue;
                         }
 
@@ -199,6 +206,15 @@ impl VoiceManager {
                         if buf.is_empty() {
                             continue;
                         }
+
+                        // Compute RMS level for local speaking indicator
+                        let sum_sq: f64 = buf.iter().map(|&s| {
+                            let f = s as f64 / i16::MAX as f64;
+                            f * f
+                        }).sum();
+                        let rms = (sum_sq / buf.len() as f64).sqrt();
+                        let level = (rms * 600.0).min(100.0);
+                        let _ = app.emit("voice:mic-level", level);
 
                         let frame = AudioFrame {
                             data: Cow::Borrowed(&buf),
