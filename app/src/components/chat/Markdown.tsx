@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import { useAuthStore } from '../../stores/authStore';
 import { SHORTCODE_MAP } from './EmojiPicker';
@@ -261,6 +261,7 @@ export function Markdown({ content }: MarkdownProps) {
                 src={`https://platform.twitter.com/embed/Tweet.html?id=${token.text}&dnt=true&theme=dark`}
                 title="Tweet"
                 width={550}
+                height={700}
                 href={token.href}
                 sandbox="allow-scripts allow-same-origin allow-popups"
               />
@@ -273,6 +274,7 @@ export function Markdown({ content }: MarkdownProps) {
                 src={`https://www.tiktok.com/embed/v2/${token.text}`}
                 title="TikTok"
                 width={325}
+                height={760}
                 href={token.href}
                 sandbox="allow-scripts allow-same-origin allow-popups"
               />
@@ -285,6 +287,7 @@ export function Markdown({ content }: MarkdownProps) {
                 src={`https://www.instagram.com/${token.lang}/${token.text}/embed/`}
                 title="Instagram"
                 width={400}
+                height={600}
                 href={token.href}
                 sandbox="allow-scripts allow-same-origin allow-popups"
               />
@@ -297,6 +300,7 @@ export function Markdown({ content }: MarkdownProps) {
                 src={`https://www.threads.net/${token.text}/embed`}
                 title="Threads"
                 width={400}
+                height={500}
                 href={token.href}
                 sandbox="allow-scripts allow-same-origin allow-popups"
               />
@@ -360,61 +364,25 @@ export function Markdown({ content }: MarkdownProps) {
   );
 }
 
-/** Iframe wrapper that auto-resizes via postMessage from embed platforms */
-function SocialEmbed({ src, title, className, width, href, sandbox }: {
+/** Iframe wrapper for social embeds */
+function SocialEmbed({ src, title, className, width, height, href, sandbox }: {
   src: string;
   title: string;
   className: string;
   width: number;
+  height: number;
   href?: string;
   sandbox?: string;
 }) {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [height, setHeight] = useState(0);
-
-  const onMessage = useCallback((e: MessageEvent) => {
-    const iframe = iframeRef.current;
-    if (!iframe || e.source !== iframe.contentWindow) return;
-
-    let h: number | undefined;
-
-    // Twitter/X: {"twttr.private.resize": [{height: N}]} or {"method":"resize","params":[{height:N}]}
-    if (typeof e.data === 'string') {
-      try {
-        const parsed = JSON.parse(e.data);
-        h = parsed?.['twttr.private.resize']?.[0]?.height
-          ?? parsed?.params?.[0]?.height;
-      } catch { /* not JSON */ }
-    } else if (typeof e.data === 'object' && e.data) {
-      // TikTok sends {type: "resize", height: N} or similar object messages
-      // Instagram sends {type: "MEASURE", details: {height: N}}
-      // Generic: look for a height property anywhere in the message
-      h = e.data.height
-        ?? e.data?.['twttr.private.resize']?.[0]?.height
-        ?? e.data?.params?.[0]?.height
-        ?? e.data?.details?.height;
-    }
-
-    if (typeof h === 'number' && h > 0) {
-      setHeight(h);
-    }
-  }, []);
-
-  useEffect(() => {
-    window.addEventListener('message', onMessage);
-    return () => window.removeEventListener('message', onMessage);
-  }, [onMessage]);
-
   return (
     <div className="md-embed">
       {href && <a className="md-link md-embed-source" href={href} target="_blank" rel="noopener noreferrer">{href}</a>}
       <iframe
-        ref={iframeRef}
         className={className}
         src={src}
         title={title}
         scrolling="no"
-        style={{ width, height: height > 0 ? height : undefined }}
+        style={{ width, height }}
         sandbox={sandbox}
       />
     </div>
@@ -481,6 +449,7 @@ function BlueskyEmbed({ handle, rkey, href }: { handle: string; rkey: string; hr
       src={`https://embed.bsky.app/embed/${resolvedDid}/app.bsky.feed.post/${rkey}`}
       title="Bluesky"
       width={400}
+      height={400}
       href={href}
       sandbox="allow-scripts allow-same-origin allow-popups"
     />
