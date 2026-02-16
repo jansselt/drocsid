@@ -48,6 +48,7 @@ export function FriendList() {
   const pending = relationships.filter(
     (r) => r.rel_type === 'pending_incoming' || r.rel_type === 'pending_outgoing',
   );
+  const pendingIncomingCount = relationships.filter((r) => r.rel_type === 'pending_incoming').length;
   const blocked = relationships.filter((r) => r.rel_type === 'blocked');
 
   const handleAdd = async (userId: string) => {
@@ -69,7 +70,10 @@ export function FriendList() {
           All
         </button>
         <button className={`friend-tab ${tab === 'pending' ? 'active' : ''}`} onClick={() => setTab('pending')}>
-          Pending{pending.length > 0 ? ` (${pending.length})` : ''}
+          Pending
+          {pendingIncomingCount > 0 && (
+            <span className="friend-tab-badge">{pendingIncomingCount}</span>
+          )}
         </button>
         <button className={`friend-tab ${tab === 'blocked' ? 'active' : ''}`} onClick={() => setTab('blocked')}>
           Blocked

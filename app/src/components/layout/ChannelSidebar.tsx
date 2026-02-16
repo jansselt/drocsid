@@ -27,8 +27,11 @@ export function ChannelSidebar() {
   const readStates = useServerStore((s) => s.readStates);
   const setActiveDmChannel = useServerStore((s) => s.setActiveDmChannel);
   const closeDm = useServerStore((s) => s.closeDm);
+  const relationships = useServerStore((s) => s.relationships);
   const toggleChannelSidebar = useServerStore((s) => s.toggleChannelSidebar);
   const currentUser = useAuthStore((s) => s.user);
+
+  const pendingIncomingCount = relationships.filter((r) => r.rel_type === 'pending_incoming').length;
 
   const [showSettings, setShowSettings] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
@@ -74,6 +77,9 @@ export function ChannelSidebar() {
             onClick={() => setHomeTab('friends')}
           >
             Friends
+            {pendingIncomingCount > 0 && (
+              <span className="home-tab-badge">{pendingIncomingCount}</span>
+            )}
           </button>
         </div>
 
@@ -106,6 +112,9 @@ export function ChannelSidebar() {
                     <span className="channel-name">{displayName}</span>
                     {mentionCount > 0 && (
                       <span className="mention-badge">{mentionCount}</span>
+                    )}
+                    {isUnread && activeChannelId !== dm.id && mentionCount === 0 && (
+                      <span className="unread-dot" />
                     )}
                     <button
                       className="dm-close-btn"

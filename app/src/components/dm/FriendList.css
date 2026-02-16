@@ -33,6 +33,22 @@
   background: var(--bg-active);
 }
 
+.friend-tab-badge {
+  background: #ed4245;
+  color: #fff;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  line-height: 1;
+}
+
 .add-friend-tab {
   color: var(--accent);
 }

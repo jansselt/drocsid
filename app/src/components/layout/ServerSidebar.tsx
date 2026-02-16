@@ -12,6 +12,8 @@ export function ServerSidebar() {
   const createServer = useServerStore((s) => s.createServer);
   const channels = useServerStore((s) => s.channels);
   const readStates = useServerStore((s) => s.readStates);
+  const dmChannels = useServerStore((s) => s.dmChannels);
+  const relationships = useServerStore((s) => s.relationships);
   const logout = useAuthStore((s) => s.logout);
 
   // Compute per-server unread and mention counts
@@ -33,6 +35,22 @@ export function ServerSidebar() {
     }
     return result;
   }, [servers, channels, readStates]);
+
+  // Compute home button (DMs) unread and badge count
+  // Every unread DM counts toward the badge (DMs are personal, not just @mentions)
+  const homeIndicator = useMemo(() => {
+    let badgeCount = 0;
+    for (const dm of dmChannels) {
+      const rs = readStates.get(dm.id);
+      if (dm.last_message_id && (!rs?.last_read_message_id || dm.last_message_id > rs.last_read_message_id)) {
+        badgeCount++;
+      }
+    }
+    const pendingIncoming = relationships.filter((r) => r.rel_type === 'pending_incoming').length;
+    badgeCount += pendingIncoming;
+    return { hasUnread: badgeCount > 0, badgeCount };
+  }, [dmChannels, readStates, relationships]);
+
   const [showCreate, setShowCreate] = useState(false);
   const [newServerName, setNewServerName] = useState('');
 
@@ -45,15 +63,23 @@ export function ServerSidebar() {
 
   return (
     <div className="server-sidebar">
-      <button
-        className={`server-icon home-btn ${view === 'home' ? 'active' : ''}`}
-        onClick={() => setView('home')}
-        title="Direct Messages"
-      >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" />
-        </svg>
-      </button>
+      <div className="server-icon-wrapper">
+        {homeIndicator.hasUnread && view !== 'home' && (
+          <div className={`server-unread-pill${homeIndicator.badgeCount > 0 ? ' has-mentions' : ''}`} />
+        )}
+        <button
+          className={`server-icon home-btn ${view === 'home' ? 'active' : ''}`}
+          onClick={() => setView('home')}
+          title="Direct Messages"
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" />
+          </svg>
+        </button>
+        {homeIndicator.badgeCount > 0 && (
+          <div className="server-mention-badge">{homeIndicator.badgeCount > 99 ? '99+' : homeIndicator.badgeCount}</div>
+        )}
+      </div>
 
       <div className="server-divider" />
 
