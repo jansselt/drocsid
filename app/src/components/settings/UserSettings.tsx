@@ -502,6 +502,7 @@ function VoiceVideoSettings() {
   const [recordingKey, setRecordingKey] = useState(false);
 
   const micStreamRef = useRef<MediaStream | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animFrameRef = useRef<number>(0);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -554,10 +555,13 @@ function VoiceVideoSettings() {
       micStreamRef.current = stream;
 
       const ctx = new AudioContext();
+      audioCtxRef.current = ctx;
       const source = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
       source.connect(analyser);
+      // Play mic audio through speakers so user can hear themselves
+      source.connect(ctx.destination);
       analyserRef.current = analyser;
 
       setMicTesting(true);
@@ -578,6 +582,8 @@ function VoiceVideoSettings() {
   const stopMicTest = () => {
     micStreamRef.current?.getTracks().forEach((t) => t.stop());
     micStreamRef.current = null;
+    audioCtxRef.current?.close().catch(() => {});
+    audioCtxRef.current = null;
     cancelAnimationFrame(animFrameRef.current);
     analyserRef.current = null;
     setMicTesting(false);

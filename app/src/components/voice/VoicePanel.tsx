@@ -21,10 +21,10 @@ export function VoicePanel({ compact }: { compact?: boolean } = {}) {
   const voiceLeave = useServerStore((s) => s.voiceLeave);
   const channels = useServerStore((s) => s.channels);
 
-  // On Tauri/Linux, we create a virtual PipeWire sink and set its monitor as the
-  // default audio source BEFORE LiveKit connects. This way getUserMedia({ audio: true })
-  // picks up the monitor automatically. The user routes their physical mic to the
-  // virtual sink in qpwgraph / Helvum / pavucontrol.
+  // On Tauri/Linux, create a virtual PipeWire sink ("Drocsid Voice Sound In") for
+  // optional advanced routing in qpwgraph. If the user selected a specific mic in
+  // settings (including the virtual sink's monitor), set it as the default source
+  // before LiveKit connects. Otherwise leave the default alone so the real mic works.
   const [sinkReady, setSinkReady] = useState(!isTauri());
   const savedDefaultSourceRef = useRef<string | null>(null);
 
@@ -40,11 +40,14 @@ export function VoicePanel({ compact }: { compact?: boolean } = {}) {
         // Create the virtual null-sink (appears in qpwgraph as "Drocsid Voice Sound In")
         await createVoiceInputSink();
 
-        // Brief delay for PipeWire to register the monitor source
-        await new Promise((r) => setTimeout(r, 300));
-
-        // Set the monitor as default so getUserMedia picks it up
-        await setDefaultAudioSourceTauri('drocsid_voice_in.monitor');
+        // If user selected a specific mic in settings, set it as default source.
+        // This works for both physical mics and drocsid_voice_in.monitor.
+        // If nothing selected, leave the default unchanged (real mic works automatically).
+        const selectedMic = localStorage.getItem('drocsid_mic');
+        if (selectedMic) {
+          await new Promise((r) => setTimeout(r, 300));
+          await setDefaultAudioSourceTauri(selectedMic);
+        }
       } catch (e) {
         console.warn('[VoicePanel] Tauri audio sink setup failed:', e);
       }
@@ -53,8 +56,18 @@ export function VoicePanel({ compact }: { compact?: boolean } = {}) {
 
     setup();
 
+    // Re-run when user changes mic in settings
+    const handleMicChanged = () => {
+      const mic = localStorage.getItem('drocsid_mic');
+      if (mic) {
+        setDefaultAudioSourceTauri(mic).catch(() => {});
+      }
+    };
+    window.addEventListener('drocsid-mic-changed', handleMicChanged);
+
     return () => {
       cancelled = true;
+      window.removeEventListener('drocsid-mic-changed', handleMicChanged);
       // Restore previous default source and clean up the virtual sink
       const prev = savedDefaultSourceRef.current;
       if (prev) {
