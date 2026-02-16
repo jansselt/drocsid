@@ -100,7 +100,9 @@ export function FriendList() {
             <div className="friend-section">
               {searchResults.map((u) => (
                 <div key={u.id} className="friend-row">
-                  <div className="friend-avatar">{u.username.slice(0, 1).toUpperCase()}</div>
+                  <div className="friend-avatar">
+                    {u.avatar_url ? <img src={u.avatar_url} alt="" /> : u.username.slice(0, 1).toUpperCase()}
+                  </div>
                   <div className="friend-info">
                     <span className="friend-name">{u.display_name || u.username}</span>
                     <span className="friend-status">{u.username}</span>
@@ -128,7 +130,9 @@ export function FriendList() {
           ) : (
             friends.map((rel) => (
               <div key={rel.target_id} className="friend-row">
-                <div className="friend-avatar">{rel.user.username.slice(0, 1).toUpperCase()}</div>
+                <div className="friend-avatar">
+                  {rel.user.avatar_url ? <img src={rel.user.avatar_url} alt="" /> : rel.user.username.slice(0, 1).toUpperCase()}
+                </div>
                 <div className="friend-info">
                   <span className="friend-name">{rel.user.display_name || rel.user.username}</span>
                   <span className="friend-status">{rel.user.status}</span>
@@ -157,7 +161,9 @@ export function FriendList() {
           ) : (
             pending.map((rel) => (
               <div key={rel.target_id} className="friend-row">
-                <div className="friend-avatar">{rel.user.username.slice(0, 1).toUpperCase()}</div>
+                <div className="friend-avatar">
+                  {rel.user.avatar_url ? <img src={rel.user.avatar_url} alt="" /> : rel.user.username.slice(0, 1).toUpperCase()}
+                </div>
                 <div className="friend-info">
                   <span className="friend-name">{rel.user.display_name || rel.user.username}</span>
                   <span className="friend-status">
@@ -188,7 +194,9 @@ export function FriendList() {
           ) : (
             blocked.map((rel) => (
               <div key={rel.target_id} className="friend-row">
-                <div className="friend-avatar">{rel.user.username.slice(0, 1).toUpperCase()}</div>
+                <div className="friend-avatar">
+                  {rel.user.avatar_url ? <img src={rel.user.avatar_url} alt="" /> : rel.user.username.slice(0, 1).toUpperCase()}
+                </div>
                 <div className="friend-info">
                   <span className="friend-name">{rel.user.display_name || rel.user.username}</span>
                 </div>
