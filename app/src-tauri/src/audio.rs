@@ -2,14 +2,8 @@ use serde::Serialize;
 use std::process::Command;
 use std::sync::Mutex;
 
-/// Handle for the virtual null-sink, stored for cleanup on disconnect / app exit.
-/// PwNode = PipeWire node ID (from pw-cli), PaModule = PulseAudio module ID (from pactl).
-enum VoiceSinkHandle {
-    PwNode(u32),
-    PaModule(u32),
-}
-
-static VOICE_INPUT_HANDLE: Mutex<Option<VoiceSinkHandle>> = Mutex::new(None);
+/// PipeWire node ID of the virtual null-sink, stored for cleanup on disconnect / app exit.
+static VOICE_INPUT_NODE_ID: Mutex<Option<u32>> = Mutex::new(None);
 
 // ---------------------------------------------------------------------------
 // PipeWire helpers (pw-dump / pw-link)
@@ -272,19 +266,9 @@ pub async fn get_default_audio_sink() -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-/// Route the app's playback streams to the given sink.
-/// Primary: PipeWire-native (pw-dump + pw-link). Fallback: pactl move-sink-input.
+/// Route the app's playback streams to the given sink via pw-dump + pw-link.
 #[tauri::command]
 pub async fn set_audio_sink(sink_name: String) -> Result<u32, String> {
-    match set_audio_sink_pw(&sink_name) {
-        Ok(moved) if moved > 0 => return Ok(moved),
-        Ok(_) => {}
-        Err(e) => eprintln!("[audio] PipeWire sink routing failed, trying pactl: {e}"),
-    }
-    set_audio_sink_pactl(&sink_name)
-}
-
-fn set_audio_sink_pw(sink_name: &str) -> Result<u32, String> {
     let objects = pw_dump_all()?;
     let our_pid = std::process::id();
     let child_pids = get_descendant_pids(our_pid);
@@ -295,7 +279,7 @@ fn set_audio_sink_pw(sink_name: &str) -> Result<u32, String> {
         return Ok(0);
     }
 
-    let target_node_id = find_node_by_name(&objects, sink_name)
+    let target_node_id = find_node_by_name(&objects, &sink_name)
         .ok_or_else(|| format!("PipeWire sink node not found: {sink_name}"))?;
     let sink_input_ports = find_node_ports(&objects, target_node_id, "input");
     if sink_input_ports.is_empty() {
@@ -322,61 +306,6 @@ fn set_audio_sink_pw(sink_name: &str) -> Result<u32, String> {
             pw_create_link(out_port, in_port)?;
         }
         moved += 1;
-    }
-
-    Ok(moved)
-}
-
-fn set_audio_sink_pactl(sink_name: &str) -> Result<u32, String> {
-    let our_pid = std::process::id();
-    let child_pids = get_descendant_pids(our_pid);
-
-    let output = Command::new("pactl")
-        .args(["-f", "json", "list", "sink-inputs"])
-        .output()
-        .map_err(|e| format!("Failed to run pactl: {e}"))?;
-
-    if !output.status.success() {
-        return Err("pactl list sink-inputs failed".into());
-    }
-
-    let json_str = String::from_utf8_lossy(&output.stdout);
-    let inputs: Vec<serde_json::Value> =
-        serde_json::from_str(&json_str).map_err(|e| format!("Parse error: {e}"))?;
-
-    let mut moved = 0u32;
-
-    for input in &inputs {
-        let props = input.get("properties").unwrap_or(input);
-        let pid_str = props
-            .get("application.process.id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-
-        if let Ok(pid) = pid_str.parse::<u32>() {
-            if pid == our_pid || child_pids.contains(&pid) {
-                let input_index = input
-                    .get("index")
-                    .and_then(|v| v.as_u64())
-                    .ok_or("Missing sink-input index")?;
-
-                let status = Command::new("pactl")
-                    .args([
-                        "move-sink-input",
-                        &input_index.to_string(),
-                        sink_name,
-                    ])
-                    .status()
-                    .map_err(|e| format!("pactl move-sink-input failed: {e}"))?;
-
-                if !status.success() {
-                    return Err(format!(
-                        "Failed to move sink-input {input_index} to {sink_name}"
-                    ));
-                }
-                moved += 1;
-            }
-        }
     }
 
     Ok(moved)
@@ -453,19 +382,9 @@ pub async fn get_default_audio_source() -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-/// Route the app's capture streams to the given source.
-/// Primary: PipeWire-native (pw-dump + pw-link). Fallback: pactl move-source-output.
+/// Route the app's capture streams to the given source via pw-dump + pw-link.
 #[tauri::command]
 pub async fn set_audio_source(source_name: String) -> Result<u32, String> {
-    match set_audio_source_pw(&source_name) {
-        Ok(moved) if moved > 0 => return Ok(moved),
-        Ok(_) => {}
-        Err(e) => eprintln!("[audio] PipeWire source routing failed, trying pactl: {e}"),
-    }
-    set_audio_source_pactl(&source_name)
-}
-
-fn set_audio_source_pw(source_name: &str) -> Result<u32, String> {
     let objects = pw_dump_all()?;
     let our_pid = std::process::id();
     let child_pids = get_descendant_pids(our_pid);
@@ -479,10 +398,10 @@ fn set_audio_source_pw(source_name: &str) -> Result<u32, String> {
     // Resolve the target source:
     //   "foo.monitor" → find Audio/Sink node "foo", use its output (monitor) ports
     //   "foo"         → find Audio/Source node "foo", use its output (capture) ports
-    let (target_name, _is_monitor) = if source_name.ends_with(".monitor") {
-        (&source_name[..source_name.len() - ".monitor".len()], true)
+    let target_name = if source_name.ends_with(".monitor") {
+        &source_name[..source_name.len() - ".monitor".len()]
     } else {
-        (source_name, false)
+        &source_name
     };
 
     let target_node_id = find_node_by_name(&objects, target_name)
@@ -521,61 +440,6 @@ fn set_audio_source_pw(source_name: &str) -> Result<u32, String> {
     Ok(moved)
 }
 
-fn set_audio_source_pactl(source_name: &str) -> Result<u32, String> {
-    let our_pid = std::process::id();
-    let child_pids = get_descendant_pids(our_pid);
-
-    let output = Command::new("pactl")
-        .args(["-f", "json", "list", "source-outputs"])
-        .output()
-        .map_err(|e| format!("Failed to run pactl: {e}"))?;
-
-    if !output.status.success() {
-        return Err("pactl list source-outputs failed".into());
-    }
-
-    let json_str = String::from_utf8_lossy(&output.stdout);
-    let outputs: Vec<serde_json::Value> =
-        serde_json::from_str(&json_str).map_err(|e| format!("Parse error: {e}"))?;
-
-    let mut moved = 0u32;
-
-    for entry in &outputs {
-        let props = entry.get("properties").unwrap_or(entry);
-        let pid_str = props
-            .get("application.process.id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-
-        if let Ok(pid) = pid_str.parse::<u32>() {
-            if pid == our_pid || child_pids.contains(&pid) {
-                let output_index = entry
-                    .get("index")
-                    .and_then(|v| v.as_u64())
-                    .ok_or("Missing source-output index")?;
-
-                let status = Command::new("pactl")
-                    .args([
-                        "move-source-output",
-                        &output_index.to_string(),
-                        source_name,
-                    ])
-                    .status()
-                    .map_err(|e| format!("pactl move-source-output failed: {e}"))?;
-
-                if !status.success() {
-                    return Err(format!(
-                        "Failed to move source-output {output_index} to {source_name}"
-                    ));
-                }
-                moved += 1;
-            }
-        }
-    }
-
-    Ok(moved)
-}
-
 // ---------------------------------------------------------------------------
 // Virtual PipeWire sink for mic input routing
 // ---------------------------------------------------------------------------
@@ -607,16 +471,9 @@ pub async fn create_voice_input_sink() -> Result<(), String> {
         }
     }
 
-    // Try PipeWire-native creation first (proper naming in qpwgraph)
-    if let Ok(()) = create_sink_pw_cli() {
-        return Ok(());
-    }
-
-    // Fallback to PulseAudio module
-    create_sink_pactl()
+    create_sink_pw_cli()
 }
 
-/// Create virtual sink via pw-cli for proper PipeWire node naming.
 fn create_sink_pw_cli() -> Result<(), String> {
     let props = format!(
         "{{ factory.name = support.null-audio-sink \
@@ -649,78 +506,24 @@ fn create_sink_pw_cli() -> Result<(), String> {
         .and_then(|s| s.trim().parse::<u32>().ok())
         .ok_or("Failed to parse node ID from pw-cli output")?;
 
-    *VOICE_INPUT_HANDLE.lock().unwrap() = Some(VoiceSinkHandle::PwNode(node_id));
+    *VOICE_INPUT_NODE_ID.lock().unwrap() = Some(node_id);
     Ok(())
 }
 
-/// Fallback: create virtual sink via pactl module-null-sink.
-fn create_sink_pactl() -> Result<(), String> {
-    // Use sh -c to handle property string quoting correctly
-    let cmd = format!(
-        "pactl load-module module-null-sink \
-         sink_name={VOICE_INPUT_SINK} \
-         rate=48000 channels=2 \
-         channel_map=front-left,front-right \
-         'sink_properties=device.description=\"Drocsid Voice Sound In\"'"
-    );
-
-    let output = Command::new("sh")
-        .args(["-c", &cmd])
-        .output()
-        .map_err(|e| format!("pactl: {e}"))?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "pactl load-module failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-
-    let module_id: u32 = String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse()
-        .map_err(|e| format!("Invalid module ID: {e}"))?;
-
-    *VOICE_INPUT_HANDLE.lock().unwrap() = Some(VoiceSinkHandle::PaModule(module_id));
-    Ok(())
-}
-
-/// Set the PipeWire default audio source.
-/// Primary: wpctl set-default (PipeWire-native). Fallback: pactl set-default-source.
+/// Set the PipeWire default audio source via wpctl.
 #[tauri::command]
 pub async fn set_default_audio_source(source_name: String) -> Result<(), String> {
-    // Try wpctl (PipeWire-native) first
-    if let Ok(()) = set_default_source_wpctl(&source_name) {
-        return Ok(());
-    }
-
-    // Fallback to pactl
-    let status = Command::new("pactl")
-        .args(["set-default-source", &source_name])
-        .status()
-        .map_err(|e| format!("pactl set-default-source failed: {e}"))?;
-
-    if !status.success() {
-        return Err(format!(
-            "Failed to set default source to {source_name}"
-        ));
-    }
-
-    Ok(())
-}
-
-fn set_default_source_wpctl(source_name: &str) -> Result<(), String> {
     let objects = pw_dump_all()?;
 
     // Look for the node by exact name. For regular sources this finds the
-    // source node directly. For pactl-created monitors (e.g. "foo.monitor")
-    // this finds the monitor source node that pactl auto-creates.
+    // source node directly. For monitors (e.g. "foo.monitor") this finds
+    // the monitor source node.
     //
     // IMPORTANT: Do NOT strip ".monitor" and use the sink node ID — that would
     // call `wpctl set-default <sink_id>` which sets the default OUTPUT (speaker),
     // not the default INPUT source.
-    let node_id = find_node_by_name(&objects, source_name)
-        .ok_or_else(|| format!("wpctl: node not found: {source_name}"))?;
+    let node_id = find_node_by_name(&objects, &source_name)
+        .ok_or_else(|| format!("PipeWire node not found: {source_name}"))?;
 
     let status = Command::new("wpctl")
         .args(["set-default", &node_id.to_string()])
@@ -789,19 +592,10 @@ pub async fn destroy_voice_input_sink() -> Result<(), String> {
 }
 
 fn destroy_voice_input_sink_inner() {
-    if let Some(handle) = VOICE_INPUT_HANDLE.lock().unwrap().take() {
-        match handle {
-            VoiceSinkHandle::PwNode(id) => {
-                let _ = Command::new("pw-cli")
-                    .args(["destroy", &id.to_string()])
-                    .status();
-            }
-            VoiceSinkHandle::PaModule(id) => {
-                let _ = Command::new("pactl")
-                    .args(["unload-module", &id.to_string()])
-                    .status();
-            }
-        }
+    if let Some(node_id) = VOICE_INPUT_NODE_ID.lock().unwrap().take() {
+        let _ = Command::new("pw-cli")
+            .args(["destroy", &node_id.to_string()])
+            .status();
     }
 }
 
