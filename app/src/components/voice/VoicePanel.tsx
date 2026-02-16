@@ -8,7 +8,7 @@ import {
   useTracks,
   VideoTrack,
 } from '@livekit/components-react';
-import { Track, RemoteParticipant } from 'livekit-client';
+import { Track, RoomEvent, RemoteParticipant, type Participant } from 'livekit-client';
 import { useServerStore } from '../../stores/serverStore';
 import { isTauri } from '../../api/instance';
 import { applyAudioOutputTauri, labelAudioStreamsTauri, createVoiceInputSink, destroyVoiceInputSink, getDefaultAudioSourceTauri, setDefaultAudioSourceTauri } from '../../utils/audioDevices';
@@ -135,6 +135,8 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
   const voiceSelfDeaf = useServerStore((s) => s.voiceSelfDeaf);
   const users = useServerStore((s) => s.users);
   const setSpeakingUsers = useServerStore((s) => s.setSpeakingUsers);
+  const speakingUsers = useServerStore((s) => s.speakingUsers);
+  const room = useRoomContext();
 
   // Per-user volume control
   const [volumeMenu, setVolumeMenu] = useState<{ identity: string; x: number; y: number } | null>(null);
@@ -228,29 +230,121 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
     };
   }, [localParticipant, voiceToggleMute]);
 
-  // Sync speaking state to store so sidebar can show it
+  // Sync speaking state to store so sidebar can show it.
+  // Uses LiveKit's ActiveSpeakersChanged event instead of polling for instant response,
+  // plus a hold timer so the indicator doesn't flicker between syllables.
   const speakingRef = useRef<Set<string>>(new Set());
+  const holdTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const SPEAKING_HOLD_MS = 300;
+
+  const updateSpeakingStore = useCallback((speaking: Set<string>) => {
+    const prev = speakingRef.current;
+    if (speaking.size !== prev.size || [...speaking].some((id) => !prev.has(id)) || [...prev].some((id) => !speaking.has(id))) {
+      speakingRef.current = speaking;
+      setSpeakingUsers(speaking);
+    }
+  }, [setSpeakingUsers]);
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      const speaking = new Set<string>();
-      for (const p of participants) {
-        if (p.isSpeaking) speaking.add(p.identity);
+    if (!room) return;
+
+    const onActiveSpeakers = (speakers: Participant[]) => {
+      const nowSpeaking = new Set(speakers.map((s) => s.identity));
+      const next = new Set(speakingRef.current);
+
+      // Add new speakers immediately
+      for (const id of nowSpeaking) {
+        // Clear any pending removal timer
+        const timer = holdTimersRef.current.get(id);
+        if (timer) {
+          clearTimeout(timer);
+          holdTimersRef.current.delete(id);
+        }
+        next.add(id);
       }
-      // Only update if changed
-      const prev = speakingRef.current;
-      if (speaking.size !== prev.size || [...speaking].some((id) => !prev.has(id))) {
-        speakingRef.current = speaking;
-        setSpeakingUsers(speaking);
+
+      // For speakers that stopped, start a hold timer instead of removing instantly
+      for (const id of speakingRef.current) {
+        if (!nowSpeaking.has(id) && !holdTimersRef.current.has(id)) {
+          holdTimersRef.current.set(id, setTimeout(() => {
+            holdTimersRef.current.delete(id);
+            const updated = new Set(speakingRef.current);
+            updated.delete(id);
+            updateSpeakingStore(updated);
+          }, SPEAKING_HOLD_MS));
+        }
       }
-    }, 100);
+
+      updateSpeakingStore(next);
+    };
+
+    room.on(RoomEvent.ActiveSpeakersChanged, onActiveSpeakers);
     return () => {
-      clearInterval(interval);
+      room.off(RoomEvent.ActiveSpeakersChanged, onActiveSpeakers);
+      // Clear all hold timers
+      for (const timer of holdTimersRef.current.values()) clearTimeout(timer);
+      holdTimersRef.current.clear();
       setSpeakingUsers(new Set());
     };
-  }, [participants, setSpeakingUsers]);
+  }, [room, setSpeakingUsers, updateSpeakingStore]);
+
+  // Local audio level monitoring for the local participant.
+  // LiveKit's server-side VAD has round-trip latency; this detects local speaking
+  // instantly using the same AnalyserNode approach as the mic test.
+  useEffect(() => {
+    if (!localParticipant) return;
+    const audioTrack = localParticipant.getTrackPublication(Track.Source.Microphone)?.track;
+    const mediaStream = audioTrack?.mediaStream;
+    if (!mediaStream) return;
+
+    const ctx = new AudioContext();
+    const source = ctx.createMediaStreamSource(mediaStream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 256;
+    source.connect(analyser);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    const LOCAL_SPEAK_THRESHOLD = 8; // average frequency bin value (0-255)
+    let localSpeaking = false;
+    let holdTimer: ReturnType<typeof setTimeout> | null = null;
+    let raf = 0;
+
+    const tick = () => {
+      analyser.getByteFrequencyData(data);
+      const avg = data.reduce((a, b) => a + b, 0) / data.length;
+      const nowSpeaking = avg > LOCAL_SPEAK_THRESHOLD;
+
+      if (nowSpeaking && !localSpeaking) {
+        localSpeaking = true;
+        if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+        const next = new Set(speakingRef.current);
+        next.add(localParticipant.identity);
+        updateSpeakingStore(next);
+      } else if (!nowSpeaking && localSpeaking) {
+        if (!holdTimer) {
+          holdTimer = setTimeout(() => {
+            localSpeaking = false;
+            holdTimer = null;
+            // Only remove if server VAD also says not speaking
+            if (!localParticipant.isSpeaking) {
+              const next = new Set(speakingRef.current);
+              next.delete(localParticipant.identity);
+              updateSpeakingStore(next);
+            }
+          }, SPEAKING_HOLD_MS);
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    tick();
+
+    return () => {
+      cancelAnimationFrame(raf);
+      if (holdTimer) clearTimeout(holdTimer);
+      ctx.close();
+    };
+  }, [localParticipant, localParticipant?.getTrackPublication(Track.Source.Microphone)?.track?.mediaStream, updateSpeakingStore]);
 
   // Apply saved audio output device selection
-  const room = useRoomContext();
   useEffect(() => {
     if (!room) return;
 
@@ -364,7 +458,7 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
       <div className="voice-participants">
         {participants.map((p) => {
           const user = users.get(p.identity);
-          const isSpeaking = p.isSpeaking;
+          const isSpeaking = speakingUsers.has(p.identity);
           const isLocal = p.identity === localParticipant?.identity;
           const customVolume = userVolumes[p.identity];
           return (

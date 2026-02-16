@@ -180,8 +180,8 @@ function tokenize(text: string): Token[] {
       continue;
     }
 
-    // Plain text: consume until next special char or @
-    match = remaining.match(/^[^*`|\n@https:]+/);
+    // Plain text: consume until next special char, @ or <
+    match = remaining.match(/^[^*`|\n@<https:]+/);
     if (match) {
       tokens.push({ type: 'text', text: match[0] });
       remaining = remaining.slice(match[0].length);
