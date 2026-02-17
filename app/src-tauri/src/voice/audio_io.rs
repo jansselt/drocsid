@@ -1,10 +1,9 @@
-use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Arc;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rtrb::{Consumer, Producer};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tauri::Emitter;
 
 #[derive(Serialize, Clone, Debug)]
@@ -14,157 +13,273 @@ pub struct AudioDevice {
     pub is_default: bool,
 }
 
+// ===========================================================================
+// Platform-specific device enumeration & targeting
+// ===========================================================================
+
 // ---------------------------------------------------------------------------
-// PipeWire-native device enumeration via pactl
+// Linux: PipeWire-native device enumeration via pactl
 // ---------------------------------------------------------------------------
+#[cfg(target_os = "linux")]
+mod platform {
+    use super::*;
+    use serde::Deserialize;
+    use std::process::Command;
+    use std::sync::Mutex as StdMutex;
 
-/// Minimal struct for deserializing `pactl --format=json list sources/sinks`.
-#[derive(Deserialize)]
-struct PaDevice {
-    name: String,
-    description: String,
-}
-
-fn pactl_get_default(kind: &str) -> Option<String> {
-    let output = Command::new("pactl")
-        .arg(format!("get-default-{kind}"))
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let s = String::from_utf8(output.stdout).ok()?;
-    Some(s.trim().to_string())
-}
-
-pub fn list_input_devices() -> Result<Vec<AudioDevice>, String> {
-    let output = Command::new("pactl")
-        .args(["--format=json", "list", "sources"])
-        .output()
-        .map_err(|e| format!("Failed to run pactl: {e}"))?;
-
-    if !output.status.success() {
-        return Err("pactl list sources failed".into());
+    /// Minimal struct for deserializing `pactl --format=json list sources/sinks`.
+    #[derive(Deserialize)]
+    struct PaDevice {
+        name: String,
+        description: String,
     }
 
-    let sources: Vec<PaDevice> = serde_json::from_slice(&output.stdout)
-        .map_err(|e| format!("Failed to parse pactl output: {e}"))?;
+    fn pactl_get_default(kind: &str) -> Option<String> {
+        let output = Command::new("pactl")
+            .arg(format!("get-default-{kind}"))
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let s = String::from_utf8(output.stdout).ok()?;
+        Some(s.trim().to_string())
+    }
 
-    let default_name = pactl_get_default("source");
+    pub fn list_input_devices() -> Result<Vec<AudioDevice>, String> {
+        let output = Command::new("pactl")
+            .args(["--format=json", "list", "sources"])
+            .output()
+            .map_err(|e| format!("Failed to run pactl: {e}"))?;
 
-    Ok(sources
-        .into_iter()
-        // Filter out monitor sources (they capture output audio, not mic input)
-        .filter(|s| !s.name.contains(".monitor"))
-        .map(|s| {
-            let is_default = default_name.as_deref() == Some(&s.name);
-            AudioDevice {
-                id: s.name,
-                name: s.description,
-                is_default,
+        if !output.status.success() {
+            return Err("pactl list sources failed".into());
+        }
+
+        let sources: Vec<PaDevice> = serde_json::from_slice(&output.stdout)
+            .map_err(|e| format!("Failed to parse pactl output: {e}"))?;
+
+        let default_name = pactl_get_default("source");
+
+        Ok(sources
+            .into_iter()
+            // Filter out monitor sources (they capture output audio, not mic input)
+            .filter(|s| !s.name.contains(".monitor"))
+            .map(|s| {
+                let is_default = default_name.as_deref() == Some(&s.name);
+                AudioDevice {
+                    id: s.name,
+                    name: s.description,
+                    is_default,
+                }
+            })
+            .collect())
+    }
+
+    pub fn list_output_devices() -> Result<Vec<AudioDevice>, String> {
+        let output = Command::new("pactl")
+            .args(["--format=json", "list", "sinks"])
+            .output()
+            .map_err(|e| format!("Failed to run pactl: {e}"))?;
+
+        if !output.status.success() {
+            return Err("pactl list sinks failed".into());
+        }
+
+        let sinks: Vec<PaDevice> = serde_json::from_slice(&output.stdout)
+            .map_err(|e| format!("Failed to parse pactl output: {e}"))?;
+
+        let default_name = pactl_get_default("sink");
+
+        Ok(sinks
+            .into_iter()
+            .map(|s| {
+                let is_default = default_name.as_deref() == Some(&s.name);
+                AudioDevice {
+                    id: s.name,
+                    name: s.description,
+                    is_default,
+                }
+            })
+            .collect())
+    }
+
+    // PIPEWIRE_NODE-based device targeting for cpal.
+    //
+    // Global lock to serialize cpal device opens with PIPEWIRE_NODE targeting.
+    // PIPEWIRE_NODE is a process-global env var read by PipeWire's ALSA plugin
+    // at PCM open time, so concurrent opens must be serialized.
+    // The env var must remain set during the stream build call (not just device
+    // enumeration), because PipeWire reads it when the ALSA PCM is opened.
+    static PW_NODE_LOCK: StdMutex<()> = StdMutex::new(());
+
+    /// Resolve input device and execute closure with PIPEWIRE_NODE set.
+    /// The closure receives the cpal device while the env var is still active,
+    /// so the stream build will route to the correct PipeWire node.
+    pub fn with_input_device<F, T>(device_id: Option<&str>, f: F) -> Result<T, String>
+    where
+        F: FnOnce(cpal::Device) -> Result<T, String>,
+    {
+        let _lock = PW_NODE_LOCK.lock().map_err(|e| e.to_string())?;
+
+        if let Some(name) = device_id {
+            std::env::set_var("PIPEWIRE_NODE", name);
+        }
+
+        let host = cpal::default_host();
+        let device = host
+            .default_input_device()
+            .ok_or_else(|| "No audio input device available".to_string())?;
+
+        let result = f(device);
+
+        std::env::remove_var("PIPEWIRE_NODE");
+
+        result
+    }
+
+    /// Resolve output device and execute closure with PIPEWIRE_NODE set.
+    pub fn with_output_device<F, T>(device_id: Option<&str>, f: F) -> Result<T, String>
+    where
+        F: FnOnce(cpal::Device) -> Result<T, String>,
+    {
+        let _lock = PW_NODE_LOCK.lock().map_err(|e| e.to_string())?;
+
+        if let Some(name) = device_id {
+            std::env::set_var("PIPEWIRE_NODE", name);
+        }
+
+        let host = cpal::default_host();
+        let device = host
+            .default_output_device()
+            .ok_or_else(|| "No audio output device available".to_string())?;
+
+        let result = f(device);
+
+        std::env::remove_var("PIPEWIRE_NODE");
+
+        result
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Non-Linux (Windows, macOS): cpal-native device enumeration
+// ---------------------------------------------------------------------------
+#[cfg(not(target_os = "linux"))]
+mod platform {
+    use super::*;
+
+    pub fn list_input_devices() -> Result<Vec<AudioDevice>, String> {
+        let host = cpal::default_host();
+        let default_name = host
+            .default_input_device()
+            .and_then(|d| d.name().ok());
+
+        let devices: Vec<AudioDevice> = host
+            .input_devices()
+            .map_err(|e| format!("Failed to enumerate input devices: {e}"))?
+            .filter_map(|device| {
+                let name = device.name().ok()?;
+                let is_default = default_name.as_deref() == Some(&name);
+                Some(AudioDevice {
+                    id: name.clone(),
+                    name,
+                    is_default,
+                })
+            })
+            .collect();
+
+        Ok(devices)
+    }
+
+    pub fn list_output_devices() -> Result<Vec<AudioDevice>, String> {
+        let host = cpal::default_host();
+        let default_name = host
+            .default_output_device()
+            .and_then(|d| d.name().ok());
+
+        let devices: Vec<AudioDevice> = host
+            .output_devices()
+            .map_err(|e| format!("Failed to enumerate output devices: {e}"))?
+            .filter_map(|device| {
+                let name = device.name().ok()?;
+                let is_default = default_name.as_deref() == Some(&name);
+                Some(AudioDevice {
+                    id: name.clone(),
+                    name,
+                    is_default,
+                })
+            })
+            .collect();
+
+        Ok(devices)
+    }
+
+    fn resolve_input_device(device_id: Option<&str>) -> Result<cpal::Device, String> {
+        let host = cpal::default_host();
+        if let Some(id) = device_id {
+            for device in host.input_devices().map_err(|e| e.to_string())? {
+                if let Ok(name) = device.name() {
+                    if name == id {
+                        return Ok(device);
+                    }
+                }
             }
-        })
-        .collect())
-}
-
-pub fn list_output_devices() -> Result<Vec<AudioDevice>, String> {
-    let output = Command::new("pactl")
-        .args(["--format=json", "list", "sinks"])
-        .output()
-        .map_err(|e| format!("Failed to run pactl: {e}"))?;
-
-    if !output.status.success() {
-        return Err("pactl list sinks failed".into());
+            return Err(format!("Input device not found: {id}"));
+        }
+        host.default_input_device()
+            .ok_or_else(|| "No default input device available".to_string())
     }
 
-    let sinks: Vec<PaDevice> = serde_json::from_slice(&output.stdout)
-        .map_err(|e| format!("Failed to parse pactl output: {e}"))?;
-
-    let default_name = pactl_get_default("sink");
-
-    Ok(sinks
-        .into_iter()
-        .map(|s| {
-            let is_default = default_name.as_deref() == Some(&s.name);
-            AudioDevice {
-                id: s.name,
-                name: s.description,
-                is_default,
+    fn resolve_output_device(device_id: Option<&str>) -> Result<cpal::Device, String> {
+        let host = cpal::default_host();
+        if let Some(id) = device_id {
+            for device in host.output_devices().map_err(|e| e.to_string())? {
+                if let Ok(name) = device.name() {
+                    if name == id {
+                        return Ok(device);
+                    }
+                }
             }
-        })
-        .collect())
-}
-
-// ---------------------------------------------------------------------------
-// PIPEWIRE_NODE-based device targeting for cpal
-// ---------------------------------------------------------------------------
-
-/// Global lock to serialize cpal device opens with PIPEWIRE_NODE targeting.
-/// PIPEWIRE_NODE is a process-global env var read by PipeWire's ALSA plugin
-/// at PCM open time, so concurrent opens must be serialized.
-static PW_NODE_LOCK: StdMutex<()> = StdMutex::new(());
-
-/// Set PIPEWIRE_NODE, open a cpal stream, then clear it.
-/// The env var tells PipeWire's ALSA compat layer to route the ALSA PCM
-/// to the specified PipeWire node, without changing the system default.
-fn with_pipewire_node<F, T>(node_name: Option<&str>, f: F) -> Result<T, String>
-where
-    F: FnOnce(cpal::Device) -> Result<T, String>,
-{
-    let _lock = PW_NODE_LOCK.lock().map_err(|e| e.to_string())?;
-
-    if let Some(name) = node_name {
-        std::env::set_var("PIPEWIRE_NODE", name);
+            return Err(format!("Output device not found: {id}"));
+        }
+        host.default_output_device()
+            .ok_or_else(|| "No default output device available".to_string())
     }
 
-    let host = cpal::default_host();
-
-    // We always open the ALSA "default" device — PIPEWIRE_NODE controls
-    // which PipeWire node it actually routes to.
-    let device = host
-        .default_input_device()
-        .ok_or_else(|| "No audio device available".to_string())?;
-
-    let result = f(device);
-
-    std::env::remove_var("PIPEWIRE_NODE");
-
-    result
-}
-
-fn with_pipewire_node_output<F, T>(node_name: Option<&str>, f: F) -> Result<T, String>
-where
-    F: FnOnce(cpal::Device) -> Result<T, String>,
-{
-    let _lock = PW_NODE_LOCK.lock().map_err(|e| e.to_string())?;
-
-    if let Some(name) = node_name {
-        std::env::set_var("PIPEWIRE_NODE", name);
+    /// Resolve input device by name and execute closure.
+    pub fn with_input_device<F, T>(device_id: Option<&str>, f: F) -> Result<T, String>
+    where
+        F: FnOnce(cpal::Device) -> Result<T, String>,
+    {
+        let device = resolve_input_device(device_id)?;
+        f(device)
     }
 
-    let host = cpal::default_host();
-    let device = host
-        .default_output_device()
-        .ok_or_else(|| "No audio device available".to_string())?;
-
-    let result = f(device);
-
-    std::env::remove_var("PIPEWIRE_NODE");
-
-    result
+    /// Resolve output device by name and execute closure.
+    pub fn with_output_device<F, T>(device_id: Option<&str>, f: F) -> Result<T, String>
+    where
+        F: FnOnce(cpal::Device) -> Result<T, String>,
+    {
+        let device = resolve_output_device(device_id)?;
+        f(device)
+    }
 }
 
-// ---------------------------------------------------------------------------
-// Audio stream builders
-// ---------------------------------------------------------------------------
+// Re-export platform implementations
+pub use platform::{list_input_devices, list_output_devices};
+use platform::{with_input_device, with_output_device};
+
+// ===========================================================================
+// Audio stream builders (cross-platform)
+// ===========================================================================
 
 /// Build a cpal input stream (mono, 48 kHz) that pushes PCM samples into an rtrb ring buffer.
-/// `device_id` is a PipeWire node name (from pactl), routed via PIPEWIRE_NODE.
 pub fn build_input_stream(
     device_id: Option<&str>,
     mut producer: Producer<i16>,
 ) -> Result<cpal::Stream, String> {
-    with_pipewire_node(device_id, |device| {
+    with_input_device(device_id, |device| {
         let config = cpal::StreamConfig {
             channels: 1,
             sample_rate: 48000,
@@ -193,12 +308,11 @@ pub fn build_input_stream(
 }
 
 /// Build a cpal output stream (stereo, 48 kHz) that pops mixed PCM from an rtrb ring buffer.
-/// `device_id` is a PipeWire node name (from pactl), routed via PIPEWIRE_NODE.
 pub fn build_output_stream(
     device_id: Option<&str>,
     mut consumer: Consumer<i16>,
 ) -> Result<cpal::Stream, String> {
-    with_pipewire_node_output(device_id, |device| {
+    with_output_device(device_id, |device| {
         let config = cpal::StreamConfig {
             channels: 2,
             sample_rate: 48000,
@@ -225,9 +339,9 @@ pub fn build_output_stream(
     })
 }
 
-// ---------------------------------------------------------------------------
-// Mic level test
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// Mic level test (cross-platform)
+// ===========================================================================
 
 /// State for a running mic level test.
 /// Holds both cpal streams (input + loopback output) and a stop flag.
@@ -260,7 +374,7 @@ impl MicTest {
         const CHUNK: u32 = 2400;
 
         // Input stream: capture mic → ring buffer + level meter
-        let input_stream = with_pipewire_node(Some(mic_device_id), |device| {
+        let input_stream = with_input_device(Some(mic_device_id), |device| {
             let config = cpal::StreamConfig {
                 channels: 1,
                 sample_rate: 48000,
@@ -303,7 +417,7 @@ impl MicTest {
         })?;
 
         // Output stream: ring buffer → speaker (mono loopback played as stereo)
-        let output_stream = with_pipewire_node_output(Some(speaker_device_id), |device| {
+        let output_stream = with_output_device(Some(speaker_device_id), |device| {
             let config = cpal::StreamConfig {
                 channels: 2,
                 sample_rate: 48000,

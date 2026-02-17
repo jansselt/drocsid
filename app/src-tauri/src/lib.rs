@@ -1,6 +1,5 @@
 #[cfg(target_os = "linux")]
 mod audio;
-#[cfg(target_os = "linux")]
 mod voice;
 
 use tauri::{
@@ -70,30 +69,19 @@ pub fn run() {
             audio::get_default_audio_sink,
             #[cfg(target_os = "linux")]
             audio::label_audio_streams,
-            #[cfg(target_os = "linux")]
             voice::voice_connect,
-            #[cfg(target_os = "linux")]
             voice::voice_disconnect,
-            #[cfg(target_os = "linux")]
             voice::voice_set_mute,
-            #[cfg(target_os = "linux")]
             voice::voice_set_deaf,
-            #[cfg(target_os = "linux")]
             voice::voice_set_user_volume,
-            #[cfg(target_os = "linux")]
             voice::voice_list_input_devices,
-            #[cfg(target_os = "linux")]
             voice::voice_list_output_devices,
-            #[cfg(target_os = "linux")]
             voice::voice_mic_test_start,
-            #[cfg(target_os = "linux")]
             voice::voice_mic_test_stop,
         ])
         .setup(|app| {
-            // Register voice managed state (Linux only — uses native LiveKit + cpal)
-            #[cfg(target_os = "linux")]
+            // Register voice managed state (native LiveKit + cpal)
             app.manage(voice::VoiceState::new());
-            #[cfg(target_os = "linux")]
             app.manage(voice::MicTestState::new());
 
             // Open devtools in debug builds
