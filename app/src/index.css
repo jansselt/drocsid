@@ -21,6 +21,8 @@
   /* Typography */
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", "SF Mono", monospace;
+  --font-body: var(--font-sans);
+  --text-glow: none;
 }
 
 * {
@@ -35,10 +37,11 @@ html, body, #root {
 }
 
 body {
-  font-family: var(--font-sans);
+  font-family: var(--font-body);
   font-size: 16px;
   line-height: 1.5;
   color: var(--text-primary);
+  text-shadow: var(--text-glow);
   background: var(--bg-base);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;

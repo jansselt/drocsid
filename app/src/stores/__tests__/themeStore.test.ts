@@ -33,6 +33,17 @@ describe('Theme Store', () => {
     expect(root.style.getPropertyValue('--danger')).toBeTruthy();
   });
 
+  it('should set extended properties for terminal theme and clear them on switch', () => {
+    const root = document.documentElement;
+    applyThemeToDOM('terminal');
+    expect(root.style.getPropertyValue('--font-body')).toBeTruthy();
+    expect(root.style.getPropertyValue('--text-glow')).toBeTruthy();
+
+    applyThemeToDOM('dark');
+    expect(root.style.getPropertyValue('--font-body')).toBeFalsy();
+    expect(root.style.getPropertyValue('--text-glow')).toBeFalsy();
+  });
+
   it('every theme should set all required CSS variables', () => {
     const requiredVars = [
       '--bg-darkest', '--bg-base', '--bg-primary', '--bg-secondary',

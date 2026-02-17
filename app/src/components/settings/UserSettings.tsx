@@ -43,7 +43,7 @@ const themeSwatches: Record<ThemeName, { bg: string; accent: string; text: strin
   nord:              { bg: '#2e3440', accent: '#88c0d0', text: '#d8dee9' },
   catppuccin:        { bg: '#1e1e2e', accent: '#cba6f7', text: '#cdd6f4' },
   'tokyo-night':     { bg: '#1a1b26', accent: '#7aa2f7', text: '#c0caf5' },
-  terminal:          { bg: '#0d0d0d', accent: '#00ff00', text: '#00ff00' },
+  terminal:          { bg: '#010201', accent: '#00ff41', text: '#00ff41' },
 };
 
 export function UserSettings({ onClose }: UserSettingsProps) {

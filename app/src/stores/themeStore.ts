@@ -19,6 +19,8 @@ interface ThemeColors {
   '--accent': string;
   '--accent-hover': string;
   '--danger': string;
+  '--font-body'?: string;
+  '--text-glow'?: string;
 }
 
 const themes: Record<ThemeName, ThemeColors> = {
@@ -231,22 +233,26 @@ const themes: Record<ThemeName, ThemeColors> = {
     '--danger': '#f7768e',
   },
   terminal: {
-    '--bg-darkest': '#0a0a0a',
-    '--bg-base': '#0d0d0d',
-    '--bg-primary': '#141414',
-    '--bg-secondary': '#1c1c1c',
-    '--bg-tertiary': '#262626',
-    '--bg-hover': 'rgba(0, 255, 0, 0.04)',
-    '--bg-active': 'rgba(0, 255, 0, 0.08)',
-    '--text-primary': '#00ff00',
-    '--text-secondary': '#00cc00',
-    '--text-muted': '#006600',
-    '--border': '#333333',
-    '--accent': '#00ff00',
-    '--accent-hover': '#33ff33',
-    '--danger': '#ff0000',
+    '--bg-darkest': '#000000',
+    '--bg-base': '#010201',
+    '--bg-primary': '#030303',
+    '--bg-secondary': '#080808',
+    '--bg-tertiary': '#0f0f0f',
+    '--bg-hover': 'rgba(0, 255, 65, 0.06)',
+    '--bg-active': 'rgba(0, 255, 65, 0.10)',
+    '--text-primary': '#00ff41',
+    '--text-secondary': '#00cc33',
+    '--text-muted': '#005518',
+    '--border': '#0a1f0a',
+    '--accent': '#00ff41',
+    '--accent-hover': '#50ff8a',
+    '--danger': '#ff1744',
+    '--font-body': '"JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code", monospace',
+    '--text-glow': '0 0 8px rgba(0, 255, 65, 0.4)',
   },
 };
+
+const extendedProps = ['--font-body', '--text-glow'] as const;
 
 export function applyThemeToDOM(name: ThemeName) {
   const colors = themes[name];
@@ -254,6 +260,12 @@ export function applyThemeToDOM(name: ThemeName) {
   const root = document.documentElement;
   for (const [prop, value] of Object.entries(colors)) {
     root.style.setProperty(prop, value);
+  }
+  // Clear extended properties not set by this theme
+  for (const prop of extendedProps) {
+    if (!(prop in colors)) {
+      root.style.removeProperty(prop);
+    }
   }
 }
 
