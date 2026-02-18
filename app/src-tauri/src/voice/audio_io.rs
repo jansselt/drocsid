@@ -123,7 +123,10 @@ mod platform {
         let _lock = PW_NODE_LOCK.lock().map_err(|e| e.to_string())?;
 
         if let Some(name) = device_id {
+            log::debug!("with_input_device: setting PIPEWIRE_NODE={name}");
             std::env::set_var("PIPEWIRE_NODE", name);
+        } else {
+            log::debug!("with_input_device: no device_id, using system default");
         }
 
         let host = cpal::default_host();
@@ -146,7 +149,10 @@ mod platform {
         let _lock = PW_NODE_LOCK.lock().map_err(|e| e.to_string())?;
 
         if let Some(name) = device_id {
+            log::debug!("with_output_device: setting PIPEWIRE_NODE={name}");
             std::env::set_var("PIPEWIRE_NODE", name);
+        } else {
+            log::debug!("with_output_device: no device_id, using system default");
         }
 
         let host = cpal::default_host();
@@ -181,9 +187,11 @@ mod platform {
 
     pub fn list_input_devices() -> Result<Vec<AudioDevice>, String> {
         let host = cpal::default_host();
+        log::debug!("list_input_devices: host={:?}", host.id());
         let default_id = host
             .default_input_device()
             .and_then(|d| d.id().ok());
+        log::debug!("list_input_devices: default_id={default_id:?}");
 
         let devices: Vec<AudioDevice> = host
             .input_devices()
@@ -192,6 +200,7 @@ mod platform {
                 let dev_id = device.id().ok()?;
                 let name = display_name(&device)?;
                 let is_default = default_id.as_ref() == Some(&dev_id);
+                log::debug!("  input device: id={dev_id} name={name:?} default={is_default}");
                 Some(AudioDevice {
                     id: dev_id.to_string(),
                     name,
@@ -205,9 +214,11 @@ mod platform {
 
     pub fn list_output_devices() -> Result<Vec<AudioDevice>, String> {
         let host = cpal::default_host();
+        log::debug!("list_output_devices: host={:?}", host.id());
         let default_id = host
             .default_output_device()
             .and_then(|d| d.id().ok());
+        log::debug!("list_output_devices: default_id={default_id:?}");
 
         let devices: Vec<AudioDevice> = host
             .output_devices()
@@ -216,6 +227,7 @@ mod platform {
                 let dev_id = device.id().ok()?;
                 let name = display_name(&device)?;
                 let is_default = default_id.as_ref() == Some(&dev_id);
+                log::debug!("  output device: id={dev_id} name={name:?} default={is_default}");
                 Some(AudioDevice {
                     id: dev_id.to_string(),
                     name,
@@ -228,12 +240,20 @@ mod platform {
     }
 
     fn resolve_device_by_id(device_id: &str) -> Result<cpal::Device, String> {
+        log::debug!("resolve_device_by_id: parsing '{device_id}'");
         let host = cpal::default_host();
         let id: cpal::DeviceId = device_id
             .parse()
-            .map_err(|e: cpal::DeviceIdError| format!("Invalid device ID '{device_id}': {e}"))?;
+            .map_err(|e: cpal::DeviceIdError| {
+                log::error!("resolve_device_by_id: parse failed for '{device_id}': {e}");
+                format!("Invalid device ID '{device_id}': {e}")
+            })?;
+        log::debug!("resolve_device_by_id: parsed OK, looking up in host");
         host.device_by_id(&id)
-            .ok_or_else(|| format!("Device not found: {device_id}"))
+            .ok_or_else(|| {
+                log::error!("resolve_device_by_id: device_by_id returned None for '{device_id}'");
+                format!("Device not found: {device_id}")
+            })
     }
 
     /// Resolve input device by stable ID and execute closure.
@@ -242,12 +262,18 @@ mod platform {
         F: FnOnce(cpal::Device) -> Result<T, String>,
     {
         let device = if let Some(id) = device_id {
+            log::info!("with_input_device: resolving device_id={id}");
             resolve_device_by_id(id)?
         } else {
+            log::info!("with_input_device: no device_id, using system default");
             cpal::default_host()
                 .default_input_device()
                 .ok_or_else(|| "No default input device available".to_string())?
         };
+        // Log which device we got
+        if let Ok(desc) = device.description() {
+            log::info!("with_input_device: resolved to '{}'", desc.name());
+        }
         f(device)
     }
 
@@ -257,12 +283,17 @@ mod platform {
         F: FnOnce(cpal::Device) -> Result<T, String>,
     {
         let device = if let Some(id) = device_id {
+            log::info!("with_output_device: resolving device_id={id}");
             resolve_device_by_id(id)?
         } else {
+            log::info!("with_output_device: no device_id, using system default");
             cpal::default_host()
                 .default_output_device()
                 .ok_or_else(|| "No default output device available".to_string())?
         };
+        if let Ok(desc) = device.description() {
+            log::info!("with_output_device: resolved to '{}'", desc.name());
+        }
         f(device)
     }
 }
@@ -280,12 +311,27 @@ pub fn build_input_stream(
     device_id: Option<&str>,
     mut producer: Producer<i16>,
 ) -> Result<cpal::Stream, String> {
+    log::info!("build_input_stream: device_id={device_id:?}");
     with_input_device(device_id, |device| {
         let config = cpal::StreamConfig {
             channels: 1,
             sample_rate: 48000,
             buffer_size: cpal::BufferSize::Default,
         };
+        log::info!("build_input_stream: config=mono/48kHz/i16");
+
+        // Log supported configs for diagnostics
+        if let Ok(supported) = device.supported_input_configs() {
+            for cfg in supported {
+                log::debug!(
+                    "  supported input: ch={} rate={}-{} fmt={:?}",
+                    cfg.channels(),
+                    cfg.min_sample_rate(),
+                    cfg.max_sample_rate(),
+                    cfg.sample_format(),
+                );
+            }
+        }
 
         let stream = device
             .build_input_stream(
@@ -296,14 +342,21 @@ pub fn build_input_stream(
                         let _ = producer.push(sample);
                     }
                 },
-                |err| eprintln!("[voice] cpal input error: {err}"),
+                |err| log::error!("cpal input stream error: {err}"),
                 None,
             )
-            .map_err(|e| format!("Failed to build input stream: {e}"))?;
+            .map_err(|e| {
+                log::error!("build_input_stream: build failed: {e}");
+                format!("Failed to build input stream: {e}")
+            })?;
 
         stream
             .play()
-            .map_err(|e| format!("Failed to start input stream: {e}"))?;
+            .map_err(|e| {
+                log::error!("build_input_stream: play failed: {e}");
+                format!("Failed to start input stream: {e}")
+            })?;
+        log::info!("build_input_stream: stream playing");
         Ok(stream)
     })
 }
@@ -313,12 +366,27 @@ pub fn build_output_stream(
     device_id: Option<&str>,
     mut consumer: Consumer<i16>,
 ) -> Result<cpal::Stream, String> {
+    log::info!("build_output_stream: device_id={device_id:?}");
     with_output_device(device_id, |device| {
         let config = cpal::StreamConfig {
             channels: 2,
             sample_rate: 48000,
             buffer_size: cpal::BufferSize::Default,
         };
+        log::info!("build_output_stream: config=stereo/48kHz/i16");
+
+        // Log supported configs for diagnostics
+        if let Ok(supported) = device.supported_output_configs() {
+            for cfg in supported {
+                log::debug!(
+                    "  supported output: ch={} rate={}-{} fmt={:?}",
+                    cfg.channels(),
+                    cfg.min_sample_rate(),
+                    cfg.max_sample_rate(),
+                    cfg.sample_format(),
+                );
+            }
+        }
 
         let stream = device
             .build_output_stream(
@@ -328,14 +396,21 @@ pub fn build_output_stream(
                         *sample = consumer.pop().unwrap_or(0);
                     }
                 },
-                |err| eprintln!("[voice] cpal output error: {err}"),
+                |err| log::error!("cpal output stream error: {err}"),
                 None,
             )
-            .map_err(|e| format!("Failed to build output stream: {e}"))?;
+            .map_err(|e| {
+                log::error!("build_output_stream: build failed: {e}");
+                format!("Failed to build output stream: {e}")
+            })?;
 
         stream
             .play()
-            .map_err(|e| format!("Failed to start output stream: {e}"))?;
+            .map_err(|e| {
+                log::error!("build_output_stream: play failed: {e}");
+                format!("Failed to start output stream: {e}")
+            })?;
+        log::info!("build_output_stream: stream playing");
         Ok(stream)
     })
 }
@@ -356,10 +431,11 @@ impl MicTest {
     /// Start capturing from the selected mic and playing back through the selected speaker.
     /// Also emits `voice:mic-level` events with RMS level data.
     pub fn start(
-        mic_device_id: &str,
-        speaker_device_id: &str,
+        mic_device_id: Option<&str>,
+        speaker_device_id: Option<&str>,
         app: tauri::AppHandle,
     ) -> Result<Self, String> {
+        log::info!("MicTest::start: mic={mic_device_id:?}, speaker={speaker_device_id:?}");
         let running = Arc::new(AtomicBool::new(true));
         let running_input = running.clone();
 
@@ -375,12 +451,13 @@ impl MicTest {
         const CHUNK: u32 = 2400;
 
         // Input stream: capture mic → ring buffer + level meter
-        let input_stream = with_input_device(Some(mic_device_id), |device| {
+        let input_stream = with_input_device(mic_device_id, |device| {
             let config = cpal::StreamConfig {
                 channels: 1,
                 sample_rate: 48000,
                 buffer_size: cpal::BufferSize::Default,
             };
+            log::info!("MicTest: building input stream (mono/48kHz/i16)");
 
             let stream = device
                 .build_input_stream(
@@ -406,24 +483,32 @@ impl MicTest {
                             }
                         }
                     },
-                    |err| eprintln!("[voice] mic test input error: {err}"),
+                    |err| log::error!("mic test input stream error: {err}"),
                     None,
                 )
-                .map_err(|e| format!("Failed to build mic test input stream: {e}"))?;
+                .map_err(|e| {
+                    log::error!("MicTest: build input stream failed: {e}");
+                    format!("Failed to build mic test input stream: {e}")
+                })?;
 
             stream
                 .play()
-                .map_err(|e| format!("Failed to start mic test input stream: {e}"))?;
+                .map_err(|e| {
+                    log::error!("MicTest: play input stream failed: {e}");
+                    format!("Failed to start mic test input stream: {e}")
+                })?;
+            log::info!("MicTest: input stream playing");
             Ok(stream)
         })?;
 
         // Output stream: ring buffer → speaker (mono loopback played as stereo)
-        let output_stream = with_output_device(Some(speaker_device_id), |device| {
+        let output_stream = with_output_device(speaker_device_id, |device| {
             let config = cpal::StreamConfig {
                 channels: 2,
                 sample_rate: 48000,
                 buffer_size: cpal::BufferSize::Default,
             };
+            log::info!("MicTest: building output stream (stereo/48kHz/i16)");
 
             let stream = device
                 .build_output_stream(
@@ -436,17 +521,25 @@ impl MicTest {
                             chunk[1] = sample;
                         }
                     },
-                    |err| eprintln!("[voice] mic test output error: {err}"),
+                    |err| log::error!("mic test output stream error: {err}"),
                     None,
                 )
-                .map_err(|e| format!("Failed to build mic test output stream: {e}"))?;
+                .map_err(|e| {
+                    log::error!("MicTest: build output stream failed: {e}");
+                    format!("Failed to build mic test output stream: {e}")
+                })?;
 
             stream
                 .play()
-                .map_err(|e| format!("Failed to start mic test output stream: {e}"))?;
+                .map_err(|e| {
+                    log::error!("MicTest: play output stream failed: {e}");
+                    format!("Failed to start mic test output stream: {e}")
+                })?;
+            log::info!("MicTest: output stream playing");
             Ok(stream)
         })?;
 
+        log::info!("MicTest::start: both streams running");
         Ok(Self {
             _input_stream: input_stream,
             _output_stream: output_stream,
@@ -455,6 +548,7 @@ impl MicTest {
     }
 
     pub fn stop(&self) {
+        log::info!("MicTest::stop");
         self.running.store(false, Ordering::Relaxed);
     }
 }

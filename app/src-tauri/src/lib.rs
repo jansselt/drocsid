@@ -2,6 +2,8 @@
 mod audio;
 mod voice;
 
+use log::LevelFilter;
+use simplelog::{CombinedLogger, ConfigBuilder, TermLogger, TerminalMode, ColorChoice, WriteLogger};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -80,6 +82,40 @@ pub fn run() {
             voice::voice_mic_test_stop,
         ])
         .setup(|app| {
+            // Initialize file + terminal logging
+            {
+                let log_dir = app.path().app_log_dir().unwrap_or_else(|_| {
+                    std::env::temp_dir().join("drocsid")
+                });
+                let _ = std::fs::create_dir_all(&log_dir);
+                let log_path = log_dir.join("drocsid.log");
+
+                // Truncate to keep only the current session's log
+                let file = std::fs::OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open(&log_path);
+
+                let log_config = ConfigBuilder::new()
+                    .set_time_format_rfc3339()
+                    .build();
+
+                let mut loggers: Vec<Box<dyn simplelog::SharedLogger>> = vec![
+                    TermLogger::new(
+                        LevelFilter::Info,
+                        log_config.clone(),
+                        TerminalMode::Mixed,
+                        ColorChoice::Auto,
+                    ),
+                ];
+                if let Ok(f) = file {
+                    loggers.push(WriteLogger::new(LevelFilter::Debug, log_config, f));
+                }
+                let _ = CombinedLogger::init(loggers);
+                log::info!("Drocsid v{} starting — log: {}", env!("CARGO_PKG_VERSION"), log_path.display());
+            }
+
             // Register voice managed state (native LiveKit + cpal)
             app.manage(voice::VoiceState::new());
             app.manage(voice::MicTestState::new());

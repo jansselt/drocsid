@@ -68,16 +68,25 @@ impl VoiceManager {
         mic_device_id: Option<&str>,
         speaker_device_id: Option<&str>,
     ) -> Result<Self, String> {
+        log::info!("VoiceManager::connect: url={url}");
+
         // 1. Connect to LiveKit room
+        log::info!("  step 1: connecting to LiveKit room...");
         let (room, event_rx) = Room::connect(url, token, RoomOptions::default())
             .await
-            .map_err(|e| format!("Room connect failed: {e}"))?;
+            .map_err(|e| {
+                log::error!("  Room::connect failed: {e}");
+                format!("Room connect failed: {e}")
+            })?;
+        log::info!("  step 1: room connected OK");
 
         // Emit local identity so frontend can track self-speaking
         let local_identity = room.local_participant().identity().to_string();
+        log::info!("  local identity: {local_identity}");
         let _ = app.emit("voice:local-identity", &local_identity);
 
         // 2. Create native audio source for mic publishing
+        log::info!("  step 2: creating NativeAudioSource (rate={SAMPLE_RATE}, ch={NUM_CHANNELS})");
         let audio_source = NativeAudioSource::new(
             Default::default(),
             SAMPLE_RATE,
@@ -86,6 +95,7 @@ impl VoiceManager {
         );
 
         // 3. Create and publish local audio track
+        log::info!("  step 3: publishing audio track...");
         let local_track = LocalAudioTrack::create_audio_track(
             "microphone",
             RtcAudioSource::Native(audio_source.clone()),
@@ -96,17 +106,26 @@ impl VoiceManager {
                 TrackPublishOptions::default(),
             )
             .await
-            .map_err(|e| format!("Publish track failed: {e}"))?;
+            .map_err(|e| {
+                log::error!("  publish_track failed: {e}");
+                format!("Publish track failed: {e}")
+            })?;
+        log::info!("  step 3: track published OK");
 
         // 4. Set up ring buffers (lock-free SPSC)
         let (mic_producer, mic_consumer) = rtrb::RingBuffer::new(MIC_RING_SIZE);
         let (output_producer, output_consumer) = rtrb::RingBuffer::new(OUTPUT_RING_SIZE);
 
         // 5. Build cpal streams
+        log::info!("  step 5: building cpal input stream (mic={mic_device_id:?})...");
         let input_stream =
             audio_io::build_input_stream(mic_device_id, mic_producer)?;
+        log::info!("  step 5: input stream OK");
+
+        log::info!("  step 5: building cpal output stream (speaker={speaker_device_id:?})...");
         let output_stream =
             audio_io::build_output_stream(speaker_device_id, output_consumer)?;
+        log::info!("  step 5: output stream OK");
 
         // 6. Shared state
         let mic_muted = Arc::new(AtomicBool::new(false));
@@ -116,6 +135,7 @@ impl VoiceManager {
         let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>(1);
 
         // 7. Spawn mic forwarder task
+        log::info!("  step 7: spawning mic forwarder task");
         Self::spawn_mic_forwarder(
             app.clone(),
             mic_consumer,
@@ -128,6 +148,7 @@ impl VoiceManager {
         let remote_streams: Arc<Mutex<HashMap<String, NativeAudioStream>>> =
             Arc::new(Mutex::new(HashMap::new()));
 
+        log::info!("  step 8: spawning event handler + audio mixer");
         Self::spawn_event_handler(
             app,
             event_rx,
@@ -141,6 +162,7 @@ impl VoiceManager {
             deaf.clone(),
         );
 
+        log::info!("VoiceManager::connect: all steps complete, voice active");
         Ok(VoiceManager {
             room,
             _input_stream: input_stream,
@@ -153,8 +175,10 @@ impl VoiceManager {
     }
 
     pub async fn disconnect(self) {
+        log::info!("VoiceManager::disconnect");
         let _ = self.shutdown_tx.send(()).await;
         let _ = self.room.close().await;
+        log::info!("VoiceManager::disconnect: done, streams dropped");
         // cpal streams are dropped here, stopping audio callbacks
     }
 
@@ -187,6 +211,8 @@ impl VoiceManager {
             let mut interval =
                 tokio::time::interval(std::time::Duration::from_millis(10));
             let mut buf = Vec::with_capacity(480); // 10ms at 48kHz mono
+            let mut first_samples_logged = false;
+            let mut empty_ticks: u64 = 0;
 
             loop {
                 tokio::select! {
@@ -204,8 +230,19 @@ impl VoiceManager {
                         }
 
                         if buf.is_empty() {
+                            empty_ticks += 1;
+                            // Log a warning if we've been getting no samples for a while
+                            if empty_ticks == 100 {
+                                log::warn!("mic_forwarder: no samples received for 1 second — cpal input stream may not be producing data");
+                            }
                             continue;
                         }
+
+                        if !first_samples_logged {
+                            log::info!("mic_forwarder: first {} samples received from cpal input", buf.len());
+                            first_samples_logged = true;
+                        }
+                        empty_ticks = 0;
 
                         // Compute RMS level for local speaking indicator
                         let sum_sq: f64 = buf.iter().map(|&s| {
@@ -223,10 +260,13 @@ impl VoiceManager {
                             samples_per_channel: buf.len() as u32,
                         };
                         if let Err(e) = audio_source.capture_frame(&frame).await {
-                            eprintln!("[voice] capture_frame error: {e}");
+                            log::error!("mic_forwarder: capture_frame error: {e}");
                         }
                     }
-                    _ = shutdown_rx.recv() => break,
+                    _ = shutdown_rx.recv() => {
+                        log::info!("mic_forwarder: shutdown received");
+                        break;
+                    },
                 }
             }
         });
@@ -246,12 +286,13 @@ impl VoiceManager {
                         ..
                     } => {
                         if let RemoteTrack::Audio(audio_track) = track {
+                            let identity = participant.identity().to_string();
+                            log::info!("event: TrackSubscribed (audio) from {identity}");
                             let stream = NativeAudioStream::new(
                                 audio_track.rtc_track(),
                                 SAMPLE_RATE as i32,
                                 NUM_CHANNELS as i32,
                             );
-                            let identity = participant.identity().to_string();
                             remote_streams
                                 .lock()
                                 .await
@@ -265,6 +306,7 @@ impl VoiceManager {
                     } => {
                         if matches!(track, RemoteTrack::Audio(_)) {
                             let identity = participant.identity().to_string();
+                            log::info!("event: TrackUnsubscribed (audio) from {identity}");
                             if let Some(mut stream) =
                                 remote_streams.lock().await.remove(&identity)
                             {
@@ -285,6 +327,7 @@ impl VoiceManager {
                         );
                     }
                     RoomEvent::ParticipantConnected(participant) => {
+                        log::info!("event: ParticipantConnected: {}", participant.identity());
                         let _ = app.emit(
                             "voice:participant-joined",
                             ParticipantPayload {
@@ -294,6 +337,7 @@ impl VoiceManager {
                         );
                     }
                     RoomEvent::ParticipantDisconnected(participant) => {
+                        log::info!("event: ParticipantDisconnected: {}", participant.identity());
                         let _ = app.emit(
                             "voice:participant-left",
                             ParticipantPayload {
@@ -308,7 +352,7 @@ impl VoiceManager {
                             ConnectionState::Reconnecting => "reconnecting",
                             ConnectionState::Disconnected => "disconnected",
                         };
-                        eprintln!("[voice] ConnectionStateChanged → {state_str}");
+                        log::info!("event: ConnectionStateChanged → {state_str}");
                         let _ = app.emit(
                             "voice:connection-state",
                             ConnectionStatePayload {
@@ -343,6 +387,7 @@ impl VoiceManager {
                     _ => {}
                 }
             }
+            log::info!("event_handler: room event channel closed");
         });
     }
 
@@ -357,6 +402,7 @@ impl VoiceManager {
                 tokio::time::interval(std::time::Duration::from_millis(10));
             // Temporary buffer for mixing (stereo, 10ms at 48kHz = 960 samples)
             let mut mix_buf = vec![0i32; 960];
+            let mut first_audio_logged = false;
 
             loop {
                 interval.tick().await;
@@ -399,6 +445,10 @@ impl VoiceManager {
                 drop(streams);
 
                 if has_audio {
+                    if !first_audio_logged {
+                        log::info!("audio_mixer: first remote audio received and mixed to output");
+                        first_audio_logged = true;
+                    }
                     for &sample in &mix_buf {
                         let clamped = sample.clamp(-32768, 32767) as i16;
                         let _ = output_producer.push(clamped);

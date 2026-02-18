@@ -549,21 +549,17 @@ function VoiceVideoSettings() {
   const startMicTest = async () => {
     try {
       if (isTauri()) {
-        if (!selectedMic) {
-          console.warn('[Settings] No microphone selected');
-          return;
-        }
-        if (!selectedSpeaker) {
-          console.warn('[Settings] No speaker selected');
-          return;
-        }
         const { invoke } = await import('@tauri-apps/api/core');
         const { listen } = await import('@tauri-apps/api/event');
         const unlisten = await listen<number>('voice:mic-level', (event) => {
           setMicLevel(Math.min(100, event.payload * (micVolume / 100)));
         });
         micTestUnlistenRef.current = unlisten;
-        await invoke('voice_mic_test_start', { deviceId: selectedMic, speakerDeviceId: selectedSpeaker });
+        // Pass null for empty strings so Rust uses the system default device
+        await invoke('voice_mic_test_start', {
+          deviceId: selectedMic || null,
+          speakerDeviceId: selectedSpeaker || null,
+        });
         setMicTesting(true);
         return;
       }
