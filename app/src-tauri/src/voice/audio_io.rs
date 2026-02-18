@@ -169,20 +169,31 @@ mod platform {
 mod platform {
     use super::*;
 
+    /// Build a human-readable device name matching the standard Windows/macOS
+    /// format: "Name (Manufacturer)" — e.g. "Microphone (RODECaster Duo Chat)".
+    fn display_name(device: &cpal::Device) -> Option<String> {
+        let desc = device.description().ok()?;
+        match desc.manufacturer() {
+            Some(mfr) if !mfr.is_empty() => Some(format!("{} ({})", desc.name(), mfr)),
+            _ => Some(desc.name().to_string()),
+        }
+    }
+
     pub fn list_input_devices() -> Result<Vec<AudioDevice>, String> {
         let host = cpal::default_host();
-        let default_name = host
+        let default_id = host
             .default_input_device()
-            .and_then(|d| d.name().ok());
+            .and_then(|d| d.id().ok());
 
         let devices: Vec<AudioDevice> = host
             .input_devices()
             .map_err(|e| format!("Failed to enumerate input devices: {e}"))?
             .filter_map(|device| {
-                let name = device.name().ok()?;
-                let is_default = default_name.as_deref() == Some(&name);
+                let dev_id = device.id().ok()?;
+                let name = display_name(&device)?;
+                let is_default = default_id.as_ref() == Some(&dev_id);
                 Some(AudioDevice {
-                    id: name.clone(),
+                    id: dev_id.to_string(),
                     name,
                     is_default,
                 })
@@ -194,18 +205,19 @@ mod platform {
 
     pub fn list_output_devices() -> Result<Vec<AudioDevice>, String> {
         let host = cpal::default_host();
-        let default_name = host
+        let default_id = host
             .default_output_device()
-            .and_then(|d| d.name().ok());
+            .and_then(|d| d.id().ok());
 
         let devices: Vec<AudioDevice> = host
             .output_devices()
             .map_err(|e| format!("Failed to enumerate output devices: {e}"))?
             .filter_map(|device| {
-                let name = device.name().ok()?;
-                let is_default = default_name.as_deref() == Some(&name);
+                let dev_id = device.id().ok()?;
+                let name = display_name(&device)?;
+                let is_default = default_id.as_ref() == Some(&dev_id);
                 Some(AudioDevice {
-                    id: name.clone(),
+                    id: dev_id.to_string(),
                     name,
                     is_default,
                 })
@@ -215,53 +227,42 @@ mod platform {
         Ok(devices)
     }
 
-    fn resolve_input_device(device_id: Option<&str>) -> Result<cpal::Device, String> {
+    fn resolve_device_by_id(device_id: &str) -> Result<cpal::Device, String> {
         let host = cpal::default_host();
-        if let Some(id) = device_id {
-            for device in host.input_devices().map_err(|e| e.to_string())? {
-                if let Ok(name) = device.name() {
-                    if name == id {
-                        return Ok(device);
-                    }
-                }
-            }
-            return Err(format!("Input device not found: {id}"));
-        }
-        host.default_input_device()
-            .ok_or_else(|| "No default input device available".to_string())
+        let id: cpal::DeviceId = device_id
+            .parse()
+            .map_err(|e: cpal::DeviceIdError| format!("Invalid device ID '{device_id}': {e}"))?;
+        host.device_by_id(&id)
+            .ok_or_else(|| format!("Device not found: {device_id}"))
     }
 
-    fn resolve_output_device(device_id: Option<&str>) -> Result<cpal::Device, String> {
-        let host = cpal::default_host();
-        if let Some(id) = device_id {
-            for device in host.output_devices().map_err(|e| e.to_string())? {
-                if let Ok(name) = device.name() {
-                    if name == id {
-                        return Ok(device);
-                    }
-                }
-            }
-            return Err(format!("Output device not found: {id}"));
-        }
-        host.default_output_device()
-            .ok_or_else(|| "No default output device available".to_string())
-    }
-
-    /// Resolve input device by name and execute closure.
+    /// Resolve input device by stable ID and execute closure.
     pub fn with_input_device<F, T>(device_id: Option<&str>, f: F) -> Result<T, String>
     where
         F: FnOnce(cpal::Device) -> Result<T, String>,
     {
-        let device = resolve_input_device(device_id)?;
+        let device = if let Some(id) = device_id {
+            resolve_device_by_id(id)?
+        } else {
+            cpal::default_host()
+                .default_input_device()
+                .ok_or_else(|| "No default input device available".to_string())?
+        };
         f(device)
     }
 
-    /// Resolve output device by name and execute closure.
+    /// Resolve output device by stable ID and execute closure.
     pub fn with_output_device<F, T>(device_id: Option<&str>, f: F) -> Result<T, String>
     where
         F: FnOnce(cpal::Device) -> Result<T, String>,
     {
-        let device = resolve_output_device(device_id)?;
+        let device = if let Some(id) = device_id {
+            resolve_device_by_id(id)?
+        } else {
+            cpal::default_host()
+                .default_output_device()
+                .ok_or_else(|| "No default output device available".to_string())?
+        };
         f(device)
     }
 }
