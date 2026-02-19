@@ -12,7 +12,7 @@ export default defineConfig({
     ...(!isTauri
       ? [
           VitePWA({
-            registerType: 'autoUpdate',
+            registerType: 'prompt',
             manifest: {
               name: 'Drocsid',
               short_name: 'Drocsid',

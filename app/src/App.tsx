@@ -5,6 +5,7 @@ import { ResetPasswordForm } from './components/auth/ResetPasswordForm';
 import { InstancePicker } from './components/auth/InstancePicker';
 import { AppLayout } from './components/layout/AppLayout';
 import { JoinInvite } from './components/server/JoinInvite';
+import { UpdateToast } from './components/common/UpdateToast';
 import { isTauri, hasInstance } from './api/instance';
 
 export default function App() {
@@ -90,5 +91,10 @@ export default function App() {
     );
   }
 
-  return <AppLayout />;
+  return (
+    <>
+      <AppLayout />
+      <UpdateToast />
+    </>
+  );
 }
