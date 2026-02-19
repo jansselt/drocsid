@@ -166,7 +166,6 @@ impl VoiceManager {
         );
 
         log::info!("VoiceManager::connect: all steps complete, voice active");
-        log::logger().flush();
         Ok(VoiceManager {
             room,
             _input_stream: input_stream,
@@ -229,8 +228,8 @@ impl VoiceManager {
                     _ = interval.tick() => {
                         diag_ticks += 1;
 
-                        // Log diagnostics every 5 seconds (500 ticks × 10ms)
-                        if diag_ticks % 500 == 0 {
+                        // Log diagnostics every 1 second (100 ticks × 10ms)
+                        if diag_ticks % 100 == 0 {
                             log::info!(
                                 "mic_forwarder [{}s]: samples_total={}, frames_captured={}, capture_errors={}, empty_ticks={}",
                                 diag_ticks / 100,
@@ -239,7 +238,6 @@ impl VoiceManager {
                                 diag_capture_errors,
                                 empty_ticks,
                             );
-                            log::logger().flush();
                         }
 
                         if mic_muted.load(Ordering::Relaxed) {
@@ -331,7 +329,6 @@ impl VoiceManager {
                                 .insert(identity, stream);
                             let count = remote_streams.lock().await.len();
                             log::info!("event: remote_streams count now = {count}");
-                            log::logger().flush();
                         }
                     }
                     RoomEvent::TrackUnsubscribed {
@@ -449,8 +446,8 @@ impl VoiceManager {
                 interval.tick().await;
                 diag_ticks += 1;
 
-                // Log diagnostics every 5 seconds (500 ticks × 10ms)
-                if diag_ticks % 500 == 0 {
+                // Log diagnostics every 1 second (100 ticks × 10ms)
+                if diag_ticks % 100 == 0 {
                     let stream_count = remote_streams.lock().await.len();
                     log::info!(
                         "audio_mixer [{}s]: streams={}, frames_received={}, samples_written={}, ticks_with_audio={}",
@@ -460,7 +457,6 @@ impl VoiceManager {
                         diag_samples_written,
                         diag_ticks_with_audio,
                     );
-                    log::logger().flush();
                 }
 
                 if deaf.load(Ordering::Relaxed) {

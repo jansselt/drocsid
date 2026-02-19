@@ -110,7 +110,10 @@ pub fn run() {
                     ),
                 ];
                 if let Ok(f) = file {
-                    loggers.push(WriteLogger::new(LevelFilter::Debug, log_config, f));
+                    // Wrap in LineWriter so every log line flushes to disk immediately.
+                    // Without this, BufWriter holds data in memory and we lose logs on crash.
+                    let line_writer = std::io::LineWriter::new(f);
+                    loggers.push(WriteLogger::new(LevelFilter::Debug, log_config, line_writer));
                 }
                 let _ = CombinedLogger::init(loggers);
                 log::info!("Drocsid v{} starting — log: {}", env!("CARGO_PKG_VERSION"), log_path.display());
