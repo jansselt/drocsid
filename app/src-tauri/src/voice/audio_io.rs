@@ -176,12 +176,17 @@ mod platform {
     use super::*;
 
     /// Build a human-readable device name matching the standard Windows/macOS
-    /// format: "Name (Manufacturer)" — e.g. "Microphone (RODECaster Duo Chat)".
+    /// format: "Name (Adapter)" — e.g. "Microphone (Realtek(R) Audio)".
+    /// On WASAPI, manufacturer() is always None; the adapter name is in driver().
     fn display_name(device: &cpal::Device) -> Option<String> {
         let desc = device.description().ok()?;
-        match desc.manufacturer() {
-            Some(mfr) if !mfr.is_empty() => Some(format!("{} ({})", desc.name(), mfr)),
-            _ => Some(desc.name().to_string()),
+        let adapter = desc.manufacturer()
+            .filter(|s| !s.is_empty())
+            .or_else(|| desc.driver())
+            .filter(|s| !s.is_empty());
+        match adapter {
+            Some(a) => Some(format!("{} ({})", desc.name(), a)),
+            None => Some(desc.name().to_string()),
         }
     }
 
@@ -303,43 +308,141 @@ pub use platform::{list_input_devices, list_output_devices};
 use platform::{with_input_device, with_output_device};
 
 // ===========================================================================
+// Stream config negotiation (cross-platform)
+// ===========================================================================
+//
+// On Linux (PipeWire/ALSA), mono 48 kHz is always accepted because PipeWire
+// handles channel/rate conversion transparently.  On Windows (WASAPI) and
+// macOS (CoreAudio), the device may only support a fixed channel count (e.g.
+// stereo-only microphone).  We query the device's supported configurations
+// and pick one that works, then convert in the callback.
+
+/// Negotiate a compatible input stream config.
+/// Returns (StreamConfig, native_channel_count).
+fn negotiate_input_config(device: &cpal::Device) -> Result<(cpal::StreamConfig, u16), String> {
+    if let Ok(supported) = device.supported_input_configs() {
+        let configs: Vec<_> = supported.collect();
+        for cfg in &configs {
+            log::debug!(
+                "  supported input: ch={} rate={}-{} fmt={:?}",
+                cfg.channels(), cfg.min_sample_rate(), cfg.max_sample_rate(), cfg.sample_format()
+            );
+        }
+
+        // Find configs supporting 48 kHz, prefer fewest channels (less conversion)
+        let mut candidates: Vec<_> = configs.iter()
+            .filter(|c| c.min_sample_rate() <= 48000 && c.max_sample_rate() >= 48000)
+            .collect();
+        candidates.sort_by_key(|c| c.channels());
+
+        if let Some(cfg) = candidates.first() {
+            let channels = cfg.channels();
+            log::info!("negotiate_input_config: selected ch={channels} at 48kHz");
+            return Ok((cpal::StreamConfig {
+                channels,
+                sample_rate: 48000,
+                buffer_size: cpal::BufferSize::Default,
+            }, channels));
+        }
+    }
+
+    // Fallback: use device default config
+    let default = device.default_input_config()
+        .map_err(|e| format!("No compatible input config found: {e}"))?;
+    let channels = default.channels();
+    log::info!(
+        "negotiate_input_config: fallback to default ch={channels} rate={}",
+        default.sample_rate()
+    );
+    Ok((cpal::StreamConfig {
+        channels,
+        sample_rate: default.sample_rate(),
+        buffer_size: cpal::BufferSize::Default,
+    }, channels))
+}
+
+/// Negotiate a compatible output stream config.
+/// Returns (StreamConfig, native_channel_count).
+fn negotiate_output_config(device: &cpal::Device) -> Result<(cpal::StreamConfig, u16), String> {
+    if let Ok(supported) = device.supported_output_configs() {
+        let configs: Vec<_> = supported.collect();
+        for cfg in &configs {
+            log::debug!(
+                "  supported output: ch={} rate={}-{} fmt={:?}",
+                cfg.channels(), cfg.min_sample_rate(), cfg.max_sample_rate(), cfg.sample_format()
+            );
+        }
+
+        // Find configs supporting 48 kHz, prefer >=2 channels (for stereo output)
+        let mut candidates: Vec<_> = configs.iter()
+            .filter(|c| c.min_sample_rate() <= 48000 && c.max_sample_rate() >= 48000)
+            .collect();
+        // Prefer 2 channels, then fewer
+        candidates.sort_by_key(|c| {
+            let ch = c.channels();
+            if ch == 2 { 0u16 } else { ch }
+        });
+
+        if let Some(cfg) = candidates.first() {
+            let channels = cfg.channels();
+            log::info!("negotiate_output_config: selected ch={channels} at 48kHz");
+            return Ok((cpal::StreamConfig {
+                channels,
+                sample_rate: 48000,
+                buffer_size: cpal::BufferSize::Default,
+            }, channels));
+        }
+    }
+
+    // Fallback: use device default config
+    let default = device.default_output_config()
+        .map_err(|e| format!("No compatible output config found: {e}"))?;
+    let channels = default.channels();
+    log::info!(
+        "negotiate_output_config: fallback to default ch={channels} rate={}",
+        default.sample_rate()
+    );
+    Ok((cpal::StreamConfig {
+        channels,
+        sample_rate: default.sample_rate(),
+        buffer_size: cpal::BufferSize::Default,
+    }, channels))
+}
+
+// ===========================================================================
 // Audio stream builders (cross-platform)
 // ===========================================================================
 
-/// Build a cpal input stream (mono, 48 kHz) that pushes PCM samples into an rtrb ring buffer.
+/// Build a cpal input stream that pushes mono PCM samples into an rtrb ring buffer.
+/// Negotiates the device's native channel count and downmixes to mono in the callback.
 pub fn build_input_stream(
     device_id: Option<&str>,
     mut producer: Producer<i16>,
 ) -> Result<cpal::Stream, String> {
     log::info!("build_input_stream: device_id={device_id:?}");
     with_input_device(device_id, |device| {
-        let config = cpal::StreamConfig {
-            channels: 1,
-            sample_rate: 48000,
-            buffer_size: cpal::BufferSize::Default,
-        };
-        log::info!("build_input_stream: config=mono/48kHz/i16");
-
-        // Log supported configs for diagnostics
-        if let Ok(supported) = device.supported_input_configs() {
-            for cfg in supported {
-                log::debug!(
-                    "  supported input: ch={} rate={}-{} fmt={:?}",
-                    cfg.channels(),
-                    cfg.min_sample_rate(),
-                    cfg.max_sample_rate(),
-                    cfg.sample_format(),
-                );
-            }
-        }
+        let (config, native_ch) = negotiate_input_config(&device)?;
+        log::info!(
+            "build_input_stream: negotiated ch={} rate={} (will downmix to mono)",
+            config.channels, config.sample_rate
+        );
 
         let stream = device
             .build_input_stream(
                 &config,
                 move |data: &[i16], _: &cpal::InputCallbackInfo| {
-                    for &sample in data {
-                        // Non-blocking push — drops samples if buffer is full
-                        let _ = producer.push(sample);
+                    let ch = native_ch as usize;
+                    if ch <= 1 {
+                        // Already mono — pass through
+                        for &sample in data {
+                            let _ = producer.push(sample);
+                        }
+                    } else {
+                        // Downmix to mono: average all channels per frame
+                        for frame in data.chunks(ch) {
+                            let sum: i32 = frame.iter().map(|&s| s as i32).sum();
+                            let _ = producer.push((sum / ch as i32) as i16);
+                        }
                     }
                 },
                 |err| log::error!("cpal input stream error: {err}"),
@@ -361,39 +464,47 @@ pub fn build_input_stream(
     })
 }
 
-/// Build a cpal output stream (stereo, 48 kHz) that pops mixed PCM from an rtrb ring buffer.
+/// Build a cpal output stream that pops stereo PCM from an rtrb ring buffer.
+/// The ring buffer contains interleaved stereo (L, R) i16 samples from the mixer.
+/// Negotiates the device's native channel count and maps accordingly.
 pub fn build_output_stream(
     device_id: Option<&str>,
     mut consumer: Consumer<i16>,
 ) -> Result<cpal::Stream, String> {
     log::info!("build_output_stream: device_id={device_id:?}");
     with_output_device(device_id, |device| {
-        let config = cpal::StreamConfig {
-            channels: 2,
-            sample_rate: 48000,
-            buffer_size: cpal::BufferSize::Default,
-        };
-        log::info!("build_output_stream: config=stereo/48kHz/i16");
-
-        // Log supported configs for diagnostics
-        if let Ok(supported) = device.supported_output_configs() {
-            for cfg in supported {
-                log::debug!(
-                    "  supported output: ch={} rate={}-{} fmt={:?}",
-                    cfg.channels(),
-                    cfg.min_sample_rate(),
-                    cfg.max_sample_rate(),
-                    cfg.sample_format(),
-                );
-            }
-        }
+        let (config, native_ch) = negotiate_output_config(&device)?;
+        log::info!(
+            "build_output_stream: negotiated ch={} rate={} (ring buffer is stereo)",
+            config.channels, config.sample_rate
+        );
 
         let stream = device
             .build_output_stream(
                 &config,
                 move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                    for sample in data.iter_mut() {
-                        *sample = consumer.pop().unwrap_or(0);
+                    let ch = native_ch as usize;
+                    if ch == 2 {
+                        // Stereo pass-through from ring buffer
+                        for sample in data.iter_mut() {
+                            *sample = consumer.pop().unwrap_or(0);
+                        }
+                    } else if ch == 1 {
+                        // Downmix stereo to mono
+                        for sample in data.iter_mut() {
+                            let l = consumer.pop().unwrap_or(0) as i32;
+                            let r = consumer.pop().unwrap_or(0) as i32;
+                            *sample = ((l + r) / 2) as i16;
+                        }
+                    } else {
+                        // Multi-channel: put L/R in first two, silence the rest
+                        for frame in data.chunks_mut(ch) {
+                            let l = consumer.pop().unwrap_or(0);
+                            let r = consumer.pop().unwrap_or(0);
+                            frame[0] = l;
+                            if frame.len() > 1 { frame[1] = r; }
+                            for s in frame.iter_mut().skip(2) { *s = 0; }
+                        }
                     }
                 },
                 |err| log::error!("cpal output stream error: {err}"),
@@ -452,12 +563,11 @@ impl MicTest {
 
         // Input stream: capture mic → ring buffer + level meter
         let input_stream = with_input_device(mic_device_id, |device| {
-            let config = cpal::StreamConfig {
-                channels: 1,
-                sample_rate: 48000,
-                buffer_size: cpal::BufferSize::Default,
-            };
-            log::info!("MicTest: building input stream (mono/48kHz/i16)");
+            let (config, native_ch) = negotiate_input_config(&device)?;
+            log::info!(
+                "MicTest: building input stream (negotiated ch={} rate={})",
+                config.channels, config.sample_rate
+            );
 
             let stream = device
                 .build_input_stream(
@@ -466,7 +576,19 @@ impl MicTest {
                         if !running_input.load(Ordering::Relaxed) {
                             return;
                         }
-                        for &sample in data {
+                        let ch = native_ch as usize;
+                        // Process frames, downmixing to mono if needed
+                        let frames = if ch <= 1 { data.len() } else { data.len() / ch };
+                        for i in 0..frames {
+                            let sample = if ch <= 1 {
+                                data[i]
+                            } else {
+                                let offset = i * ch;
+                                let sum: i32 = data[offset..offset + ch]
+                                    .iter().map(|&s| s as i32).sum();
+                                (sum / ch as i32) as i16
+                            };
+
                             // Feed loopback (non-blocking, drops if full)
                             let _ = loopback_prod.push(sample);
 
@@ -501,24 +623,25 @@ impl MicTest {
             Ok(stream)
         })?;
 
-        // Output stream: ring buffer → speaker (mono loopback played as stereo)
+        // Output stream: ring buffer → speaker (mono loopback to all device channels)
         let output_stream = with_output_device(speaker_device_id, |device| {
-            let config = cpal::StreamConfig {
-                channels: 2,
-                sample_rate: 48000,
-                buffer_size: cpal::BufferSize::Default,
-            };
-            log::info!("MicTest: building output stream (stereo/48kHz/i16)");
+            let (config, native_ch) = negotiate_output_config(&device)?;
+            log::info!(
+                "MicTest: building output stream (negotiated ch={} rate={})",
+                config.channels, config.sample_rate
+            );
 
             let stream = device
                 .build_output_stream(
                     &config,
                     move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                        // Stereo output: duplicate mono sample to both channels
-                        for chunk in data.chunks_exact_mut(2) {
+                        let ch = native_ch as usize;
+                        // Duplicate mono loopback sample to all output channels
+                        for frame in data.chunks_exact_mut(ch) {
                             let sample = loopback_cons.pop().unwrap_or(0);
-                            chunk[0] = sample;
-                            chunk[1] = sample;
+                            for s in frame.iter_mut() {
+                                *s = sample;
+                            }
                         }
                     },
                     |err| log::error!("mic test output stream error: {err}"),
