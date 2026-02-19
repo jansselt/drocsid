@@ -1,8 +1,11 @@
 name: Build Desktop App
 
 on:
-  push:
-    tags: ['v*', 'drocsid-v*']
+  workflow_call:
+    inputs:
+      tag_name:
+        required: true
+        type: string
   workflow_dispatch:
 
 permissions:
@@ -14,6 +17,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag_name || github.ref }}
 
       - name: Setup PATH
         run: |
@@ -100,6 +105,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag_name || github.ref }}
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Setup Node.js
@@ -151,10 +158,12 @@ jobs:
 
       # Generate latest.json for Tauri updater from the sig files
       - name: Generate updater manifest
+        env:
+          TAG_NAME: ${{ inputs.tag_name || github.ref_name }}
         run: |
-          VERSION="${GITHUB_REF_NAME##*v}"
+          VERSION="${TAG_NAME##*v}"
           REPO="${{ github.repository }}"
-          TAG="${GITHUB_REF_NAME}"
+          TAG="${TAG_NAME}"
 
           # Read signatures
           LINUX_SIG=""
@@ -192,4 +201,5 @@ jobs:
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.tag_name || github.ref_name }}
           files: release/*
