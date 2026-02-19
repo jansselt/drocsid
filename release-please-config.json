@@ -1,12 +1,13 @@
 {
   "packages": {
-    "app": {
+    ".": {
       "release-type": "node",
       "component": "drocsid",
       "extra-files": [
-        "src-tauri/tauri.conf.json",
-        "src-tauri/Cargo.toml",
-        "../server/Cargo.toml"
+        "app/package.json",
+        "app/src-tauri/tauri.conf.json",
+        "app/src-tauri/Cargo.toml",
+        "server/Cargo.toml"
       ]
     }
   },
