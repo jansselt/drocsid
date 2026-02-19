@@ -7,7 +7,9 @@ import { ThreadPanel } from './ThreadPanel';
 import { SearchModal } from './SearchModal';
 import { VoicePanel } from '../voice/VoicePanel';
 import { Markdown } from './Markdown';
-import type { Message } from '../../types';
+import type { Message, User } from '../../types';
+import { AddGroupDmMembersModal } from '../dm/AddGroupDmMembersModal';
+import { CreateGroupDmModal } from '../dm/CreateGroupDmModal';
 import * as api from '../../api/client';
 import './ChatArea.css';
 
@@ -34,6 +36,7 @@ export function ChatArea() {
 
   const [showSearch, setShowSearch] = useState(false);
   const [showPins, setShowPins] = useState(false);
+  const [showAddMembers, setShowAddMembers] = useState(false);
 
   // If connected to voice and no text channel selected, show voice panel full-width
   if (voiceChannelId && !activeChannelId) {
@@ -60,19 +63,21 @@ export function ChatArea() {
   let channelName = 'Unknown';
   let channelPrefix = '#';
   let isDm = false;
+  let dm = undefined as ReturnType<typeof dmChannels.find>;
+  let dmOtherUsers: User[] = [];
 
   if (view === 'home') {
     // DM channel
     isDm = true;
     channelPrefix = '@';
-    const dm = dmChannels.find((c) => c.id === activeChannelId);
+    dm = dmChannels.find((c) => c.id === activeChannelId);
     const recipients = dmRecipients.get(activeChannelId) || [];
-    const otherUsers = recipients.filter((r) => r.id !== currentUser?.id);
+    dmOtherUsers = recipients.filter((r) => r.id !== currentUser?.id);
 
     if (dm?.channel_type === 'groupdm') {
-      channelName = dm.name || otherUsers.map((u) => u.username).join(', ');
+      channelName = dm.name || dmOtherUsers.map((u) => u.username).join(', ');
     } else {
-      channelName = otherUsers[0]?.username || 'Unknown';
+      channelName = dmOtherUsers[0]?.username || 'Unknown';
     }
   } else if (activeServerId) {
     const serverChannels = channels.get(activeServerId) || [];
@@ -104,6 +109,17 @@ export function ChatArea() {
           <span className="chat-header-hash">{channelPrefix}</span>
           <span className="chat-header-name">{channelName}</span>
           <div style={{ flex: 1 }} />
+          {isDm && (
+            <button
+              className="chat-header-action"
+              title="Add Members"
+              onClick={() => setShowAddMembers(true)}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+              </svg>
+            </button>
+          )}
           {!isDm && (
             <>
               <button
@@ -153,6 +169,21 @@ export function ChatArea() {
         <SearchModal
           serverId={activeServerId || undefined}
           onClose={() => setShowSearch(false)}
+        />
+      )}
+
+      {showAddMembers && isDm && activeChannelId && dm?.channel_type === 'groupdm' && (
+        <AddGroupDmMembersModal
+          channelId={activeChannelId}
+          currentRecipients={dmRecipients.get(activeChannelId) || []}
+          onClose={() => setShowAddMembers(false)}
+        />
+      )}
+
+      {showAddMembers && isDm && activeChannelId && dm?.channel_type !== 'groupdm' && (
+        <CreateGroupDmModal
+          initialSelection={dmOtherUsers}
+          onClose={() => setShowAddMembers(false)}
         />
       )}
     </div>

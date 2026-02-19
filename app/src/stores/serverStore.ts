@@ -142,6 +142,7 @@ interface ServerState {
   openDm: (recipientId: string) => Promise<void>;
   createGroupDm: (recipientIds: string[], name?: string) => Promise<void>;
   closeDm: (channelId: string) => Promise<void>;
+  addGroupDmRecipients: (channelId: string, recipientIds: string[]) => Promise<void>;
   setActiveDmChannel: (channelId: string) => void;
 
   // Relationship actions
@@ -763,6 +764,19 @@ export const useServerStore = create<ServerState>((set, get) => ({
     }
   },
 
+  addGroupDmRecipients: async (channelId, recipientIds) => {
+    const recipients = await api.addGroupDmRecipients(channelId, recipientIds);
+    set((state) => {
+      const dmRecipients = new Map(state.dmRecipients);
+      dmRecipients.set(channelId, recipients);
+      const users = new Map(state.users);
+      for (const r of recipients) {
+        users.set(r.id, r);
+      }
+      return { dmRecipients, users };
+    });
+  },
+
   setActiveDmChannel: (channelId) => {
     set((state) => ({
       activeChannelId: channelId,
@@ -1373,6 +1387,19 @@ export const useServerStore = create<ServerState>((set, get) => ({
               users.set(r.id, r);
             }
             return { dmChannels, dmRecipients, users };
+          });
+          break;
+        }
+        case 'DM_RECIPIENT_ADD': {
+          const ev = data as DmChannelCreateEvent;
+          set((state) => {
+            const dmRecipients = new Map(state.dmRecipients);
+            dmRecipients.set(ev.channel.id, ev.recipients);
+            const users = new Map(state.users);
+            for (const r of ev.recipients) {
+              users.set(r.id, r);
+            }
+            return { dmRecipients, users };
           });
           break;
         }

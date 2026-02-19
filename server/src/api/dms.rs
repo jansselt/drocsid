@@ -8,7 +8,9 @@ use crate::api::auth::AuthUser;
 use crate::db::queries;
 use crate::error::ApiError;
 use crate::state::AppState;
-use crate::types::entities::{ChannelType, CreateDmRequest, CreateGroupDmRequest, PublicUser};
+use crate::types::entities::{
+    AddGroupDmRecipientsRequest, ChannelType, CreateDmRequest, CreateGroupDmRequest, PublicUser,
+};
 use crate::types::events::DmChannelCreateEvent;
 
 pub fn routes() -> Router<AppState> {
@@ -16,7 +18,10 @@ pub fn routes() -> Router<AppState> {
         .route("/", get(list_dm_channels).post(create_dm))
         .route("/group", axum::routing::post(create_group_dm))
         .route("/{channel_id}", axum::routing::delete(close_dm))
-        .route("/{channel_id}/recipients", get(get_dm_recipients))
+        .route(
+            "/{channel_id}/recipients",
+            get(get_dm_recipients).put(add_group_dm_recipients),
+        )
 }
 
 async fn list_dm_channels(
@@ -169,4 +174,86 @@ async fn get_dm_recipients(
 
     let public: Vec<PublicUser> = members.into_iter().map(PublicUser::from).collect();
     Ok(Json(public))
+}
+
+async fn add_group_dm_recipients(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(channel_id): Path<Uuid>,
+    Json(body): Json<AddGroupDmRecipientsRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    if body.recipient_ids.is_empty() {
+        return Err(ApiError::InvalidInput(
+            "Must specify at least one recipient".into(),
+        ));
+    }
+
+    // Fetch channel and verify it's a group DM
+    let channel = queries::get_channel_by_id(&state.db, channel_id)
+        .await?
+        .ok_or(ApiError::NotFound("Channel"))?;
+    if channel.channel_type != ChannelType::GroupDm {
+        return Err(ApiError::InvalidInput(
+            "Can only add members to group DMs".into(),
+        ));
+    }
+
+    // Verify requesting user is a member
+    let current_members = queries::get_dm_members(&state.db, channel_id).await?;
+    if !current_members.iter().any(|m| m.id == user.user_id) {
+        return Err(ApiError::NotFound("Channel"));
+    }
+
+    // Filter out users who are already members
+    let new_ids: Vec<Uuid> = body
+        .recipient_ids
+        .iter()
+        .copied()
+        .filter(|id| !current_members.iter().any(|m| m.id == *id))
+        .collect();
+
+    if new_ids.is_empty() {
+        let public: Vec<PublicUser> = current_members.into_iter().map(PublicUser::from).collect();
+        return Ok(Json(public));
+    }
+
+    // Check total won't exceed 10
+    if current_members.len() + new_ids.len() > 10 {
+        return Err(ApiError::InvalidInput(
+            "Group DM cannot exceed 10 members".into(),
+        ));
+    }
+
+    // Add new members
+    for uid in &new_ids {
+        queries::get_user_by_id(&state.db, *uid)
+            .await?
+            .ok_or(ApiError::NotFound("User"))?;
+        queries::add_dm_member(&state.db, channel_id, *uid).await?;
+    }
+
+    // Build full recipient list
+    let all_members = queries::get_dm_members(&state.db, channel_id).await?;
+    let all_public: Vec<PublicUser> = all_members.iter().map(|m| PublicUser::from(m.clone())).collect();
+
+    let event = DmChannelCreateEvent {
+        channel: channel.clone(),
+        recipients: all_public.clone(),
+    };
+
+    // New members get DM_CHANNEL_CREATE (channel appears in their sidebar)
+    for uid in &new_ids {
+        state
+            .gateway
+            .dispatch_to_user(*uid, "DM_CHANNEL_CREATE", &event);
+    }
+
+    // Existing members get DM_RECIPIENT_ADD (recipient list updates)
+    for member in &current_members {
+        state
+            .gateway
+            .dispatch_to_user(member.id, "DM_RECIPIENT_ADD", &event);
+    }
+
+    Ok(Json(all_public))
 }

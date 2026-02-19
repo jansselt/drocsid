@@ -471,6 +471,11 @@ pub struct CreateGroupDmRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct AddGroupDmRecipientsRequest {
+    pub recipient_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CreateThreadRequest {
     pub name: String,
     pub message_id: Option<Uuid>,

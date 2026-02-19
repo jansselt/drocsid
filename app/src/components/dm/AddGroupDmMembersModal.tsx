@@ -5,23 +5,30 @@ import * as api from '../../api/client';
 import type { User } from '../../types';
 import './CreateGroupDmModal.css';
 
-interface CreateGroupDmModalProps {
+interface AddGroupDmMembersModalProps {
+  channelId: string;
+  currentRecipients: User[];
   onClose: () => void;
-  initialSelection?: User[];
 }
 
-export function CreateGroupDmModal({ onClose, initialSelection }: CreateGroupDmModalProps) {
-  const createGroupDm = useServerStore((s) => s.createGroupDm);
+export function AddGroupDmMembersModal({
+  channelId,
+  currentRecipients,
+  onClose,
+}: AddGroupDmMembersModalProps) {
+  const addGroupDmRecipients = useServerStore((s) => s.addGroupDmRecipients);
   const relationships = useServerStore((s) => s.relationships);
   const currentUser = useAuthStore((s) => s.user);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [searching, setSearching] = useState(false);
-  const [selectedUsers, setSelectedUsers] = useState<User[]>(initialSelection ?? []);
-  const [groupName, setGroupName] = useState('');
+  const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const maxNew = 10 - currentRecipients.length;
+  const excludeIds = new Set(currentRecipients.map((u) => u.id));
 
   const searchTimeout = useRef<ReturnType<typeof setTimeout>>(undefined);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -33,11 +40,10 @@ export function CreateGroupDmModal({ onClose, initialSelection }: CreateGroupDmM
   useEffect(() => {
     const q = searchQuery.trim();
     if (q.length < 2) {
-      // Show friends when no search query
       const friends = relationships
         .filter((r) => r.rel_type === 'friend')
         .map((r) => r.user)
-        .filter((u) => !selectedUsers.some((s) => s.id === u.id));
+        .filter((u) => !excludeIds.has(u.id) && !selectedUsers.some((s) => s.id === u.id));
       setSearchResults(friends);
       return;
     }
@@ -49,7 +55,10 @@ export function CreateGroupDmModal({ onClose, initialSelection }: CreateGroupDmM
         const results = await api.searchUsers(q);
         setSearchResults(
           results.filter(
-            (u) => u.id !== currentUser?.id && !selectedUsers.some((s) => s.id === u.id),
+            (u) =>
+              u.id !== currentUser?.id &&
+              !excludeIds.has(u.id) &&
+              !selectedUsers.some((s) => s.id === u.id),
           ),
         );
       } catch {
@@ -59,12 +68,12 @@ export function CreateGroupDmModal({ onClose, initialSelection }: CreateGroupDmM
     }, 300);
 
     return () => clearTimeout(searchTimeout.current);
-  }, [searchQuery, relationships, selectedUsers, currentUser]);
+  }, [searchQuery, relationships, selectedUsers, currentUser, excludeIds]);
 
   const toggleUser = (user: User) => {
     if (selectedUsers.some((u) => u.id === user.id)) {
       setSelectedUsers(selectedUsers.filter((u) => u.id !== user.id));
-    } else if (selectedUsers.length < 9) {
+    } else if (selectedUsers.length < maxNew) {
       setSelectedUsers([...selectedUsers, user]);
       setSearchQuery('');
     }
@@ -74,7 +83,7 @@ export function CreateGroupDmModal({ onClose, initialSelection }: CreateGroupDmM
     setSelectedUsers(selectedUsers.filter((u) => u.id !== userId));
   };
 
-  const handleCreate = async () => {
+  const handleAdd = async () => {
     if (selectedUsers.length === 0) {
       setError('Select at least one user');
       return;
@@ -82,13 +91,13 @@ export function CreateGroupDmModal({ onClose, initialSelection }: CreateGroupDmM
     setSubmitting(true);
     setError('');
     try {
-      await createGroupDm(
+      await addGroupDmRecipients(
+        channelId,
         selectedUsers.map((u) => u.id),
-        groupName.trim() || undefined,
       );
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create group DM');
+      setError(err instanceof Error ? err.message : 'Failed to add members');
       setSubmitting(false);
     }
   };
@@ -96,7 +105,7 @@ export function CreateGroupDmModal({ onClose, initialSelection }: CreateGroupDmM
   return (
     <div className="create-group-dm-overlay" onClick={onClose}>
       <div className="create-group-dm-modal" onClick={(e) => e.stopPropagation()}>
-        <h2 className="create-group-dm-title">Create Group DM</h2>
+        <h2 className="create-group-dm-title">Add Members</h2>
 
         {selectedUsers.length > 0 && (
           <div className="create-group-dm-selected">
@@ -136,7 +145,7 @@ export function CreateGroupDmModal({ onClose, initialSelection }: CreateGroupDmM
                 onClick={() => toggleUser(user)}
               >
                 <span className="create-group-dm-user-avatar">
-                  {(user.avatar_url) ? (
+                  {user.avatar_url ? (
                     <img src={user.avatar_url} alt="" />
                   ) : (
                     user.username.slice(0, 1).toUpperCase()
@@ -145,25 +154,10 @@ export function CreateGroupDmModal({ onClose, initialSelection }: CreateGroupDmM
                 <span className="create-group-dm-user-name">
                   {user.display_name || user.username}
                 </span>
-                <span className="create-group-dm-user-username">
-                  {user.username}
-                </span>
+                <span className="create-group-dm-user-username">{user.username}</span>
               </button>
             ))}
         </div>
-
-        {selectedUsers.length > 1 && (
-          <div className="create-group-dm-name-field">
-            <label>Group Name (optional)</label>
-            <input
-              type="text"
-              placeholder="Enter a group name..."
-              value={groupName}
-              onChange={(e) => setGroupName(e.target.value)}
-              maxLength={100}
-            />
-          </div>
-        )}
 
         {error && <div className="create-group-dm-error">{error}</div>}
 
@@ -174,11 +168,11 @@ export function CreateGroupDmModal({ onClose, initialSelection }: CreateGroupDmM
           <button
             className="create-group-dm-submit"
             disabled={submitting || selectedUsers.length === 0}
-            onClick={handleCreate}
+            onClick={handleAdd}
           >
             {submitting
-              ? 'Creating...'
-              : `Create DM${selectedUsers.length > 1 ? ' Group' : ''}`}
+              ? 'Adding...'
+              : `Add ${selectedUsers.length > 0 ? selectedUsers.length : ''} Member${selectedUsers.length !== 1 ? 's' : ''}`}
           </button>
         </div>
       </div>

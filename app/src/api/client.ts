@@ -443,6 +443,16 @@ export async function getDmRecipients(channelId: string): Promise<User[]> {
   return request(`/dms/${channelId}/recipients`);
 }
 
+export async function addGroupDmRecipients(
+  channelId: string,
+  recipientIds: string[],
+): Promise<User[]> {
+  return request(`/dms/${channelId}/recipients`, {
+    method: 'PUT',
+    body: JSON.stringify({ recipient_ids: recipientIds }),
+  });
+}
+
 // ── User Search ─────────────────────────────────────
 
 export async function searchUsers(query: string): Promise<User[]> {
