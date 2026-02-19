@@ -138,7 +138,7 @@ export function ServerSidebar() {
 
       <div style={{ flex: 1 }} />
 
-      <span style={{ fontSize: '0.6rem', color: '#72767d', textAlign: 'center', padding: '0 4px' }}>v0.1.0</span>
+      <span style={{ fontSize: '0.6rem', color: '#72767d', textAlign: 'center', padding: '0 4px' }}>v{__APP_VERSION__}</span>
 
       <button
         className="server-icon bug-report-btn"
