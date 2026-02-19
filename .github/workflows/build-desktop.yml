@@ -2,7 +2,7 @@ name: Build Desktop App
 
 on:
   push:
-    tags: ['v*']
+    tags: ['v*', 'drocsid-v*']
   workflow_dispatch:
 
 permissions:
@@ -152,7 +152,7 @@ jobs:
       # Generate latest.json for Tauri updater from the sig files
       - name: Generate updater manifest
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${GITHUB_REF_NAME##*v}"
           REPO="${{ github.repository }}"
           TAG="${GITHUB_REF_NAME}"
 
