@@ -37,7 +37,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "RWTg9Xas66jeaC+SojAHu070CcinIP9T+u9cH98jPhwvghZLfIhnr1x8",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY4REVBOEVCQUM3NkY1RTAKUldUZzlYYXM2NmplYUMrU29qQUh1MDcwQ2NpbklQOVQrdTljSDk4alBod3ZnaFpMZklobnIxeDgK",
       "endpoints": [
         "https://github.com/jansselt/drocsid/releases/latest/download/latest.json"
       ]
