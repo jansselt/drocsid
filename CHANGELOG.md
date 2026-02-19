@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/jansselt/drocsid/compare/drocsid-v0.2.0...drocsid-v0.2.1) (2026-02-19)
+
+
+### Bug Fixes
+
+* use empty password for Tauri signing key ([a0abd91](https://github.com/jansselt/drocsid/commit/a0abd911565f051003eec63fb6be878c59fb9605))
+
 ## [0.2.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.1.0...drocsid-v0.2.0) (2026-02-19)
 
 
