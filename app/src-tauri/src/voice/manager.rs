@@ -166,6 +166,7 @@ impl VoiceManager {
         );
 
         log::info!("VoiceManager::connect: all steps complete, voice active");
+        log::logger().flush();
         Ok(VoiceManager {
             room,
             _input_stream: input_stream,
@@ -217,9 +218,30 @@ impl VoiceManager {
             let mut first_samples_logged = false;
             let mut empty_ticks: u64 = 0;
 
+            // Periodic diagnostic counters
+            let mut diag_ticks: u64 = 0;
+            let mut diag_samples_total: u64 = 0;
+            let mut diag_frames_captured: u64 = 0;
+            let mut diag_capture_errors: u64 = 0;
+
             loop {
                 tokio::select! {
                     _ = interval.tick() => {
+                        diag_ticks += 1;
+
+                        // Log diagnostics every 5 seconds (500 ticks × 10ms)
+                        if diag_ticks % 500 == 0 {
+                            log::info!(
+                                "mic_forwarder [{}s]: samples_total={}, frames_captured={}, capture_errors={}, empty_ticks={}",
+                                diag_ticks / 100,
+                                diag_samples_total,
+                                diag_frames_captured,
+                                diag_capture_errors,
+                                empty_ticks,
+                            );
+                            log::logger().flush();
+                        }
+
                         if mic_muted.load(Ordering::Relaxed) {
                             // Drain the ring buffer but don't send
                             while consumer.pop().is_ok() {}
@@ -246,6 +268,7 @@ impl VoiceManager {
                             first_samples_logged = true;
                         }
                         empty_ticks = 0;
+                        diag_samples_total += buf.len() as u64;
 
                         // Compute RMS level for local speaking indicator
                         let sum_sq: f64 = buf.iter().map(|&s| {
@@ -262,8 +285,14 @@ impl VoiceManager {
                             num_channels: NUM_CHANNELS,
                             samples_per_channel: buf.len() as u32,
                         };
-                        if let Err(e) = audio_source.capture_frame(&frame).await {
-                            log::error!("mic_forwarder: capture_frame error: {e}");
+                        match audio_source.capture_frame(&frame).await {
+                            Ok(()) => { diag_frames_captured += 1; }
+                            Err(e) => {
+                                diag_capture_errors += 1;
+                                if diag_capture_errors <= 5 {
+                                    log::error!("mic_forwarder: capture_frame error: {e}");
+                                }
+                            }
                         }
                     }
                     _ = shutdown_rx.recv() => {
@@ -300,6 +329,9 @@ impl VoiceManager {
                                 .lock()
                                 .await
                                 .insert(identity, stream);
+                            let count = remote_streams.lock().await.len();
+                            log::info!("event: remote_streams count now = {count}");
+                            log::logger().flush();
                         }
                     }
                     RoomEvent::TrackUnsubscribed {
@@ -407,8 +439,29 @@ impl VoiceManager {
             let mut mix_buf = vec![0i32; 960];
             let mut first_audio_logged = false;
 
+            // Periodic diagnostic counters
+            let mut diag_ticks: u64 = 0;
+            let mut diag_frames_received: u64 = 0;
+            let mut diag_samples_written: u64 = 0;
+            let mut diag_ticks_with_audio: u64 = 0;
+
             loop {
                 interval.tick().await;
+                diag_ticks += 1;
+
+                // Log diagnostics every 5 seconds (500 ticks × 10ms)
+                if diag_ticks % 500 == 0 {
+                    let stream_count = remote_streams.lock().await.len();
+                    log::info!(
+                        "audio_mixer [{}s]: streams={}, frames_received={}, samples_written={}, ticks_with_audio={}",
+                        diag_ticks / 100,
+                        stream_count,
+                        diag_frames_received,
+                        diag_samples_written,
+                        diag_ticks_with_audio,
+                    );
+                    log::logger().flush();
+                }
 
                 if deaf.load(Ordering::Relaxed) {
                     // Push silence
@@ -431,6 +484,7 @@ impl VoiceManager {
                     while let Some(frame) = stream.next().now_or_never().flatten()
                     {
                         has_audio = true;
+                        diag_frames_received += 1;
                         // Mix mono frame into stereo output
                         for (i, &sample) in frame.data.iter().enumerate() {
                             let scaled: i32 = (sample as f32 * volume) as i32;
@@ -448,6 +502,7 @@ impl VoiceManager {
                 drop(streams);
 
                 if has_audio {
+                    diag_ticks_with_audio += 1;
                     if !first_audio_logged {
                         log::info!("audio_mixer: first remote audio received and mixed to output");
                         first_audio_logged = true;
@@ -456,6 +511,7 @@ impl VoiceManager {
                         let clamped = sample.clamp(-32768, 32767) as i16;
                         let _ = output_producer.push(clamped);
                     }
+                    diag_samples_written += mix_buf.len() as u64;
                 }
             }
         });
