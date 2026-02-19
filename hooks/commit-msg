@@ -1,0 +1,36 @@
+#!/usr/bin/env sh
+# Conventional Commits enforcement hook
+# Validates that commit messages follow: type(scope): description
+# Required for release-please automated versioning.
+
+msg_file="$1"
+msg=$(head -1 "$msg_file")
+
+# Allow merge commits
+if echo "$msg" | grep -qE '^Merge '; then
+  exit 0
+fi
+
+# Allow revert commits
+if echo "$msg" | grep -qE '^Revert '; then
+  exit 0
+fi
+
+# Conventional commit pattern: type(optional-scope)!?: description
+pattern='^(feat|fix|perf|refactor|docs|test|chore|style|ci|build|revert)(\([a-zA-Z0-9_-]+\))?!?: .+'
+
+if ! echo "$msg" | grep -qE "$pattern"; then
+  echo >&2 ""
+  echo >&2 "ERROR: Commit message does not follow Conventional Commits format."
+  echo >&2 ""
+  echo >&2 "  Expected: type(scope): description"
+  echo >&2 "  Got:      $msg"
+  echo >&2 ""
+  echo >&2 "  Valid types: feat, fix, perf, refactor, docs, test, chore, style, ci, build, revert"
+  echo >&2 "  Examples:"
+  echo >&2 "    feat: add dark mode toggle"
+  echo >&2 "    fix(auth): handle expired tokens gracefully"
+  echo >&2 "    chore: update dependencies"
+  echo >&2 ""
+  exit 1
+fi

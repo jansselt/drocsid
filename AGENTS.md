@@ -141,11 +141,46 @@ cd app && npx tsc --noEmit             # Type check
 cd app && npm run build                # Production build
 ```
 
+### Git Hooks (new clones)
+```bash
+cp hooks/* .git/hooks/     # Install commit-msg conventional commit enforcer
+```
+
 ### Infrastructure
 ```bash
 docker compose -f docker/docker-compose.yml up -d      # Start services
 docker compose -f docker/docker-compose.yml down -v     # Reset everything
 ```
+
+## Commit Messages
+
+**All commits MUST use [Conventional Commits](https://www.conventionalcommits.org/) format.** This is enforced by a git hook and is required for automated versioning via release-please.
+
+Format: `type(optional scope): description`
+
+| Type | When to use |
+|------|-------------|
+| `feat` | New feature (bumps minor version) |
+| `fix` | Bug fix (bumps patch version) |
+| `perf` | Performance improvement |
+| `refactor` | Code change that neither fixes a bug nor adds a feature |
+| `docs` | Documentation only |
+| `test` | Adding or updating tests |
+| `chore` | Build process, dependencies, CI changes |
+| `style` | Formatting, whitespace (no code change) |
+
+For breaking changes, add `!` after the type: `feat!: remove legacy API`
+
+Examples:
+```
+feat: add noise suppression for voice chat
+fix: resolve memory leak in message list scroll handler
+refactor(gateway): simplify heartbeat logic
+chore: update Tauri dependencies
+feat!: change authentication to OAuth2
+```
+
+**Do NOT** use freeform messages like "Update stuff" or "WIP". Every commit must have a valid type prefix.
 
 ## Things to Watch Out For
 
