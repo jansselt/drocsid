@@ -9,35 +9,34 @@ const isTauri = !!process.env.TAURI_ENV_PLATFORM
 export default defineConfig({
   plugins: [
     react(),
-    // Only enable PWA for web builds, not Tauri desktop
-    ...(!isTauri
-      ? [
-          VitePWA({
-            registerType: 'prompt',
-            manifest: {
-              name: 'Drocsid',
-              short_name: 'Drocsid',
-              description: 'Voice, video, and text chat',
-              theme_color: '#7c3aed',
-              background_color: '#1a1a2e',
-              display: 'standalone',
-              icons: [
-                {
-                  src: 'pwa-192x192.png',
-                  sizes: '192x192',
-                  type: 'image/png',
-                },
-                {
-                  src: 'pwa-512x512.png',
-                  sizes: '512x512',
-                  type: 'image/png',
-                  purpose: 'any maskable',
-                },
-              ],
-            },
-          }),
-        ]
-      : []),
+    // Always load PWA plugin so virtual:pwa-register resolves in all builds.
+    // Service workers are a no-op in Tauri webviews; the hook guards at runtime.
+    VitePWA({
+      registerType: 'prompt',
+      // Disable SW generation for Tauri — no service worker support in webviews
+      selfDestroying: isTauri,
+      manifest: isTauri ? false : {
+        name: 'Drocsid',
+        short_name: 'Drocsid',
+        description: 'Voice, video, and text chat',
+        theme_color: '#7c3aed',
+        background_color: '#1a1a2e',
+        display: 'standalone',
+        icons: [
+          {
+            src: 'pwa-192x192.png',
+            sizes: '192x192',
+            type: 'image/png',
+          },
+          {
+            src: 'pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any maskable',
+          },
+        ],
+      },
+    }),
   ],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
