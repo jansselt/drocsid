@@ -114,6 +114,21 @@ pub fn run() {
                 }
                 let _ = CombinedLogger::init(loggers);
                 log::info!("Drocsid v{} starting — log: {}", env!("CARGO_PKG_VERSION"), log_path.display());
+
+                // Install panic hook that writes to a crash file (survives process abort)
+                let crash_path = log_dir.join("drocsid-crash.log");
+                std::panic::set_hook(Box::new(move |info| {
+                    let msg = format!(
+                        "PANIC at {}: {}\n\nBacktrace:\n{:?}\n",
+                        info.location().map(|l| l.to_string()).unwrap_or_default(),
+                        info,
+                        std::backtrace::Backtrace::force_capture(),
+                    );
+                    // Write directly to crash file (not through log framework)
+                    let _ = std::fs::write(&crash_path, &msg);
+                    // Also try logging (may not flush)
+                    log::error!("{msg}");
+                }));
             }
 
             // Register voice managed state (native LiveKit + cpal)

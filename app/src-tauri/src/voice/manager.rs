@@ -70,23 +70,41 @@ impl VoiceManager {
     ) -> Result<Self, String> {
         log::info!("VoiceManager::connect: url={url}");
 
-        // 1. Connect to LiveKit room
-        log::info!("  step 1: connecting to LiveKit room...");
+        // 1. Build cpal streams FIRST — before LiveKit/libwebrtc touches WASAPI.
+        //    On Windows, libwebrtc's WebRtcVoiceEngine initializes its own WASAPI
+        //    audio module, which can conflict with cpal opening the same device.
+        //    Building cpal streams first avoids the crash.
+        log::info!("  step 1: setting up ring buffers and cpal streams");
+        let (mic_producer, mic_consumer) = rtrb::RingBuffer::new(MIC_RING_SIZE);
+        let (output_producer, output_consumer) = rtrb::RingBuffer::new(OUTPUT_RING_SIZE);
+
+        log::info!("  step 1a: building cpal input stream (mic={mic_device_id:?})...");
+        let input_stream =
+            audio_io::build_input_stream(mic_device_id, mic_producer)?;
+        log::info!("  step 1a: input stream OK");
+
+        log::info!("  step 1b: building cpal output stream (speaker={speaker_device_id:?})...");
+        let output_stream =
+            audio_io::build_output_stream(speaker_device_id, output_consumer)?;
+        log::info!("  step 1b: output stream OK");
+
+        // 2. Connect to LiveKit room (libwebrtc starts here)
+        log::info!("  step 2: connecting to LiveKit room...");
         let (room, event_rx) = Room::connect(url, token, RoomOptions::default())
             .await
             .map_err(|e| {
                 log::error!("  Room::connect failed: {e}");
                 format!("Room connect failed: {e}")
             })?;
-        log::info!("  step 1: room connected OK");
+        log::info!("  step 2: room connected OK");
 
         // Emit local identity so frontend can track self-speaking
         let local_identity = room.local_participant().identity().to_string();
         log::info!("  local identity: {local_identity}");
         let _ = app.emit("voice:local-identity", &local_identity);
 
-        // 2. Create native audio source for mic publishing
-        log::info!("  step 2: creating NativeAudioSource (rate={SAMPLE_RATE}, ch={NUM_CHANNELS})");
+        // 3. Create native audio source for mic publishing
+        log::info!("  step 3: creating NativeAudioSource (rate={SAMPLE_RATE}, ch={NUM_CHANNELS})");
         let audio_source = NativeAudioSource::new(
             Default::default(),
             SAMPLE_RATE,
@@ -94,8 +112,8 @@ impl VoiceManager {
             200, // queue_size_ms
         );
 
-        // 3. Create and publish local audio track
-        log::info!("  step 3: publishing audio track...");
+        // 4. Create and publish local audio track
+        log::info!("  step 4: publishing audio track...");
         let local_track = LocalAudioTrack::create_audio_track(
             "microphone",
             RtcAudioSource::Native(audio_source.clone()),
@@ -110,32 +128,17 @@ impl VoiceManager {
                 log::error!("  publish_track failed: {e}");
                 format!("Publish track failed: {e}")
             })?;
-        log::info!("  step 3: track published OK");
+        log::info!("  step 4: track published OK");
 
-        // 4. Set up ring buffers (lock-free SPSC)
-        let (mic_producer, mic_consumer) = rtrb::RingBuffer::new(MIC_RING_SIZE);
-        let (output_producer, output_consumer) = rtrb::RingBuffer::new(OUTPUT_RING_SIZE);
-
-        // 5. Build cpal streams
-        log::info!("  step 5: building cpal input stream (mic={mic_device_id:?})...");
-        let input_stream =
-            audio_io::build_input_stream(mic_device_id, mic_producer)?;
-        log::info!("  step 5: input stream OK");
-
-        log::info!("  step 5: building cpal output stream (speaker={speaker_device_id:?})...");
-        let output_stream =
-            audio_io::build_output_stream(speaker_device_id, output_consumer)?;
-        log::info!("  step 5: output stream OK");
-
-        // 6. Shared state
+        // 5. Shared state
         let mic_muted = Arc::new(AtomicBool::new(false));
         let deaf = Arc::new(AtomicBool::new(false));
         let user_volumes: Arc<Mutex<HashMap<String, f32>>> =
             Arc::new(Mutex::new(HashMap::new()));
         let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>(1);
 
-        // 7. Spawn mic forwarder task
-        log::info!("  step 7: spawning mic forwarder task");
+        // 6. Spawn mic forwarder task
+        log::info!("  step 6: spawning mic forwarder task");
         Self::spawn_mic_forwarder(
             app.clone(),
             mic_consumer,
@@ -144,11 +147,11 @@ impl VoiceManager {
             shutdown_rx,
         );
 
-        // 8. Spawn room event handler + audio mixer
+        // 7. Spawn room event handler + audio mixer
         let remote_streams: Arc<Mutex<HashMap<String, NativeAudioStream>>> =
             Arc::new(Mutex::new(HashMap::new()));
 
-        log::info!("  step 8: spawning event handler + audio mixer");
+        log::info!("  step 7: spawning event handler + audio mixer");
         Self::spawn_event_handler(
             app,
             event_rx,
