@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { usePwaUpdate } from '../../hooks/usePwaUpdate';
+import { useUpdateStore } from '../../stores/updateStore';
+import type { UpdateInfo } from '../../stores/updateStore';
 import './UpdateToast.css';
 
 const isTauri = '__TAURI_INTERNALS__' in globalThis;
@@ -8,12 +10,6 @@ const CHECK_INTERVAL_MS = 30 * 60 * 1000;
 const INITIAL_DELAY_MS = 10_000;
 
 const REPO = 'jansselt/drocsid';
-
-interface UpdateInfo {
-  version: string;
-  source: 'pwa' | 'tauri' | 'tauri-manual';
-  installCmd?: string;
-}
 
 function buildInstallCmd(version: string, pkgType: string | null): string | undefined {
   const tag = `drocsid-v${version}`;
@@ -36,9 +32,13 @@ function buildInstallCmd(version: string, pkgType: string | null): string | unde
 }
 
 export function UpdateToast() {
-  const [update, setUpdate] = useState<UpdateInfo | null>(null);
-  const [dismissed, setDismissed] = useState(false);
-  const [updating, setUpdating] = useState(false);
+  const update = useUpdateStore((s) => s.update);
+  const dismissed = useUpdateStore((s) => s.dismissed);
+  const updating = useUpdateStore((s) => s.updating);
+  const setUpdate = useUpdateStore((s) => s.setUpdate);
+  const dismiss = useUpdateStore((s) => s.dismiss);
+  const setUpdating = useUpdateStore((s) => s.setUpdating);
+
   const [copied, setCopied] = useState(false);
 
   const { needRefresh, applyUpdate } = usePwaUpdate();
@@ -46,9 +46,8 @@ export function UpdateToast() {
   useEffect(() => {
     if (needRefresh && !isTauri) {
       setUpdate({ version: '', source: 'pwa' });
-      setDismissed(false);
     }
-  }, [needRefresh]);
+  }, [needRefresh, setUpdate]);
 
   const checkTauriUpdate = useCallback(async () => {
     if (!isTauri) return;
@@ -58,21 +57,22 @@ export function UpdateToast() {
       const result = await check();
       if (result) {
         const method = await invoke<{ auto_update: boolean; pkg_type: string | null }>('get_update_method');
+        let info: UpdateInfo;
         if (method.auto_update) {
-          setUpdate({ version: result.version, source: 'tauri' });
+          info = { version: result.version, source: 'tauri' };
         } else {
-          setUpdate({
+          info = {
             version: result.version,
             source: 'tauri-manual',
             installCmd: buildInstallCmd(result.version, method.pkg_type),
-          });
+          };
         }
-        setDismissed(false);
+        setUpdate(info);
       }
     } catch {
       // Update check failed
     }
-  }, []);
+  }, [setUpdate]);
 
   useEffect(() => {
     if (!isTauri) return;
@@ -138,7 +138,7 @@ export function UpdateToast() {
       <div className="update-toast-actions">
         <button
           className="update-toast-later"
-          onClick={() => setDismissed(true)}
+          onClick={dismiss}
           disabled={updating}
         >
           Later

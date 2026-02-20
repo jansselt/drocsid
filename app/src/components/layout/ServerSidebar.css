@@ -79,6 +79,24 @@
   background: var(--danger);
 }
 
+.update-indicator-btn {
+  width: 40px;
+  height: 40px;
+  background: var(--accent);
+  color: #fff;
+  animation: update-pulse 2s ease-in-out infinite;
+}
+
+.update-indicator-btn:hover {
+  background: var(--accent);
+  filter: brightness(1.15);
+}
+
+@keyframes update-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(88, 101, 242, 0.5); }
+  50% { box-shadow: 0 0 0 6px rgba(88, 101, 242, 0); }
+}
+
 .create-server-popup {
   position: absolute;
   left: 80px;

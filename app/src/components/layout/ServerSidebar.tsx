@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import { useAuthStore } from '../../stores/authStore';
+import { useUpdateStore } from '../../stores/updateStore';
 import './ServerSidebar.css';
 
 export function ServerSidebar() {
@@ -15,6 +16,8 @@ export function ServerSidebar() {
   const dmChannels = useServerStore((s) => s.dmChannels);
   const relationships = useServerStore((s) => s.relationships);
   const logout = useAuthStore((s) => s.logout);
+  const updateAvailable = useUpdateStore((s) => s.update !== null);
+  const undismissUpdate = useUpdateStore((s) => s.undismiss);
 
   // Compute per-server unread and mention counts
   const serverIndicators = useMemo(() => {
@@ -137,6 +140,18 @@ export function ServerSidebar() {
       )}
 
       <div style={{ flex: 1 }} />
+
+      {updateAvailable && (
+        <button
+          className="server-icon update-indicator-btn"
+          onClick={undismissUpdate}
+          title="Update available"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 15l-5-5h3V8h4v4h3l-5 5z" />
+          </svg>
+        </button>
+      )}
 
       <span style={{ fontSize: '0.6rem', color: '#72767d', textAlign: 'center', padding: '0 4px' }}>v{__APP_VERSION__}</span>
 
