@@ -58,6 +58,11 @@ jobs:
           cp "$ICON" "$WORKDIR/drocsid.png"
           cp "$PKGBUILD" "$WORKDIR/PKGBUILD"
 
+          # Inject version from tag into PKGBUILD
+          TAG="${{ inputs.tag_name || github.ref_name }}"
+          VERSION="${TAG##*v}"
+          sed -i "s/^pkgver=.*/pkgver=${VERSION}/" "$WORKDIR/PKGBUILD"
+
           # Create .desktop file
           cat > "$WORKDIR/drocsid.desktop" <<'DESKTOP'
           [Desktop Entry]
