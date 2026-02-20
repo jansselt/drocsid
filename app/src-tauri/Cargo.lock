@@ -1112,7 +1112,7 @@ dependencies = [
 
 [[package]]
 name = "drocsid"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "cpal",
  "futures-util",
@@ -2524,9 +2524,9 @@ dependencies = [
 
 [[package]]
 name = "libwebrtc"
-version = "0.3.25"
+version = "0.3.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "744101553ea7c180f61d0fe6d4015532959d0cc3c7124e4731d8a3061a32f563"
+checksum = "24c68cb670823a24fc58a4640585acab53a1e9c224ed995733e650f395564d6f"
 dependencies = [
  "cxx",
  "glib 0.21.5",
@@ -2570,10 +2570,11 @@ checksum = "6373607a59f0be73a39b6fe456b8192fcc3585f602af20751600e974dd455e77"
 
 [[package]]
 name = "livekit"
-version = "0.7.31"
+version = "0.7.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8947842cb0677c01f0304c39cc4b3dfb5deaec77edd456a22f04f43241836013"
+checksum = "13f049dbbdfe8bd9a2217b03e4f14eb67e3ba12c807d97a9ffaf34359baa53c0"
 dependencies = [
+ "base64 0.22.1",
  "bmrng",
  "bytes",
  "chrono",
@@ -2596,9 +2597,9 @@ dependencies = [
 
 [[package]]
 name = "livekit-api"
-version = "0.4.13"
+version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3895310ff497b263d3c9ede35b6b561118660634bf65255d28d431069e7d63ab"
+checksum = "fa90c56d727f9e51b6ab5ce6b14262d4817900c72a8a346a4f7208bde98207e6"
 dependencies = [
  "async-tungstenite",
  "base64 0.21.7",
@@ -2625,9 +2626,9 @@ dependencies = [
 
 [[package]]
 name = "livekit-protocol"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e05a872cf2f791c5345330ef1c858b6973fa0575af0110965781f1bdcfc13cea"
+checksum = "01875112fb961da484dedf0c2d5705d8875c5e99da6d5aa1d567be1b7d03532a"
 dependencies = [
  "futures-util",
  "livekit-runtime",
@@ -6097,9 +6098,9 @@ dependencies = [
 
 [[package]]
 name = "webrtc-sys"
-version = "0.3.22"
+version = "0.3.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cef8560d74deb35eb98a0d09a60fae35991b70121bc164b258bcd441c7c65aba"
+checksum = "9d612cde159dea4736ca54e567b0867881d7c181b3a62d239231ea797fa00857"
 dependencies = [
  "cc",
  "cxx",

@@ -6,6 +6,22 @@ export interface AudioOutputDevice {
   isDefault: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Device list cache (Tauri only)
+// ---------------------------------------------------------------------------
+// On Windows, calling cpal device enumeration (WASAPI) while cpal audio
+// streams are active can crash the process.  We cache the Tauri device
+// lists so that re-opening Voice & Video settings while in a voice channel
+// returns the cached list instead of re-enumerating through cpal.
+let _cachedInputs: AudioInputDevice[] | null = null;
+let _cachedOutputs: AudioOutputDevice[] | null = null;
+
+/** Clear the device cache (call when devices may have changed, e.g. on disconnect). */
+export function invalidateDeviceCache(): void {
+  _cachedInputs = null;
+  _cachedOutputs = null;
+}
+
 /**
  * Enumerate audio output devices.
  * Tauri/Linux: uses cpal device enumeration (ALSA IDs).
@@ -35,17 +51,20 @@ async function listAudioOutputsWeb(): Promise<AudioOutputDevice[]> {
 }
 
 async function listAudioOutputsTauri(): Promise<AudioOutputDevice[]> {
+  if (_cachedOutputs) return _cachedOutputs;
   try {
     const { invoke } = await import('@tauri-apps/api/core');
     const devices = await invoke<Array<{ id: string; name: string; is_default: boolean }>>('voice_list_output_devices');
-    return devices.map((d) => ({
+    const result = devices.map((d) => ({
       id: d.id,
       label: d.name,
       isDefault: d.is_default,
     }));
+    _cachedOutputs = result;
+    return result;
   } catch (e) {
     console.warn('[audioDevices] Failed to list cpal output devices:', e);
-    return [];
+    return _cachedOutputs ?? [];
   }
 }
 
@@ -104,17 +123,20 @@ async function listAudioInputsWeb(): Promise<AudioInputDevice[]> {
 }
 
 async function listAudioInputsTauri(): Promise<AudioInputDevice[]> {
+  if (_cachedInputs) return _cachedInputs;
   try {
     const { invoke } = await import('@tauri-apps/api/core');
     const devices = await invoke<Array<{ id: string; name: string; is_default: boolean }>>('voice_list_input_devices');
-    return devices.map((d) => ({
+    const result = devices.map((d) => ({
       id: d.id,
       label: d.name,
       isDefault: d.is_default,
     }));
+    _cachedInputs = result;
+    return result;
   } catch (e) {
     console.warn('[audioDevices] Failed to list cpal input devices:', e);
-    return [];
+    return _cachedInputs ?? [];
   }
 }
 

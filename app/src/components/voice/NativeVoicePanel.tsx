@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useServerStore } from '../../stores/serverStore';
+import { invalidateDeviceCache } from '../../utils/audioDevices';
 import './VoicePanel.css';
 
 interface NativeVoicePanelProps {
@@ -123,6 +124,9 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
         // Already connected — disconnect immediately
         intentionalDisconnectRef.current = true;
         invoke('voice_disconnect').catch(() => {});
+        // Invalidate cached device list so next settings open re-enumerates
+        // (safe since cpal streams are being torn down)
+        invalidateDeviceCache();
       } else {
         // Connect still in progress — mark abandoned so callback handles it
         abandoned = true;
@@ -193,9 +197,12 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
       unlisteners.push(
         await listen<{ state: string }>('voice:connection-state', (event) => {
           setConnectionState(event.payload.state);
-          if (event.payload.state === 'disconnected' && !intentionalDisconnectRef.current) {
-            // Only leave the channel if the server disconnected us, not if we did it ourselves
-            voiceLeave();
+          if (event.payload.state === 'disconnected') {
+            invalidateDeviceCache();
+            if (!intentionalDisconnectRef.current) {
+              // Only leave the channel if the server disconnected us, not if we did it ourselves
+              voiceLeave();
+            }
           }
         })
       );

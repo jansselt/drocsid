@@ -74,41 +74,26 @@ impl VoiceManager {
     ) -> Result<Self, String> {
         log::info!("VoiceManager::connect: url={url}");
 
-        // 1. Build cpal streams FIRST — before LiveKit/libwebrtc touches WASAPI.
-        //    On Windows, libwebrtc's WebRtcVoiceEngine initializes its own WASAPI
-        //    audio module, which can conflict with cpal opening the same device.
-        //    Building cpal streams first avoids the crash.
-        log::info!("  step 1: setting up ring buffers and cpal streams");
-        let (mic_producer, mic_consumer) = rtrb::RingBuffer::new(MIC_RING_SIZE);
-        let (output_producer, output_consumer) = rtrb::RingBuffer::new(OUTPUT_RING_SIZE);
-
-        log::info!("  step 1a: building cpal input stream (mic={mic_device_id:?})...");
-        let input_stream =
-            audio_io::build_input_stream(mic_device_id, mic_producer)?;
-        log::info!("  step 1a: input stream OK");
-
-        log::info!("  step 1b: building cpal output stream (speaker={speaker_device_id:?})...");
-        let output_stream =
-            audio_io::build_output_stream(speaker_device_id, output_consumer)?;
-        log::info!("  step 1b: output stream OK");
-
-        // 2. Connect to LiveKit room (libwebrtc starts here)
-        log::info!("  step 2: connecting to LiveKit room...");
+        // 1. Connect to LiveKit room FIRST — let libwebrtc fully initialize its
+        //    WebRtcVoiceEngine and WASAPI ADM before cpal opens audio devices.
+        //    On Windows, having cpal WASAPI streams open while libwebrtc creates
+        //    data channels can cause a native C++ abort in libwebrtc.
+        log::info!("  step 1: connecting to LiveKit room...");
         let (room, event_rx) = Room::connect(url, token, RoomOptions::default())
             .await
             .map_err(|e| {
                 log::error!("  Room::connect failed: {e}");
                 format!("Room connect failed: {e}")
             })?;
-        log::info!("  step 2: room connected OK");
+        log::info!("  step 1: room connected OK");
 
         // Emit local identity so frontend can track self-speaking
         let local_identity = room.local_participant().identity().to_string();
         log::info!("  local identity: {local_identity}");
         let _ = app.emit("voice:local-identity", &local_identity);
 
-        // 3. Create native audio source for mic publishing
-        log::info!("  step 3: creating NativeAudioSource (rate={SAMPLE_RATE}, ch={NUM_CHANNELS})");
+        // 2. Create native audio source for mic publishing
+        log::info!("  step 2: creating NativeAudioSource (rate={SAMPLE_RATE}, ch={NUM_CHANNELS})");
         let audio_source = NativeAudioSource::new(
             Default::default(),
             SAMPLE_RATE,
@@ -116,8 +101,8 @@ impl VoiceManager {
             200, // queue_size_ms
         );
 
-        // 4. Create and publish local audio track
-        log::info!("  step 4: publishing audio track...");
+        // 3. Create and publish local audio track
+        log::info!("  step 3: publishing audio track...");
         let local_track = LocalAudioTrack::create_audio_track(
             "microphone",
             RtcAudioSource::Native(audio_source.clone()),
@@ -132,9 +117,32 @@ impl VoiceManager {
                 log::error!("  publish_track failed: {e}");
                 format!("Publish track failed: {e}")
             })?;
-        log::info!("  step 4: track published OK");
+        log::info!("  step 3: track published OK");
 
-        // 5. Shared state
+        // 4. Give libwebrtc time to complete publisher negotiation (data channel
+        //    creation, ICE gathering, DTLS setup).  On Windows, the ADM opens
+        //    WASAPI devices during this phase and building cpal streams too early
+        //    can trigger a C++ abort.  500ms is enough for the critical phase.
+        log::info!("  step 4: waiting for WebRTC negotiation to settle...");
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        log::info!("  step 4: settle delay complete");
+
+        // 5. Build cpal streams AFTER libwebrtc is fully initialized.
+        log::info!("  step 5: setting up ring buffers and cpal streams");
+        let (mic_producer, mic_consumer) = rtrb::RingBuffer::new(MIC_RING_SIZE);
+        let (output_producer, output_consumer) = rtrb::RingBuffer::new(OUTPUT_RING_SIZE);
+
+        log::info!("  step 5a: building cpal input stream (mic={mic_device_id:?})...");
+        let input_stream =
+            audio_io::build_input_stream(mic_device_id, mic_producer)?;
+        log::info!("  step 5a: input stream OK");
+
+        log::info!("  step 5b: building cpal output stream (speaker={speaker_device_id:?})...");
+        let output_stream =
+            audio_io::build_output_stream(speaker_device_id, output_consumer)?;
+        log::info!("  step 5b: output stream OK");
+
+        // 6. Shared state
         let mic_muted = Arc::new(AtomicBool::new(false));
         let deaf = Arc::new(AtomicBool::new(false));
         let user_volumes: Arc<Mutex<HashMap<String, f32>>> =
@@ -145,8 +153,8 @@ impl VoiceManager {
         let (mic_swap_tx, mic_swap_rx) = mpsc::channel::<rtrb::Consumer<i16>>(4);
         let (output_swap_tx, output_swap_rx) = mpsc::channel::<rtrb::Producer<i16>>(4);
 
-        // 6. Spawn mic forwarder task
-        log::info!("  step 6: spawning mic forwarder task");
+        // 7. Spawn mic forwarder task
+        log::info!("  step 7: spawning mic forwarder task");
         Self::spawn_mic_forwarder(
             app.clone(),
             mic_consumer,
@@ -156,11 +164,11 @@ impl VoiceManager {
             mic_swap_rx,
         );
 
-        // 7. Spawn room event handler + audio mixer
+        // 8. Spawn room event handler + audio mixer
         let remote_streams: Arc<Mutex<HashMap<String, NativeAudioStream>>> =
             Arc::new(Mutex::new(HashMap::new()));
 
-        log::info!("  step 7: spawning event handler + audio mixer");
+        log::info!("  step 8: spawning event handler + audio mixer");
         Self::spawn_event_handler(
             app,
             event_rx,
