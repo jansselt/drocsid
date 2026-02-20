@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.3.0...drocsid-v0.4.0) (2026-02-20)
+
+
+### Features
+
+* add CodeRabbit AI code review configuration ([ae7128c](https://github.com/jansselt/drocsid/commit/ae7128ce73f4e9ed0cf1b5dc4c056cd9c1d2737c))
+* add persistent update indicator in server sidebar ([411512b](https://github.com/jansselt/drocsid/commit/411512bfe6f710f846cb893410a80fafdbd2cf1a))
+* add soundboard for voice channels ([0f8eab5](https://github.com/jansselt/drocsid/commit/0f8eab5c9972093613e5376f71ccad219609dd11))
+
+
+### Bug Fixes
+
+* inject version into PKGBUILD from release tag ([e2d45a9](https://github.com/jansselt/drocsid/commit/e2d45a9d595551008f4a64f66a35fecf54c2b103))
+
 ## [0.3.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.2.2...drocsid-v0.3.0) (2026-02-20)
 
 
