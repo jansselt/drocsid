@@ -4,34 +4,52 @@ import './UpdateToast.css';
 
 const isTauri = '__TAURI_INTERNALS__' in globalThis;
 
-// How often to check for desktop updates (30 minutes)
 const CHECK_INTERVAL_MS = 30 * 60 * 1000;
-// Delay before first check to avoid blocking startup
 const INITIAL_DELAY_MS = 10_000;
 
-const RELEASES_URL = 'https://github.com/jansselt/drocsid/releases/latest';
+const REPO = 'jansselt/drocsid';
 
 interface UpdateInfo {
-  version?: string;
+  version: string;
   source: 'pwa' | 'tauri' | 'tauri-manual';
+  installCmd?: string;
+}
+
+function buildInstallCmd(version: string, pkgType: string | null): string | undefined {
+  const tag = `drocsid-v${version}`;
+  const base = `https://github.com/${REPO}/releases/download/${tag}`;
+
+  switch (pkgType) {
+    case 'deb': {
+      const file = `Drocsid_${version}_amd64.deb`;
+      return `curl -LO '${base}/${file}' && sudo dpkg -i ${file}`;
+    }
+    case 'rpm':
+      return `sudo dnf install '${base}/Drocsid-${version}-1.x86_64.rpm'`;
+    case 'pacman': {
+      const file = `drocsid-${version}-1-x86_64.pkg.tar.zst`;
+      return `curl -LO '${base}/${file}' && sudo pacman -U ${file}`;
+    }
+    default:
+      return undefined;
+  }
 }
 
 export function UpdateToast() {
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  // PWA update detection (web only)
   const { needRefresh, applyUpdate } = usePwaUpdate();
 
   useEffect(() => {
     if (needRefresh && !isTauri) {
-      setUpdate({ source: 'pwa' });
+      setUpdate({ version: '', source: 'pwa' });
       setDismissed(false);
     }
   }, [needRefresh]);
 
-  // Tauri updater detection (desktop only)
   const checkTauriUpdate = useCallback(async () => {
     if (!isTauri) return;
     try {
@@ -39,24 +57,27 @@ export function UpdateToast() {
       const { invoke } = await import('@tauri-apps/api/core');
       const result = await check();
       if (result) {
-        const autoUpdateSupported = await invoke<boolean>('can_auto_update');
-        setUpdate({
-          version: result.version,
-          source: autoUpdateSupported ? 'tauri' : 'tauri-manual',
-        });
+        const method = await invoke<{ auto_update: boolean; pkg_type: string | null }>('get_update_method');
+        if (method.auto_update) {
+          setUpdate({ version: result.version, source: 'tauri' });
+        } else {
+          setUpdate({
+            version: result.version,
+            source: 'tauri-manual',
+            installCmd: buildInstallCmd(result.version, method.pkg_type),
+          });
+        }
         setDismissed(false);
       }
     } catch {
-      // Update check failed — network error, no release, etc.
+      // Update check failed
     }
   }, []);
 
   useEffect(() => {
     if (!isTauri) return;
-
     const initialTimeout = setTimeout(checkTauriUpdate, INITIAL_DELAY_MS);
     const interval = setInterval(checkTauriUpdate, CHECK_INTERVAL_MS);
-
     return () => {
       clearTimeout(initialTimeout);
       clearInterval(interval);
@@ -77,11 +98,18 @@ export function UpdateToast() {
           await relaunch();
         }
       } else if (update?.source === 'tauri-manual') {
-        window.open(RELEASES_URL, '_blank');
+        window.open(`https://github.com/${REPO}/releases/latest`, '_blank');
       }
     } catch {
       setUpdating(false);
     }
+  };
+
+  const handleCopy = async () => {
+    if (!update?.installCmd) return;
+    await navigator.clipboard.writeText(update.installCmd);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   if (!update || dismissed) return null;
@@ -95,6 +123,14 @@ export function UpdateToast() {
       </div>
       {update.version && (
         <div className="update-toast-version">Version {update.version}</div>
+      )}
+      {isManual && update.installCmd && (
+        <div className="update-toast-cmd-wrap">
+          <code className="update-toast-cmd">{update.installCmd}</code>
+          <button className="update-toast-copy" onClick={handleCopy}>
+            {copied ? 'Copied!' : 'Copy'}
+          </button>
+        </div>
       )}
       {updating && !isManual && (
         <div className="update-toast-progress">Downloading update...</div>

@@ -58,14 +58,50 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[derive(serde::Serialize)]
+struct UpdateMethod {
+    auto_update: bool,
+    pkg_type: Option<String>,
+}
+
 #[tauri::command]
-fn can_auto_update() -> bool {
+fn get_update_method() -> UpdateMethod {
     #[cfg(target_os = "windows")]
-    { true }
+    { UpdateMethod { auto_update: true, pkg_type: None } }
     #[cfg(target_os = "linux")]
-    { std::env::var("APPIMAGE").is_ok() }
+    {
+        if std::env::var("APPIMAGE").is_ok() {
+            return UpdateMethod { auto_update: true, pkg_type: None };
+        }
+        UpdateMethod { auto_update: false, pkg_type: detect_linux_pkg_type() }
+    }
     #[cfg(not(any(target_os = "windows", target_os = "linux")))]
-    { false }
+    { UpdateMethod { auto_update: false, pkg_type: None } }
+}
+
+#[cfg(target_os = "linux")]
+fn detect_linux_pkg_type() -> Option<String> {
+    let content = std::fs::read_to_string("/etc/os-release").ok()?;
+    let mut id = String::new();
+    let mut id_like = String::new();
+    for line in content.lines() {
+        if let Some(v) = line.strip_prefix("ID=") {
+            id = v.trim_matches('"').to_lowercase();
+        }
+        if let Some(v) = line.strip_prefix("ID_LIKE=") {
+            id_like = v.trim_matches('"').to_lowercase();
+        }
+    }
+    let all = format!("{id} {id_like}");
+    for (needle, pkg) in [
+        ("debian", "deb"), ("ubuntu", "deb"), ("pop", "deb"), ("mint", "deb"),
+        ("fedora", "rpm"), ("rhel", "rpm"), ("centos", "rpm"),
+        ("nobara", "rpm"), ("opensuse", "rpm"), ("suse", "rpm"),
+        ("arch", "pacman"), ("manjaro", "pacman"), ("endeavouros", "pacman"),
+    ] {
+        if all.contains(needle) { return Some(pkg.into()); }
+    }
+    None
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -92,7 +128,7 @@ pub fn run() {
             voice::voice_list_output_devices,
             voice::voice_mic_test_start,
             voice::voice_mic_test_stop,
-            can_auto_update,
+            get_update_method,
         ])
         .setup(|app| {
             // Initialize file + terminal logging
