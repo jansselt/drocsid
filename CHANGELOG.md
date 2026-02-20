@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/jansselt/drocsid/compare/drocsid-v0.2.1...drocsid-v0.2.2) (2026-02-19)
+
+
+### Bug Fixes
+
+* regenerate Tauri signing key with proper password ([dc34737](https://github.com/jansselt/drocsid/commit/dc3473744aba54387245e842110e396217e9102a))
+
 ## [0.2.1](https://github.com/jansselt/drocsid/compare/drocsid-v0.2.0...drocsid-v0.2.1) (2026-02-19)
 
 
