@@ -5,7 +5,7 @@ use uuid::Uuid;
 use crate::types::entities::{
     Attachment, AuditAction, AuditLogEntry, Ban, Channel, ChannelOverride, ChannelType, DmMember,
     Invite, Message, Reaction, ReadState, Relationship, RelationshipType, RegistrationCode, Role,
-    SearchResult, Server, ServerMember, Session, ThreadMetadata, User, Webhook,
+    SearchResult, Server, ServerMember, Session, SoundboardSound, ThreadMetadata, User, Webhook,
 };
 
 // ── Instance ───────────────────────────────────────────
@@ -1969,4 +1969,110 @@ pub async fn update_user_password_hash(
         .execute(pool)
         .await?;
     Ok(())
+}
+
+// ── Soundboard ──────────────────────────────────────────
+
+pub async fn create_soundboard_sound(
+    pool: &PgPool,
+    id: Uuid,
+    server_id: Uuid,
+    uploader_id: Uuid,
+    name: &str,
+    audio_url: &str,
+    duration_ms: i32,
+    emoji_name: Option<&str>,
+) -> Result<SoundboardSound, sqlx::Error> {
+    sqlx::query_as::<_, SoundboardSound>(
+        "INSERT INTO soundboard_sounds (id, server_id, uploader_id, name, audio_url, duration_ms, emoji_name)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING *",
+    )
+    .bind(id)
+    .bind(server_id)
+    .bind(uploader_id)
+    .bind(name)
+    .bind(audio_url)
+    .bind(duration_ms)
+    .bind(emoji_name)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_soundboard_sounds(
+    pool: &PgPool,
+    server_id: Uuid,
+) -> Result<Vec<SoundboardSound>, sqlx::Error> {
+    sqlx::query_as::<_, SoundboardSound>(
+        "SELECT * FROM soundboard_sounds WHERE server_id = $1 ORDER BY created_at",
+    )
+    .bind(server_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn get_soundboard_sound(
+    pool: &PgPool,
+    sound_id: Uuid,
+) -> Result<Option<SoundboardSound>, sqlx::Error> {
+    sqlx::query_as::<_, SoundboardSound>("SELECT * FROM soundboard_sounds WHERE id = $1")
+        .bind(sound_id)
+        .fetch_optional(pool)
+        .await
+}
+
+pub async fn delete_soundboard_sound(
+    pool: &PgPool,
+    sound_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM soundboard_sounds WHERE id = $1")
+        .bind(sound_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn count_server_sounds(
+    pool: &PgPool,
+    server_id: Uuid,
+) -> Result<i64, sqlx::Error> {
+    let row: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM soundboard_sounds WHERE server_id = $1")
+            .bind(server_id)
+            .fetch_one(pool)
+            .await?;
+    Ok(row.0)
+}
+
+pub async fn set_member_join_sound(
+    pool: &PgPool,
+    server_id: Uuid,
+    user_id: Uuid,
+    sound_id: Option<Uuid>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE server_members SET join_sound_id = $3 WHERE server_id = $1 AND user_id = $2",
+    )
+    .bind(server_id)
+    .bind(user_id)
+    .bind(sound_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_member_join_sound(
+    pool: &PgPool,
+    server_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<SoundboardSound>, sqlx::Error> {
+    sqlx::query_as::<_, SoundboardSound>(
+        "SELECT ss.* FROM soundboard_sounds ss
+         JOIN server_members sm ON sm.join_sound_id = ss.id
+         WHERE sm.server_id = $1 AND sm.user_id = $2",
+    )
+    .bind(server_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
 }

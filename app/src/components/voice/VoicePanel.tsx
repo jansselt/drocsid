@@ -13,6 +13,7 @@ import { useServerStore } from '../../stores/serverStore';
 import { isTauri } from '../../api/instance';
 import { applyAudioOutputTauri, labelAudioStreamsTauri } from '../../utils/audioDevices';
 import { NativeVoicePanel } from './NativeVoicePanel';
+import { SoundboardPanel } from './SoundboardPanel';
 import './VoicePanel.css';
 
 export function VoicePanel({ compact }: { compact?: boolean } = {}) {
@@ -95,7 +96,10 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
   const users = useServerStore((s) => s.users);
   const setSpeakingUsers = useServerStore((s) => s.setSpeakingUsers);
   const speakingUsers = useServerStore((s) => s.speakingUsers);
+  const activeServerId = useServerStore((s) => s.activeServerId);
   const room = useRoomContext();
+
+  const [showSoundboard, setShowSoundboard] = useState(false);
 
   // Per-user volume control
   const [volumeMenu, setVolumeMenu] = useState<{ identity: string; x: number; y: number } | null>(null);
@@ -555,6 +559,15 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
           </svg>
         </button>
         <button
+          className={`voice-panel-btn ${showSoundboard ? 'active-on' : ''}`}
+          onClick={() => setShowSoundboard(!showSoundboard)}
+          title="Soundboard"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+          </svg>
+        </button>
+        <button
           className="voice-panel-btn disconnect"
           onClick={voiceLeave}
           title="Disconnect"
@@ -564,6 +577,12 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
           </svg>
         </button>
       </div>
+      {showSoundboard && activeServerId && (
+        <SoundboardPanel
+          serverId={activeServerId}
+          onClose={() => setShowSoundboard(false)}
+        />
+      )}
     </div>
   );
 }

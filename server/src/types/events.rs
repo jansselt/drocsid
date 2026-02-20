@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use super::entities::{
     Attachment, ChannelOverride, Message, PublicUser, ReactionGroup, Role, Server, ServerMember,
+    SoundboardSound,
 };
 
 // ── Gateway Opcodes ────────────────────────────────────
@@ -308,6 +309,31 @@ pub struct BanCreateEvent {
 #[derive(Debug, Clone, Serialize)]
 pub struct BanDeleteEvent {
     pub server_id: Uuid,
+    pub user_id: Uuid,
+}
+
+// ── Soundboard Events ──────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SoundboardSoundCreateEvent {
+    pub server_id: Uuid,
+    #[serde(flatten)]
+    pub sound: SoundboardSound,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SoundboardSoundDeleteEvent {
+    pub server_id: Uuid,
+    pub sound_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SoundboardPlayEvent {
+    pub server_id: Uuid,
+    pub channel_id: Uuid,
+    pub sound_id: Uuid,
+    pub audio_url: String,
+    pub volume: f32,
     pub user_id: Uuid,
 }
 

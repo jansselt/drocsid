@@ -12,7 +12,7 @@ use crate::error::ApiError;
 use crate::services::permissions as perm_service;
 use crate::state::AppState;
 use crate::types::entities::{ChannelType, VoiceJoinRequest, VoiceStateUpdate};
-use crate::types::events::VoiceTokenResponse;
+use crate::types::events::{SoundboardPlayEvent, VoiceTokenResponse};
 use crate::types::permissions::Permissions;
 
 pub fn routes() -> Router<AppState> {
@@ -122,6 +122,26 @@ async fn voice_join(
         self_mute,
         self_deaf,
     );
+
+    // Play entrance sound if the user has one set
+    if let Ok(Some(join_sound)) =
+        queries::get_member_join_sound(&state.db, server_id, user.user_id).await
+    {
+        let play_event = SoundboardPlayEvent {
+            server_id,
+            channel_id,
+            sound_id: join_sound.id,
+            audio_url: join_sound.audio_url,
+            volume: join_sound.volume,
+            user_id: user.user_id,
+        };
+        let channel_users = state.gateway.voice_channel_users(channel_id);
+        for vs in &channel_users {
+            state
+                .gateway
+                .dispatch_to_user(vs.user_id, "SOUNDBOARD_PLAY", &play_event);
+        }
+    }
 
     Ok(Json(VoiceTokenResponse {
         token,

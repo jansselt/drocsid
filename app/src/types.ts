@@ -487,6 +487,38 @@ export interface LinkPreviewData {
   site_name: string | null;
 }
 
+// ── Soundboard ──────────────────────────────────────────
+
+export interface SoundboardSound {
+  id: string;
+  server_id: string;
+  uploader_id: string;
+  name: string;
+  audio_url: string;
+  duration_ms: number;
+  emoji_name: string | null;
+  volume: number;
+  created_at: string;
+}
+
+export interface SoundboardPlayEvent {
+  server_id: string;
+  channel_id: string;
+  sound_id: string;
+  audio_url: string;
+  volume: number;
+  user_id: string;
+}
+
+export interface SoundboardSoundCreateEvent extends SoundboardSound {
+  server_id: string;
+}
+
+export interface SoundboardSoundDeleteEvent {
+  server_id: string;
+  sound_id: string;
+}
+
 // ── Permission Constants ──────────────────────────────
 
 export const Permissions = {
@@ -516,6 +548,8 @@ export const Permissions = {
   MANAGE_ROLES: 1 << 28,
   MANAGE_WEBHOOKS: 1 << 29,
   MANAGE_EXPRESSIONS: 1 << 30,
+  USE_SOUNDBOARD: 2 ** 42,
+  MANAGE_SOUNDBOARD: 2 ** 43,
 } as const;
 
 export const PermissionLabels: Record<number, string> = {
@@ -545,4 +579,6 @@ export const PermissionLabels: Record<number, string> = {
   [Permissions.MANAGE_ROLES]: 'Manage Roles',
   [Permissions.MANAGE_WEBHOOKS]: 'Manage Webhooks',
   [Permissions.MANAGE_EXPRESSIONS]: 'Manage Expressions',
+  [Permissions.USE_SOUNDBOARD]: 'Use Soundboard',
+  [Permissions.MANAGE_SOUNDBOARD]: 'Manage Soundboard',
 };

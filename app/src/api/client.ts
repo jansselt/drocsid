@@ -4,6 +4,7 @@ import type {
   VoiceTokenResponse, VoiceState, Invite, InviteResolve, Ban, AuditLogEntry,
   Webhook, GifSearchResponse, ServerMemberWithUser, RegistrationCode,
   NotificationPreference, NotificationLevel, LinkPreviewData,
+  SoundboardSound,
 } from '../types';
 
 import { getApiUrl } from './instance';
@@ -745,4 +746,44 @@ export async function setNotificationPreference(
       muted,
     }),
   });
+}
+
+// ── Soundboard ──────────────────────────────────────────
+
+export async function getSoundboardSounds(serverId: string): Promise<SoundboardSound[]> {
+  return request(`/servers/${serverId}/soundboard`);
+}
+
+export async function uploadSoundboardSound(
+  serverId: string,
+  file: File,
+  name: string,
+  durationMs: number,
+  emojiName?: string,
+): Promise<SoundboardSound> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('name', name);
+  formData.append('duration_ms', String(durationMs));
+  if (emojiName) formData.append('emoji_name', emojiName);
+  return request(`/servers/${serverId}/soundboard`, { method: 'POST', body: formData });
+}
+
+export async function deleteSoundboardSound(serverId: string, soundId: string): Promise<void> {
+  return request(`/servers/${serverId}/soundboard/${soundId}`, { method: 'DELETE' });
+}
+
+export async function playSoundboardSound(serverId: string, soundId: string): Promise<void> {
+  return request(`/servers/${serverId}/soundboard/${soundId}/play`, { method: 'POST' });
+}
+
+export async function setJoinSound(serverId: string, soundId: string): Promise<void> {
+  return request(`/servers/${serverId}/soundboard/join-sound`, {
+    method: 'PUT',
+    body: JSON.stringify({ sound_id: soundId }),
+  });
+}
+
+export async function clearJoinSound(serverId: string): Promise<void> {
+  return request(`/servers/${serverId}/soundboard/join-sound`, { method: 'DELETE' });
 }

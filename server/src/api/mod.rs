@@ -10,6 +10,7 @@ pub mod relationships;
 pub mod roles;
 pub mod search;
 pub mod servers;
+pub mod soundboard;
 pub mod unfurl;
 pub mod voice;
 pub mod webhooks;
@@ -38,7 +39,8 @@ fn api_routes() -> Router<AppState> {
             servers::routes()
                 .merge(roles::routes())
                 .merge(invites::routes())
-                .merge(bans::routes()),
+                .merge(bans::routes())
+                .merge(soundboard::routes()),
         )
         .nest(
             "/channels",

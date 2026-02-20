@@ -24,7 +24,7 @@ export function initAudio(): void {
   }
 }
 
-function getAudioContext(): AudioContext | null {
+export function getAudioContext(): AudioContext | null {
   if (!audioCtx) {
     // Lazy fallback — but context will likely be suspended without user gesture
     try {

@@ -630,3 +630,23 @@ pub struct ExecuteWebhookRequest {
     pub username: Option<String>,
     pub avatar_url: Option<String>,
 }
+
+// ── Soundboard ──────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct SoundboardSound {
+    pub id: Uuid,
+    pub server_id: Uuid,
+    pub uploader_id: Uuid,
+    pub name: String,
+    pub audio_url: String,
+    pub duration_ms: i32,
+    pub emoji_name: Option<String>,
+    pub volume: f32,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetJoinSoundRequest {
+    pub sound_id: Uuid,
+}

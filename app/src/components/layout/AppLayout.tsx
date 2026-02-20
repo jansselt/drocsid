@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import { gateway } from '../../api/gateway';
 import { initAudio } from '../../utils/notificationSounds';
+import { initSoundboardPlayback } from '../../utils/soundboardAudio';
 import { requestNotificationPermission } from '../../utils/browserNotifications';
 import { ServerSidebar } from './ServerSidebar';
 import { ChannelSidebar } from './ChannelSidebar';
@@ -51,10 +52,14 @@ export function AppLayout() {
 
     // Set up dispatch event handlers
     const cleanup = initGatewayHandlers();
+    const cleanupSoundboard = initSoundboardPlayback(
+      () => useServerStore.getState().voiceSelfDeaf,
+    );
 
     return () => {
       gateway.onReady = null;
       cleanup();
+      cleanupSoundboard();
     };
   }, [initGatewayHandlers, setServers, setReadStates, setNotificationPrefs, restoreNavigation]);
 

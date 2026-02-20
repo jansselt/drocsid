@@ -34,6 +34,8 @@ bitflags! {
         const MANAGE_THREADS         = 1 << 34;
         const SEND_MESSAGES_IN_THREADS = 1 << 38;
         const MODERATE_MEMBERS       = 1 << 40;
+        const USE_SOUNDBOARD         = 1 << 42;
+        const MANAGE_SOUNDBOARD      = 1 << 43;
     }
 }
 
@@ -52,5 +54,6 @@ impl Default for Permissions {
             | Self::ATTACH_FILES
             | Self::USE_EXTERNAL_EMOJIS
             | Self::MENTION_EVERYONE
+            | Self::USE_SOUNDBOARD
     }
 }

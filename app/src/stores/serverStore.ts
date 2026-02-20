@@ -32,6 +32,10 @@ import type {
   MemberRoleUpdateEvent,
   NotificationPreference,
   NotificationLevel,
+  SoundboardSound,
+  SoundboardSoundCreateEvent,
+  SoundboardSoundDeleteEvent,
+  SoundboardPlayEvent,
 } from '../types';
 import * as api from '../api/client';
 import { getApiUrl } from '../api/instance';
@@ -112,6 +116,9 @@ interface ServerState {
   voiceStates: Map<string, VoiceState[]>; // channel_id -> voice states
   speakingUsers: Set<string>; // user_ids currently speaking (from LiveKit)
 
+  // Soundboard
+  soundboardSounds: Map<string, SoundboardSound[]>; // server_id -> sounds
+
   // Actions
   setView: (view: ViewMode) => void;
   setServers: (servers: Server[]) => void;
@@ -176,6 +183,10 @@ interface ServerState {
   voiceToggleDeaf: () => Promise<void>;
   loadVoiceStates: (channelId: string) => Promise<void>;
   setSpeakingUsers: (userIds: Set<string>) => void;
+
+  // Soundboard actions
+  loadSoundboard: (serverId: string) => Promise<void>;
+  playSoundboard: (serverId: string, soundId: string) => Promise<void>;
 
   // Read state actions
   setReadStates: (readStates: ReadState[]) => void;
@@ -287,6 +298,7 @@ export const useServerStore = create<ServerState>((set, get) => ({
   voiceSelfDeaf: false,
   voiceStates: new Map(),
   speakingUsers: new Set(),
+  soundboardSounds: new Map(),
   members: new Map(),
   presences: new Map(),
   dmChannels: [],
@@ -1002,6 +1014,27 @@ export const useServerStore = create<ServerState>((set, get) => ({
 
   setSpeakingUsers: (userIds) => set({ speakingUsers: userIds }),
 
+  loadSoundboard: async (serverId) => {
+    try {
+      const sounds = await api.getSoundboardSounds(serverId);
+      set((state) => {
+        const soundboardSounds = new Map(state.soundboardSounds);
+        soundboardSounds.set(serverId, sounds);
+        return { soundboardSounds };
+      });
+    } catch (e) {
+      console.error('[soundboard] Failed to load sounds:', e);
+    }
+  },
+
+  playSoundboard: async (serverId, soundId) => {
+    try {
+      await api.playSoundboardSound(serverId, soundId);
+    } catch (e) {
+      console.error('[soundboard] Failed to play sound:', e);
+    }
+  },
+
   loadVoiceStates: async (channelId) => {
     try {
       const states = await api.voiceGetStates(channelId);
@@ -1537,6 +1570,38 @@ export const useServerStore = create<ServerState>((set, get) => ({
             });
             return { readStates };
           });
+          break;
+        }
+        case 'SOUNDBOARD_SOUND_CREATE': {
+          const ev = data as SoundboardSoundCreateEvent;
+          set((state) => {
+            const soundboardSounds = new Map(state.soundboardSounds);
+            const existing = soundboardSounds.get(ev.server_id) || [];
+            if (!existing.some((s) => s.id === ev.id)) {
+              soundboardSounds.set(ev.server_id, [...existing, ev as SoundboardSound]);
+            }
+            return { soundboardSounds };
+          });
+          break;
+        }
+        case 'SOUNDBOARD_SOUND_DELETE': {
+          const ev = data as SoundboardSoundDeleteEvent;
+          set((state) => {
+            const soundboardSounds = new Map(state.soundboardSounds);
+            const existing = soundboardSounds.get(ev.server_id) || [];
+            soundboardSounds.set(
+              ev.server_id,
+              existing.filter((s) => s.id !== ev.sound_id),
+            );
+            return { soundboardSounds };
+          });
+          break;
+        }
+        case 'SOUNDBOARD_PLAY': {
+          const ev = data as SoundboardPlayEvent;
+          window.dispatchEvent(
+            new CustomEvent('drocsid-soundboard-play', { detail: ev }),
+          );
           break;
         }
         case 'PRESENCE_UPDATE': {
