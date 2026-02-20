@@ -58,6 +58,16 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[tauri::command]
+fn can_auto_update() -> bool {
+    #[cfg(target_os = "windows")]
+    { true }
+    #[cfg(target_os = "linux")]
+    { std::env::var("APPIMAGE").is_ok() }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    { false }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -82,6 +92,7 @@ pub fn run() {
             voice::voice_list_output_devices,
             voice::voice_mic_test_start,
             voice::voice_mic_test_stop,
+            can_auto_update,
         ])
         .setup(|app| {
             // Initialize file + terminal logging

@@ -9,9 +9,11 @@ const CHECK_INTERVAL_MS = 30 * 60 * 1000;
 // Delay before first check to avoid blocking startup
 const INITIAL_DELAY_MS = 10_000;
 
+const RELEASES_URL = 'https://github.com/jansselt/drocsid/releases/latest';
+
 interface UpdateInfo {
   version?: string;
-  source: 'pwa' | 'tauri';
+  source: 'pwa' | 'tauri' | 'tauri-manual';
 }
 
 export function UpdateToast() {
@@ -34,9 +36,14 @@ export function UpdateToast() {
     if (!isTauri) return;
     try {
       const { check } = await import('@tauri-apps/plugin-updater');
+      const { invoke } = await import('@tauri-apps/api/core');
       const result = await check();
       if (result) {
-        setUpdate({ version: result.version, source: 'tauri' });
+        const autoUpdateSupported = await invoke<boolean>('can_auto_update');
+        setUpdate({
+          version: result.version,
+          source: autoUpdateSupported ? 'tauri' : 'tauri-manual',
+        });
         setDismissed(false);
       }
     } catch {
@@ -69,6 +76,8 @@ export function UpdateToast() {
           await result.downloadAndInstall();
           await relaunch();
         }
+      } else if (update?.source === 'tauri-manual') {
+        window.open(RELEASES_URL, '_blank');
       }
     } catch {
       setUpdating(false);
@@ -76,6 +85,8 @@ export function UpdateToast() {
   };
 
   if (!update || dismissed) return null;
+
+  const isManual = update.source === 'tauri-manual';
 
   return (
     <div className="update-toast">
@@ -85,7 +96,7 @@ export function UpdateToast() {
       {update.version && (
         <div className="update-toast-version">Version {update.version}</div>
       )}
-      {updating && (
+      {updating && !isManual && (
         <div className="update-toast-progress">Downloading update...</div>
       )}
       <div className="update-toast-actions">
@@ -99,9 +110,9 @@ export function UpdateToast() {
         <button
           className="update-toast-update"
           onClick={handleUpdate}
-          disabled={updating}
+          disabled={updating && !isManual}
         >
-          {updating ? 'Updating...' : 'Update Now'}
+          {isManual ? 'View Release' : updating ? 'Updating...' : 'Update Now'}
         </button>
       </div>
     </div>
