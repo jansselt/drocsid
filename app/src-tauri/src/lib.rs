@@ -124,6 +124,8 @@ pub fn run() {
             voice::voice_set_mute,
             voice::voice_set_deaf,
             voice::voice_set_user_volume,
+            voice::voice_set_input_device,
+            voice::voice_set_output_device,
             voice::voice_list_input_devices,
             voice::voice_list_output_devices,
             voice::voice_mic_test_start,

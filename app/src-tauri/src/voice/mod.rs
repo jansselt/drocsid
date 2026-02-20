@@ -112,6 +112,32 @@ pub async fn voice_set_user_volume(
 }
 
 #[tauri::command]
+pub async fn voice_set_input_device(
+    state: State<'_, VoiceState>,
+    device_id: Option<String>,
+) -> Result<(), String> {
+    log::info!("voice_set_input_device: {device_id:?}");
+    let mut guard = state.0.lock().await;
+    if let Some(mgr) = guard.as_mut() {
+        mgr.set_input_device(device_id.as_deref())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn voice_set_output_device(
+    state: State<'_, VoiceState>,
+    device_id: Option<String>,
+) -> Result<(), String> {
+    log::info!("voice_set_output_device: {device_id:?}");
+    let mut guard = state.0.lock().await;
+    if let Some(mgr) = guard.as_mut() {
+        mgr.set_output_device(device_id.as_deref())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn voice_list_input_devices() -> Result<Vec<AudioDevice>, String> {
     log::info!("voice_list_input_devices called");
     let devices = audio_io::list_input_devices().map_err(|e| {

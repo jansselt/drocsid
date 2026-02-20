@@ -509,9 +509,12 @@ function VoiceVideoSettings() {
   const cameraStreamRef = useRef<MediaStream | null>(null);
 
   const loadDevices = useCallback(async () => {
-    if (navigator.mediaDevices) {
+    if (!isTauri() && navigator.mediaDevices) {
+      // Web browser path: request getUserMedia to unlock device labels,
+      // then enumerate video devices. Skip on Tauri — cpal handles audio
+      // devices natively, and calling getUserMedia in WebView2 while cpal
+      // has WASAPI devices open can crash the process.
       try {
-        // Request permission first so device labels are available
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true }).catch(
           () => navigator.mediaDevices.getUserMedia({ audio: true }),
         );
@@ -526,7 +529,7 @@ function VoiceVideoSettings() {
         // enumerateDevices not available
       }
     }
-    // Audio inputs/outputs: use platform abstraction (PipeWire/pactl on Tauri/Linux, enumerateDevices on web)
+    // Audio inputs/outputs: use platform abstraction (cpal on Tauri, enumerateDevices on web)
     const [inputs, outputs] = await Promise.all([listAudioInputs(), listAudioOutputs()]);
     setAudioInputs(inputs);
     setAudioOutputs(outputs);
@@ -652,7 +655,19 @@ function VoiceVideoSettings() {
       <h3>Input Device</h3>
       <div className="profile-field">
         <label>Microphone</label>
-        <select value={selectedMic} onChange={(e) => { setSelectedMic(e.target.value); saveMicrophone(e.target.value); }}>
+        <select value={selectedMic} onChange={async (e) => {
+          const val = e.target.value;
+          setSelectedMic(val);
+          saveMicrophone(val);
+          if (isTauri()) {
+            try {
+              const { invoke } = await import('@tauri-apps/api/core');
+              await invoke('voice_set_input_device', { deviceId: val || null });
+            } catch (err) {
+              console.warn('[Settings] voice_set_input_device failed:', err);
+            }
+          }
+        }}>
           <option value="">Default</option>
           {audioInputs.map((d) => (
             <option key={d.id} value={d.id}>
@@ -742,7 +757,19 @@ function VoiceVideoSettings() {
       <h3>Output Device</h3>
       <div className="profile-field">
         <label>Speaker</label>
-        <select value={selectedSpeaker} onChange={(e) => { setSelectedSpeaker(e.target.value); saveSpeaker(e.target.value); }}>
+        <select value={selectedSpeaker} onChange={async (e) => {
+          const val = e.target.value;
+          setSelectedSpeaker(val);
+          saveSpeaker(val);
+          if (isTauri()) {
+            try {
+              const { invoke } = await import('@tauri-apps/api/core');
+              await invoke('voice_set_output_device', { deviceId: val || null });
+            } catch (err) {
+              console.warn('[Settings] voice_set_output_device failed:', err);
+            }
+          }
+        }}>
           <option value="">Default</option>
           {audioOutputs.map((d) => (
             <option key={d.id} value={d.id}>

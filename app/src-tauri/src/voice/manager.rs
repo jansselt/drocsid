@@ -27,13 +27,17 @@ const OUTPUT_RING_SIZE: usize = (SAMPLE_RATE as usize) * 2 / 5;
 
 pub struct VoiceManager {
     room: Room,
-    _input_stream: cpal::Stream,
-    _output_stream: cpal::Stream,
+    input_stream: cpal::Stream,
+    output_stream: cpal::Stream,
     mic_muted: Arc<AtomicBool>,
     deaf: Arc<AtomicBool>,
     shutdown_tx: mpsc::Sender<()>,
     /// Per-user volume (0.0-2.0). Protected by tokio Mutex since only accessed from async tasks.
     user_volumes: Arc<Mutex<HashMap<String, f32>>>,
+    /// Channel to send a replacement mic ring-buffer consumer to the forwarder task.
+    mic_swap_tx: mpsc::Sender<rtrb::Consumer<i16>>,
+    /// Channel to send a replacement output ring-buffer producer to the mixer task.
+    output_swap_tx: mpsc::Sender<rtrb::Producer<i16>>,
 }
 
 // -- Tauri event payloads --
@@ -137,6 +141,10 @@ impl VoiceManager {
             Arc::new(Mutex::new(HashMap::new()));
         let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>(1);
 
+        // Channels for hot-swapping audio devices while connected
+        let (mic_swap_tx, mic_swap_rx) = mpsc::channel::<rtrb::Consumer<i16>>(4);
+        let (output_swap_tx, output_swap_rx) = mpsc::channel::<rtrb::Producer<i16>>(4);
+
         // 6. Spawn mic forwarder task
         log::info!("  step 6: spawning mic forwarder task");
         Self::spawn_mic_forwarder(
@@ -145,6 +153,7 @@ impl VoiceManager {
             audio_source,
             mic_muted.clone(),
             shutdown_rx,
+            mic_swap_rx,
         );
 
         // 7. Spawn room event handler + audio mixer
@@ -163,17 +172,20 @@ impl VoiceManager {
             output_producer,
             user_volumes.clone(),
             deaf.clone(),
+            output_swap_rx,
         );
 
         log::info!("VoiceManager::connect: all steps complete, voice active");
         Ok(VoiceManager {
             room,
-            _input_stream: input_stream,
-            _output_stream: output_stream,
+            input_stream,
+            output_stream,
             mic_muted,
             deaf,
             shutdown_tx,
             user_volumes,
+            mic_swap_tx,
+            output_swap_tx,
         })
     }
 
@@ -201,6 +213,38 @@ impl VoiceManager {
             .insert(identity.to_string(), volume);
     }
 
+    /// Hot-swap the input (microphone) device while keeping the LiveKit connection alive.
+    pub fn set_input_device(&mut self, device_id: Option<&str>) -> Result<(), String> {
+        log::info!("VoiceManager::set_input_device: {device_id:?}");
+        let (producer, consumer) = rtrb::RingBuffer::new(MIC_RING_SIZE);
+        let new_stream = audio_io::build_input_stream(device_id, producer)?;
+        // Send new consumer to the forwarder task (it will swap on next tick)
+        self.mic_swap_tx.try_send(consumer).map_err(|e| {
+            log::error!("set_input_device: failed to send new consumer: {e}");
+            format!("Failed to swap mic consumer: {e}")
+        })?;
+        // Replace stream — old one drops here, stopping its cpal callback
+        self.input_stream = new_stream;
+        log::info!("VoiceManager::set_input_device: swap complete");
+        Ok(())
+    }
+
+    /// Hot-swap the output (speaker) device while keeping the LiveKit connection alive.
+    pub fn set_output_device(&mut self, device_id: Option<&str>) -> Result<(), String> {
+        log::info!("VoiceManager::set_output_device: {device_id:?}");
+        let (producer, consumer) = rtrb::RingBuffer::new(OUTPUT_RING_SIZE);
+        let new_stream = audio_io::build_output_stream(device_id, consumer)?;
+        // Send new producer to the mixer task (it will swap on next tick)
+        self.output_swap_tx.try_send(producer).map_err(|e| {
+            log::error!("set_output_device: failed to send new producer: {e}");
+            format!("Failed to swap output producer: {e}")
+        })?;
+        // Replace stream — old one drops here, stopping its cpal callback
+        self.output_stream = new_stream;
+        log::info!("VoiceManager::set_output_device: swap complete");
+        Ok(())
+    }
+
     // -- Internal tasks --
 
     fn spawn_mic_forwarder(
@@ -209,6 +253,7 @@ impl VoiceManager {
         audio_source: NativeAudioSource,
         mic_muted: Arc<AtomicBool>,
         mut shutdown_rx: mpsc::Receiver<()>,
+        mut swap_rx: mpsc::Receiver<rtrb::Consumer<i16>>,
     ) {
         tokio::spawn(async move {
             let mut interval =
@@ -226,6 +271,14 @@ impl VoiceManager {
             loop {
                 tokio::select! {
                     _ = interval.tick() => {
+                        // Check for a device-swap message (non-blocking)
+                        while let Ok(new_consumer) = swap_rx.try_recv() {
+                            log::info!("mic_forwarder: swapping to new input consumer");
+                            consumer = new_consumer;
+                            first_samples_logged = false;
+                            empty_ticks = 0;
+                        }
+
                         diag_ticks += 1;
 
                         // Log diagnostics every 1 second (100 ticks × 10ms)
@@ -428,6 +481,7 @@ impl VoiceManager {
         mut output_producer: Producer<i16>,
         user_volumes: Arc<Mutex<HashMap<String, f32>>>,
         deaf: Arc<AtomicBool>,
+        mut swap_rx: mpsc::Receiver<rtrb::Producer<i16>>,
     ) {
         tokio::spawn(async move {
             let mut interval =
@@ -444,6 +498,13 @@ impl VoiceManager {
 
             loop {
                 interval.tick().await;
+
+                // Check for a device-swap message (non-blocking)
+                while let Ok(new_producer) = swap_rx.try_recv() {
+                    log::info!("audio_mixer: swapping to new output producer");
+                    output_producer = new_producer;
+                }
+
                 diag_ticks += 1;
 
                 // Log diagnostics every 1 second (100 ticks × 10ms)
