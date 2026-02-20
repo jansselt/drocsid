@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { useServerStore } from '../../stores/serverStore';
+import { SoundboardPanel } from './SoundboardPanel';
 import './VoiceControls.css';
 
 export function VoiceControls() {
@@ -9,20 +11,29 @@ export function VoiceControls() {
   const voiceToggleMute = useServerStore((s) => s.voiceToggleMute);
   const voiceToggleDeaf = useServerStore((s) => s.voiceToggleDeaf);
   const channels = useServerStore((s) => s.channels);
+  const [showSoundboard, setShowSoundboard] = useState(false);
   if (!voiceChannelId) return null;
 
-  // Find channel name
+  // Find channel name and server ID
   let channelName = 'Voice';
-  for (const [, serverChannels] of channels) {
+  let serverId = '';
+  for (const [sid, serverChannels] of channels) {
     const ch = serverChannels.find((c) => c.id === voiceChannelId);
     if (ch?.name) {
       channelName = ch.name;
+      serverId = sid;
       break;
     }
   }
 
   return (
-    <div className="voice-controls">
+    <div className="voice-controls" style={{ position: 'relative' }}>
+      {showSoundboard && serverId && (
+        <SoundboardPanel
+          serverId={serverId}
+          onClose={() => setShowSoundboard(false)}
+        />
+      )}
       <div className="voice-controls-info">
         <span className="voice-controls-status">Voice Connected</span>
         <span className="voice-controls-channel">{channelName}</span>
@@ -42,6 +53,15 @@ export function VoiceControls() {
               <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z" />
             </svg>
           )}
+        </button>
+        <button
+          className={`voice-control-btn ${showSoundboard ? 'active' : ''}`}
+          onClick={() => setShowSoundboard(!showSoundboard)}
+          title="Soundboard"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+          </svg>
         </button>
         <button
           className={`voice-control-btn ${voiceSelfDeaf ? 'active' : ''}`}

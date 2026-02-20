@@ -49,6 +49,7 @@ export function MessageInput({ channelId }: MessageInputProps) {
   const [slashIndex, setSlashIndex] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastTypingRef = useRef(0);
+  const dragCounterRef = useRef(0);
 
   // Reset typing timer when channel changes
   useEffect(() => {
@@ -160,18 +161,31 @@ export function MessageInput({ channelId }: MessageInputProps) {
     setUploads((prev) => [...prev, ...newUploads]);
   }, []);
 
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current++;
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsDragging(true);
+    }
+  }, []);
+
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    setIsDragging(true);
+    e.dataTransfer.dropEffect = 'copy';
   }, []);
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    setIsDragging(false);
+    dragCounterRef.current--;
+    if (dragCounterRef.current === 0) {
+      setIsDragging(false);
+    }
   }, []);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = 0;
     setIsDragging(false);
     if (e.dataTransfer.files.length > 0) {
       addFiles(e.dataTransfer.files);
@@ -251,6 +265,7 @@ export function MessageInput({ channelId }: MessageInputProps) {
   return (
     <div
       className={`message-input-wrapper ${isDragging ? 'dragging' : ''}`}
+      onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}

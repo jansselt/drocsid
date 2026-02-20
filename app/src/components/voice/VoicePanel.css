@@ -4,6 +4,7 @@
   height: 100%;
   background: var(--bg-primary);
   min-height: 0;
+  position: relative;
 }
 
 /* Compact mode: only video + controls, no participant list */

@@ -42,6 +42,7 @@ const CATEGORIES: Record<string, EmojiEntry[]> = {
     { emoji: '\u{1F448}', name: 'point_left' }, { emoji: '\u{1F449}', name: 'point_right' },
     { emoji: '\u{1F446}', name: 'point_up' }, { emoji: '\u{1F447}', name: 'point_down' },
     { emoji: '\u{270B}', name: 'hand' }, { emoji: '\u{1F596}', name: 'vulcan' },
+    { emoji: '\u{1F595}', name: 'middle_finger' },
   ],
   'Hearts': [
     { emoji: '\u{2764}\u{FE0F}', name: 'heart' }, { emoji: '\u{1F9E1}', name: 'orange_heart' },

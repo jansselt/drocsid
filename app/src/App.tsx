@@ -69,13 +69,16 @@ export default function App() {
 
   if (!isAuthenticated) {
     return (
-      <AuthPage
-        serverInviteCode={inviteCode ?? undefined}
-        onRegisteredWithInvite={() => {
-          setInviteCode(null);
-          window.history.replaceState(null, '', '/');
-        }}
-      />
+      <>
+        <AuthPage
+          serverInviteCode={inviteCode ?? undefined}
+          onRegisteredWithInvite={() => {
+            setInviteCode(null);
+            window.history.replaceState(null, '', '/');
+          }}
+        />
+        <UpdateToast />
+      </>
     );
   }
 
