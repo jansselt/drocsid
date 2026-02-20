@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.2.2...drocsid-v0.3.0) (2026-02-20)
+
+
+### Features
+
+* show distro-specific install command for manual updates ([f8c0d1d](https://github.com/jansselt/drocsid/commit/f8c0d1db041e2fa8502cdc5827b5b8b0c974620e))
+* show manual update link for non-AppImage Linux installs ([be3848d](https://github.com/jansselt/drocsid/commit/be3848dc99e4842c83f69ecb4a6cf0bfdf68e6ba))
+
 ## [0.2.2](https://github.com/jansselt/drocsid/compare/drocsid-v0.2.1...drocsid-v0.2.2) (2026-02-19)
 
 
