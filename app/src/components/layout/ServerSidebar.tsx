@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import { useAuthStore } from '../../stores/authStore';
 import { useUpdateStore } from '../../stores/updateStore';
@@ -56,6 +56,7 @@ export function ServerSidebar() {
 
   const [showCreate, setShowCreate] = useState(false);
   const [newServerName, setNewServerName] = useState('');
+  const [showReleaseNotes, setShowReleaseNotes] = useState(false);
 
   const handleCreate = async () => {
     if (!newServerName.trim()) return;
@@ -153,7 +154,16 @@ export function ServerSidebar() {
         </button>
       )}
 
-      <span style={{ fontSize: '0.6rem', color: '#72767d', textAlign: 'center', padding: '0 4px' }}>v{__APP_VERSION__}</span>
+      <button
+        className="version-btn"
+        onClick={() => setShowReleaseNotes(!showReleaseNotes)}
+        title="Release notes"
+      >
+        v{__APP_VERSION__}
+      </button>
+      {showReleaseNotes && (
+        <ReleaseNotesPopup onClose={() => setShowReleaseNotes(false)} />
+      )}
 
       <button
         className="server-icon bug-report-btn"
@@ -174,4 +184,100 @@ export function ServerSidebar() {
       </button>
     </div>
   );
+}
+
+const GITHUB_REPO = 'jansselt/drocsid';
+
+interface ReleaseNote {
+  tag_name: string;
+  name: string;
+  body: string;
+  published_at: string;
+  html_url: string;
+}
+
+function ReleaseNotesPopup({ onClose }: { onClose: () => void }) {
+  const [releases, setReleases] = useState<ReleaseNote[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const popupRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=10`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`GitHub API returned ${r.status}`);
+        return r.json();
+      })
+      .then((data: ReleaseNote[]) => {
+        if (!cancelled) setReleases(data);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Close on outside click
+  useEffect(() => {
+    const handle = (e: MouseEvent) => {
+      if (popupRef.current && !popupRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [onClose]);
+
+  return (
+    <div className="release-notes-popup" ref={popupRef}>
+      <div className="release-notes-header">
+        <span>Release Notes</span>
+        <button className="release-notes-close" onClick={onClose}>&times;</button>
+      </div>
+      <div className="release-notes-body">
+        {loading && <p className="release-notes-status">Loading...</p>}
+        {error && <p className="release-notes-status">Failed to load: {error}</p>}
+        {releases.map((r) => (
+          <div key={r.tag_name} className="release-notes-entry">
+            <div className="release-notes-version">
+              <a href={r.html_url} target="_blank" rel="noopener noreferrer">
+                {r.name || r.tag_name}
+              </a>
+              <span className="release-notes-date">
+                {new Date(r.published_at).toLocaleDateString()}
+              </span>
+            </div>
+            <ReleaseBody body={r.body} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Lightweight markdown renderer for release-please changelogs */
+function ReleaseBody({ body }: { body: string }) {
+  const html = useMemo(() => {
+    if (!body) return '';
+    return body
+      // Headers
+      .replace(/^### (.+)$/gm, '<h4>$1</h4>')
+      .replace(/^## (.+)$/gm, '<h3>$1</h3>')
+      // Bold
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      // Links: [text](url)
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+      // Bullet points
+      .replace(/^\* (.+)$/gm, '<li>$1</li>')
+      // Wrap consecutive <li> in <ul>
+      .replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>')
+      // Paragraphs (double newline)
+      .replace(/\n\n/g, '<br/>');
+  }, [body]);
+
+  return <div className="release-notes-content" dangerouslySetInnerHTML={{ __html: html }} />;
 }
