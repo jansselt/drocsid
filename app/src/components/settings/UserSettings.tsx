@@ -12,6 +12,7 @@ import {
   setNotificationVolume,
 } from '../../utils/notificationSounds';
 import { isTauri } from '../../api/instance';
+import { useUpdateStore } from '../../stores/updateStore';
 import {
   getBrowserNotificationsEnabled,
   setBrowserNotificationsEnabled,
@@ -356,6 +357,7 @@ export function UserSettings({ onClose }: UserSettingsProps) {
                     );
                   })}
                 </div>
+                <UpdateCheckSection />
               </div>
             )}
 
@@ -400,6 +402,44 @@ export function UserSettings({ onClose }: UserSettingsProps) {
         )}
       </div>
     </div>
+  );
+}
+
+function UpdateCheckSection() {
+  const update = useUpdateStore((s) => s.update);
+  const checking = useUpdateStore((s) => s.checking);
+  const checkForUpdates = useUpdateStore((s) => s.checkForUpdates);
+  const [checkedOnce, setCheckedOnce] = useState(false);
+
+  const handleCheck = async () => {
+    await checkForUpdates();
+    setCheckedOnce(true);
+  };
+
+  return (
+    <>
+      <h3 style={{ marginTop: '1.5rem' }}>Updates</h3>
+      <p style={{ color: 'var(--text-muted)', marginBottom: '0.75rem', fontSize: '0.85rem' }}>
+        Current version: v{__APP_VERSION__}
+      </p>
+      <button
+        className="profile-avatar-upload-btn"
+        onClick={handleCheck}
+        disabled={checking}
+      >
+        {checking ? 'Checking...' : 'Check for Updates'}
+      </button>
+      {update && !checking && (
+        <p style={{ color: 'var(--accent)', marginTop: '0.5rem', fontSize: '0.85rem' }}>
+          Update available: v{update.version || 'new version'}
+        </p>
+      )}
+      {!update && !checking && checkedOnce && (
+        <p style={{ color: 'var(--text-muted)', marginTop: '0.5rem', fontSize: '0.85rem' }}>
+          You&apos;re up to date!
+        </p>
+      )}
+    </>
   );
 }
 

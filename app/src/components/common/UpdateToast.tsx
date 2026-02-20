@@ -1,7 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { usePwaUpdate } from '../../hooks/usePwaUpdate';
 import { useUpdateStore } from '../../stores/updateStore';
-import type { UpdateInfo } from '../../stores/updateStore';
 import './UpdateToast.css';
 
 const isTauri = '__TAURI_INTERNALS__' in globalThis;
@@ -11,26 +10,6 @@ const INITIAL_DELAY_MS = 10_000;
 
 const REPO = 'jansselt/drocsid';
 
-function buildInstallCmd(version: string, pkgType: string | null): string | undefined {
-  const tag = `drocsid-v${version}`;
-  const base = `https://github.com/${REPO}/releases/download/${tag}`;
-
-  switch (pkgType) {
-    case 'deb': {
-      const file = `Drocsid_${version}_amd64.deb`;
-      return `curl -LO '${base}/${file}' && sudo dpkg -i ${file}`;
-    }
-    case 'rpm':
-      return `sudo dnf install '${base}/Drocsid-${version}-1.x86_64.rpm'`;
-    case 'pacman': {
-      const file = `drocsid-${version}-1-x86_64.pkg.tar.zst`;
-      return `curl -LO '${base}/${file}' && sudo pacman -U ${file}`;
-    }
-    default:
-      return undefined;
-  }
-}
-
 export function UpdateToast() {
   const update = useUpdateStore((s) => s.update);
   const dismissed = useUpdateStore((s) => s.dismissed);
@@ -38,6 +17,8 @@ export function UpdateToast() {
   const setUpdate = useUpdateStore((s) => s.setUpdate);
   const dismiss = useUpdateStore((s) => s.dismiss);
   const setUpdating = useUpdateStore((s) => s.setUpdating);
+
+  const checkForUpdates = useUpdateStore((s) => s.checkForUpdates);
 
   const [copied, setCopied] = useState(false);
 
@@ -49,40 +30,16 @@ export function UpdateToast() {
     }
   }, [needRefresh, setUpdate]);
 
-  const checkTauriUpdate = useCallback(async () => {
-    if (!isTauri) return;
-    try {
-      const { check } = await import('@tauri-apps/plugin-updater');
-      const { invoke } = await import('@tauri-apps/api/core');
-      const result = await check();
-      if (result) {
-        const method = await invoke<{ auto_update: boolean; pkg_type: string | null }>('get_update_method');
-        let info: UpdateInfo;
-        if (method.auto_update) {
-          info = { version: result.version, source: 'tauri' };
-        } else {
-          info = {
-            version: result.version,
-            source: 'tauri-manual',
-            installCmd: buildInstallCmd(result.version, method.pkg_type),
-          };
-        }
-        setUpdate(info);
-      }
-    } catch {
-      // Update check failed
-    }
-  }, [setUpdate]);
-
+  // Periodic Tauri update check
   useEffect(() => {
     if (!isTauri) return;
-    const initialTimeout = setTimeout(checkTauriUpdate, INITIAL_DELAY_MS);
-    const interval = setInterval(checkTauriUpdate, CHECK_INTERVAL_MS);
+    const initialTimeout = setTimeout(checkForUpdates, INITIAL_DELAY_MS);
+    const interval = setInterval(checkForUpdates, CHECK_INTERVAL_MS);
     return () => {
       clearTimeout(initialTimeout);
       clearInterval(interval);
     };
-  }, [checkTauriUpdate]);
+  }, [checkForUpdates]);
 
   const handleUpdate = async () => {
     setUpdating(true);

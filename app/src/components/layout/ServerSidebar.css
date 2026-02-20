@@ -138,6 +138,13 @@
 
 /* ── Version button ─────────────────────────────────── */
 
+.version-area {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
 .version-btn {
   background: none;
   border: none;
@@ -153,6 +160,37 @@
 .version-btn:hover {
   color: var(--text-primary);
   background: var(--bg-secondary);
+}
+
+.version-check-btn {
+  background: none;
+  border: none;
+  color: #72767d;
+  padding: 2px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.version-check-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+.version-check-btn:disabled {
+  cursor: default;
+}
+
+.version-check-btn.checking svg {
+  animation: check-spin 1s linear infinite;
+}
+
+@keyframes check-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* ── Release Notes Popup ───────────────────────────── */
