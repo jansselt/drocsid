@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.4.0...drocsid-v0.5.0) (2026-02-20)
+
+
+### Features
+
+* add manual check-for-updates button (drocsid-d5k) ([a43f8a6](https://github.com/jansselt/drocsid/commit/a43f8a68e2b07225cb85c882667997c7778e78ce))
+* show release notes from GitHub when clicking version ([e25d8ff](https://github.com/jansselt/drocsid/commit/e25d8fffe44294c320f7869ed46c9168da6b996a))
+
+
+### Bug Fixes
+
+* add soundboard to sidebar voice controls, fix popup positioning ([fbb0d97](https://github.com/jansselt/drocsid/commit/fbb0d972970f1cb75cda101dd29211f7b3245e92))
+* remove unused useCallback import in ServerSidebar ([1770a4c](https://github.com/jansselt/drocsid/commit/1770a4cdbe2080b306a8da966de98cc72303f50f))
+
 ## [0.4.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.3.0...drocsid-v0.4.0) (2026-02-20)
 
 
