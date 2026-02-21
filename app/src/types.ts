@@ -27,6 +27,17 @@ export interface RegistrationCode {
   created_at: string;
 }
 
+// ── Custom Themes ─────────────────────────────────────
+
+export interface CustomTheme {
+  id: string;
+  user_id: string;
+  name: string;
+  colors: Record<string, string>;
+  created_at: string;
+  updated_at: string;
+}
+
 // ── Servers ────────────────────────────────────────────
 
 export interface Server {

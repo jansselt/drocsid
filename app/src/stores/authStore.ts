@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { User } from '../types';
 import * as api from '../api/client';
 import { gateway } from '../api/gateway';
-import { useThemeStore, type ThemeName } from './themeStore';
+import { useThemeStore, applyThemeToDOM } from './themeStore';
 
 interface AuthState {
   user: User | null;
@@ -13,6 +13,23 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   register: (username: string, email: string, password: string, inviteCode?: string) => Promise<void>;
   logout: () => void;
+}
+
+async function applyUserTheme(themePref: string | undefined) {
+  if (!themePref) return;
+  if (themePref.startsWith('custom:')) {
+    try {
+      const customThemes = await api.getCustomThemes();
+      useThemeStore.getState().setCustomThemes(customThemes);
+      applyThemeToDOM(themePref, customThemes);
+      useThemeStore.setState({ theme: themePref });
+    } catch {
+      // Fall back to dark if custom themes can't be loaded
+      useThemeStore.getState().setTheme('dark');
+    }
+  } else {
+    useThemeStore.getState().setTheme(themePref);
+  }
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -29,9 +46,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     try {
       const user = await api.getMe();
-      if (user.theme_preference) {
-        useThemeStore.getState().setTheme(user.theme_preference as ThemeName);
-      }
+      await applyUserTheme(user.theme_preference);
       set({ user, isAuthenticated: true, isLoading: false });
       gateway.connect();
     } catch {
@@ -43,9 +58,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   login: async (email, password) => {
     const response = await api.login(email, password);
     api.setTokens(response.access_token, response.refresh_token);
-    if (response.user.theme_preference) {
-      useThemeStore.getState().setTheme(response.user.theme_preference as ThemeName);
-    }
+    await applyUserTheme(response.user.theme_preference);
     set({ user: response.user, isAuthenticated: true });
     gateway.connect();
   },
@@ -53,9 +66,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   register: async (username, email, password, inviteCode) => {
     const response = await api.register(username, email, password, inviteCode);
     api.setTokens(response.access_token, response.refresh_token);
-    if (response.user.theme_preference) {
-      useThemeStore.getState().setTheme(response.user.theme_preference as ThemeName);
-    }
+    await applyUserTheme(response.user.theme_preference);
     set({ user: response.user, isAuthenticated: true });
     gateway.connect();
   },

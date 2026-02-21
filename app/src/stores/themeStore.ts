@@ -1,10 +1,12 @@
 import { create } from 'zustand';
+import type { CustomTheme } from '../types';
 
 export type ThemeName = 'dark' | 'light' | 'midnight' | 'forest' | 'rose'
   | 'solarized-dark' | 'solarized-light' | 'dracula' | 'monokai'
   | 'gruvbox' | 'nord' | 'catppuccin' | 'tokyo-night' | 'terminal';
 
 interface ThemeColors {
+  [key: string]: string | undefined;
   '--bg-darkest': string;
   '--bg-base': string;
   '--bg-primary': string;
@@ -254,12 +256,31 @@ const themes: Record<ThemeName, ThemeColors> = {
 
 const extendedProps = ['--font-body', '--text-glow'] as const;
 
-export function applyThemeToDOM(name: ThemeName) {
-  const colors = themes[name];
+/** Get the colors for a built-in theme by name. Useful for "start from" in the theme editor. */
+export function getBuiltinThemeColors(name: ThemeName): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [k, v] of Object.entries(themes[name])) {
+    if (v != null) result[k] = v;
+  }
+  return result;
+}
+
+export function applyThemeToDOM(name: string, customThemes?: CustomTheme[]) {
+  let colors: ThemeColors | Record<string, string> | undefined;
+
+  if (name.startsWith('custom:')) {
+    const id = name.slice(7);
+    const custom = customThemes?.find((t) => t.id === id);
+    if (!custom) return;
+    colors = custom.colors;
+  } else {
+    colors = themes[name as ThemeName];
+  }
+
   if (!colors) return;
   const root = document.documentElement;
   for (const [prop, value] of Object.entries(colors)) {
-    root.style.setProperty(prop, value);
+    if (value != null) root.style.setProperty(prop, value);
   }
   // Clear extended properties not set by this theme
   for (const prop of extendedProps) {
@@ -270,16 +291,28 @@ export function applyThemeToDOM(name: ThemeName) {
 }
 
 interface ThemeState {
-  theme: ThemeName;
-  setTheme: (name: ThemeName) => void;
+  theme: string;
+  customThemes: CustomTheme[];
+  setTheme: (name: string) => void;
+  setCustomThemes: (themes: CustomTheme[]) => void;
+  addCustomTheme: (theme: CustomTheme) => void;
+  updateCustomTheme: (id: string, theme: CustomTheme) => void;
+  removeCustomTheme: (id: string) => void;
 }
 
-export const useThemeStore = create<ThemeState>((set) => ({
+export const useThemeStore = create<ThemeState>((set, get) => ({
   theme: 'dark',
+  customThemes: [],
   setTheme: (name) => {
-    applyThemeToDOM(name);
+    applyThemeToDOM(name, get().customThemes);
     set({ theme: name });
   },
+  setCustomThemes: (customThemes) => set({ customThemes }),
+  addCustomTheme: (theme) => set((s) => ({ customThemes: [...s.customThemes, theme] })),
+  updateCustomTheme: (id, theme) =>
+    set((s) => ({ customThemes: s.customThemes.map((t) => (t.id === id ? theme : t)) })),
+  removeCustomTheme: (id) =>
+    set((s) => ({ customThemes: s.customThemes.filter((t) => t.id !== id) })),
 }));
 
 export const themeNames: ThemeName[] = [

@@ -4,7 +4,7 @@ import type {
   VoiceTokenResponse, VoiceState, Invite, InviteResolve, Ban, AuditLogEntry,
   Webhook, GifSearchResponse, ServerMemberWithUser, RegistrationCode,
   NotificationPreference, NotificationLevel, LinkPreviewData,
-  SoundboardSound,
+  SoundboardSound, CustomTheme,
 } from '../types';
 
 import { getApiUrl } from './instance';
@@ -786,4 +786,22 @@ export async function setJoinSound(serverId: string, soundId: string): Promise<v
 
 export async function clearJoinSound(serverId: string): Promise<void> {
   return request(`/servers/${serverId}/soundboard/join-sound`, { method: 'DELETE' });
+}
+
+// ── Custom Themes ─────────────────────────────────────
+
+export async function getCustomThemes(): Promise<CustomTheme[]> {
+  return request('/users/@me/themes');
+}
+
+export async function createCustomTheme(data: { name: string; colors: Record<string, string> }): Promise<CustomTheme> {
+  return request('/users/@me/themes', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function updateCustomTheme(themeId: string, data: { name?: string; colors?: Record<string, string> }): Promise<CustomTheme> {
+  return request(`/users/@me/themes/${themeId}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+export async function deleteCustomTheme(themeId: string): Promise<void> {
+  return request(`/users/@me/themes/${themeId}`, { method: 'DELETE' });
 }

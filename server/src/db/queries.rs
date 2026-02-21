@@ -5,7 +5,8 @@ use uuid::Uuid;
 use crate::types::entities::{
     Attachment, AuditAction, AuditLogEntry, Ban, Channel, ChannelOverride, ChannelType, DmMember,
     Invite, Message, Reaction, ReadState, Relationship, RelationshipType, RegistrationCode, Role,
-    SearchResult, Server, ServerMember, Session, SoundboardSound, ThreadMetadata, User, Webhook,
+    SearchResult, Server, ServerMember, Session, SoundboardSound, ThreadMetadata, User,
+    UserCustomTheme, Webhook,
 };
 
 // ── Instance ───────────────────────────────────────────
@@ -2075,4 +2076,93 @@ pub async fn get_member_join_sound(
     .bind(user_id)
     .fetch_optional(pool)
     .await
+}
+
+// ── Custom Themes ─────────────────────────────────────
+
+pub async fn create_custom_theme(
+    pool: &PgPool,
+    user_id: Uuid,
+    name: &str,
+    colors: &serde_json::Value,
+) -> Result<UserCustomTheme, sqlx::Error> {
+    sqlx::query_as::<_, UserCustomTheme>(
+        "INSERT INTO user_custom_themes (user_id, name, colors)
+         VALUES ($1, $2, $3)
+         RETURNING *",
+    )
+    .bind(user_id)
+    .bind(name)
+    .bind(colors)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_custom_themes_by_user(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Vec<UserCustomTheme>, sqlx::Error> {
+    sqlx::query_as::<_, UserCustomTheme>(
+        "SELECT * FROM user_custom_themes WHERE user_id = $1 ORDER BY created_at",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn get_custom_theme_by_id(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<Option<UserCustomTheme>, sqlx::Error> {
+    sqlx::query_as::<_, UserCustomTheme>(
+        "SELECT * FROM user_custom_themes WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn update_custom_theme(
+    pool: &PgPool,
+    id: Uuid,
+    name: Option<&str>,
+    colors: Option<&serde_json::Value>,
+) -> Result<UserCustomTheme, sqlx::Error> {
+    sqlx::query_as::<_, UserCustomTheme>(
+        "UPDATE user_custom_themes SET
+            name = COALESCE($2, name),
+            colors = COALESCE($3, colors),
+            updated_at = now()
+         WHERE id = $1
+         RETURNING *",
+    )
+    .bind(id)
+    .bind(name)
+    .bind(colors)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn delete_custom_theme(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM user_custom_themes WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn count_user_custom_themes(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<i64, sqlx::Error> {
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM user_custom_themes WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
 }

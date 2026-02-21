@@ -3,6 +3,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useServerStore } from '../../stores/serverStore';
 import { useThemeStore, themeNames, themeLabels, applyThemeToDOM, type ThemeName } from '../../stores/themeStore';
 import { ImageCropModal } from '../shared/ImageCropModal';
+import { ThemeEditor } from './ThemeEditor';
 import {
   playMessageSound,
   playMentionSound,
@@ -20,7 +21,7 @@ import {
   requestNotificationPermission,
 } from '../../utils/browserNotifications';
 import * as api from '../../api/client';
-import type { RegistrationCode, Channel } from '../../types';
+import type { RegistrationCode, Channel, CustomTheme } from '../../types';
 import { listAudioOutputs, listAudioInputs, saveSpeaker, saveMicrophone, type AudioOutputDevice, type AudioInputDevice } from '../../utils/audioDevices';
 import { SHORTCUT_CATEGORIES, mod } from '../common/KeyboardShortcutsDialog';
 import '../common/KeyboardShortcutsDialog.css';
@@ -50,7 +51,6 @@ const themeSwatches: Record<ThemeName, { bg: string; accent: string; text: strin
 export function UserSettings({ onClose }: UserSettingsProps) {
   const user = useAuthStore((s) => s.user);
   const theme = useThemeStore((s) => s.theme);
-  const setTheme = useThemeStore((s) => s.setTheme);
 
   const [activeTab, setActiveTab] = useState<'profile' | 'appearance' | 'notifications' | 'voice' | 'keybinds' | 'admin'>('profile');
 
@@ -146,15 +146,18 @@ export function UserSettings({ onClose }: UserSettingsProps) {
     }
   };
 
-  const handleThemeChange = async (name: ThemeName) => {
-    setTheme(name);
+  const handleThemeChange = async (name: string) => {
+    const prevTheme = theme;
+    const { customThemes } = useThemeStore.getState();
+    applyThemeToDOM(name, customThemes);
+    useThemeStore.setState({ theme: name });
     try {
       const updated = await api.updateMe({ theme_preference: name });
       useAuthStore.setState({ user: updated });
     } catch {
       // Revert on failure
-      applyThemeToDOM(theme);
-      useThemeStore.setState({ theme });
+      applyThemeToDOM(prevTheme, customThemes);
+      useThemeStore.setState({ theme: prevTheme });
     }
   };
 
@@ -326,39 +329,7 @@ export function UserSettings({ onClose }: UserSettingsProps) {
             )}
 
             {activeTab === 'appearance' && (
-              <div className="appearance-panel">
-                <h3>Theme</h3>
-                <div className="theme-grid">
-                  {themeNames.map((name) => {
-                    const swatch = themeSwatches[name];
-                    return (
-                      <button
-                        key={name}
-                        className={`theme-card ${theme === name ? 'active' : ''}`}
-                        onClick={() => handleThemeChange(name)}
-                      >
-                        <div
-                          className="theme-swatch"
-                          style={{ background: swatch.bg }}
-                        >
-                          <div
-                            className="theme-swatch-accent"
-                            style={{ background: swatch.accent }}
-                          />
-                          <div
-                            className="theme-swatch-text"
-                            style={{ color: swatch.text }}
-                          >
-                            Aa
-                          </div>
-                        </div>
-                        <span className="theme-card-label">{themeLabels[name]}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <UpdateCheckSection />
-              </div>
+              <AppearancePanel theme={theme} onThemeChange={handleThemeChange} />
             )}
 
             {activeTab === 'notifications' && <NotificationSettings />}
@@ -401,6 +372,183 @@ export function UserSettings({ onClose }: UserSettingsProps) {
           />
         )}
       </div>
+    </div>
+  );
+}
+
+function AppearancePanel({ theme, onThemeChange }: { theme: string; onThemeChange: (name: string) => void }) {
+  const customThemes = useThemeStore((s) => s.customThemes);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingTheme, setEditingTheme] = useState<CustomTheme | undefined>();
+  const [loadedCustom, setLoadedCustom] = useState(false);
+
+  useEffect(() => {
+    if (!loadedCustom) {
+      api.getCustomThemes().then((themes) => {
+        useThemeStore.getState().setCustomThemes(themes);
+        setLoadedCustom(true);
+      }).catch(() => setLoadedCustom(true));
+    }
+  }, [loadedCustom]);
+
+  const handleCreateTheme = async (name: string, colors: Record<string, string>) => {
+    try {
+      const created = await api.createCustomTheme({ name, colors });
+      useThemeStore.getState().addCustomTheme(created);
+      setEditorOpen(false);
+      setEditingTheme(undefined);
+      // Auto-select the new theme
+      onThemeChange(`custom:${created.id}`);
+    } catch {
+      // silently fail
+    }
+  };
+
+  const handleEditTheme = async (name: string, colors: Record<string, string>) => {
+    if (!editingTheme) return;
+    try {
+      const updated = await api.updateCustomTheme(editingTheme.id, { name, colors });
+      useThemeStore.getState().updateCustomTheme(editingTheme.id, updated);
+      setEditorOpen(false);
+      setEditingTheme(undefined);
+      // Re-apply if this is the active theme
+      if (theme === `custom:${updated.id}`) {
+        applyThemeToDOM(theme, [updated, ...customThemes.filter((t) => t.id !== updated.id)]);
+      }
+    } catch {
+      // silently fail
+    }
+  };
+
+  const handleDeleteTheme = async (ct: CustomTheme) => {
+    try {
+      await api.deleteCustomTheme(ct.id);
+      useThemeStore.getState().removeCustomTheme(ct.id);
+      // If it was active, server resets to "dark"
+      if (theme === `custom:${ct.id}`) {
+        onThemeChange('dark');
+      }
+    } catch {
+      // silently fail
+    }
+  };
+
+  const openEditor = (ct?: CustomTheme) => {
+    setEditingTheme(ct);
+    setEditorOpen(true);
+  };
+
+  return (
+    <div className="appearance-panel">
+      <h3>Theme</h3>
+      <div className="theme-grid">
+        {themeNames.map((name) => {
+          const swatch = themeSwatches[name];
+          return (
+            <button
+              key={name}
+              className={`theme-card ${theme === name ? 'active' : ''}`}
+              onClick={() => onThemeChange(name)}
+            >
+              <div className="theme-swatch" style={{ background: swatch.bg }}>
+                <div className="theme-swatch-accent" style={{ background: swatch.accent }} />
+                <div className="theme-swatch-text" style={{ color: swatch.text }}>Aa</div>
+              </div>
+              <span className="theme-card-label">{themeLabels[name]}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Custom Themes */}
+      <h3 style={{ marginTop: '1.5rem' }}>Custom Themes</h3>
+      <div className="theme-grid">
+        {customThemes.map((ct) => (
+          <div key={ct.id} style={{ position: 'relative' }}>
+            <button
+              className={`theme-card ${theme === `custom:${ct.id}` ? 'active' : ''}`}
+              onClick={() => onThemeChange(`custom:${ct.id}`)}
+            >
+              <div
+                className="theme-swatch"
+                style={{ background: ct.colors['--bg-base'] || '#1a1b1e' }}
+              >
+                <div
+                  className="theme-swatch-accent"
+                  style={{ background: ct.colors['--accent'] || '#6366f1' }}
+                />
+                <div
+                  className="theme-swatch-text"
+                  style={{ color: ct.colors['--text-primary'] || '#e4e4e7' }}
+                >
+                  Aa
+                </div>
+              </div>
+              <span className="theme-card-label">{ct.name}</span>
+            </button>
+            <div style={{
+              position: 'absolute', top: 4, right: 4,
+              display: 'flex', gap: 2,
+            }}>
+              <button
+                onClick={(e) => { e.stopPropagation(); openEditor(ct); }}
+                style={{
+                  width: 22, height: 22, padding: 0,
+                  background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+                  borderRadius: 4, color: 'var(--text-muted)',
+                  fontSize: '0.7rem', cursor: 'pointer', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center',
+                }}
+                title="Edit"
+              >
+                &#9998;
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); handleDeleteTheme(ct); }}
+                style={{
+                  width: 22, height: 22, padding: 0,
+                  background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+                  borderRadius: 4, color: 'var(--danger)',
+                  fontSize: '0.7rem', cursor: 'pointer', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center',
+                }}
+                title="Delete"
+              >
+                &times;
+              </button>
+            </div>
+          </div>
+        ))}
+
+        {/* Create Theme card */}
+        <button
+          className="theme-card"
+          onClick={() => openEditor()}
+          style={{ opacity: 0.7 }}
+        >
+          <div
+            className="theme-swatch"
+            style={{
+              background: 'var(--bg-tertiary)',
+              fontSize: '1.5rem',
+              color: 'var(--text-muted)',
+            }}
+          >
+            +
+          </div>
+          <span className="theme-card-label">Create Theme</span>
+        </button>
+      </div>
+
+      <UpdateCheckSection />
+
+      {editorOpen && (
+        <ThemeEditor
+          existing={editingTheme}
+          onSave={editingTheme ? handleEditTheme : handleCreateTheme}
+          onCancel={() => { setEditorOpen(false); setEditingTheme(undefined); }}
+        />
+      )}
     </div>
   );
 }

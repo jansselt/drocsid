@@ -57,6 +57,30 @@ impl From<User> for PublicUser {
     }
 }
 
+// ── Custom Themes ─────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct UserCustomTheme {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub name: String,
+    pub colors: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateCustomThemeRequest {
+    pub name: String,
+    pub colors: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateCustomThemeRequest {
+    pub name: Option<String>,
+    pub colors: Option<serde_json::Value>,
+}
+
 // ── Sessions ───────────────────────────────────────────
 
 #[derive(Debug, Clone, FromRow)]

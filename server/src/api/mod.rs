@@ -11,6 +11,7 @@ pub mod roles;
 pub mod search;
 pub mod servers;
 pub mod soundboard;
+pub mod themes;
 pub mod unfurl;
 pub mod voice;
 pub mod webhooks;
@@ -67,6 +68,7 @@ fn user_routes() -> Router<AppState> {
             "/@me/notification-preferences",
             get(get_notification_prefs).put(set_notification_pref),
         )
+        .nest("/@me/themes", themes::routes())
         .route("/search", get(search_users))
 }
 
@@ -121,15 +123,29 @@ async fn update_me(
     // Profile fields
     if body.display_name.is_some() || body.bio.is_some() || body.avatar_url.is_some() || body.theme_preference.is_some() {
         if let Some(ref theme) = body.theme_preference {
-            let valid = matches!(theme.as_str(),
-                "dark" | "light" | "midnight" | "forest" | "rose"
-                | "solarized-dark" | "solarized-light" | "dracula" | "monokai"
-                | "gruvbox" | "nord" | "catppuccin" | "tokyo-night" | "terminal"
-            );
-            if !valid {
-                return Err(crate::error::ApiError::InvalidInput(
-                    "Invalid theme name".into(),
-                ));
+            if let Some(id_str) = theme.strip_prefix("custom:") {
+                let theme_id = uuid::Uuid::parse_str(id_str).map_err(|_| {
+                    crate::error::ApiError::InvalidInput("Invalid custom theme ID".into())
+                })?;
+                let custom_theme =
+                    queries::get_custom_theme_by_id(&state.db, theme_id)
+                        .await?
+                        .ok_or(crate::error::ApiError::NotFound("Custom theme"))?;
+                if custom_theme.user_id != user.user_id {
+                    return Err(crate::error::ApiError::NotFound("Custom theme"));
+                }
+            } else {
+                let valid = matches!(
+                    theme.as_str(),
+                    "dark" | "light" | "midnight" | "forest" | "rose"
+                        | "solarized-dark" | "solarized-light" | "dracula" | "monokai"
+                        | "gruvbox" | "nord" | "catppuccin" | "tokyo-night" | "terminal"
+                );
+                if !valid {
+                    return Err(crate::error::ApiError::InvalidInput(
+                        "Invalid theme name".into(),
+                    ));
+                }
             }
         }
         if let Some(ref name) = body.display_name {
