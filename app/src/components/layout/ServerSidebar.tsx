@@ -200,40 +200,35 @@ export function ServerSidebar() {
   );
 }
 
-const GITHUB_REPO = 'jansselt/drocsid';
-
-interface ReleaseNote {
-  tag_name: string;
-  name: string;
+interface ParsedRelease {
+  version: string;
+  date: string;
   body: string;
-  published_at: string;
-  html_url: string;
 }
 
-function ReleaseNotesPopup({ onClose }: { onClose: () => void }) {
-  const [releases, setReleases] = useState<ReleaseNote[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const popupRef = useRef<HTMLDivElement>(null);
+function parseChangelog(md: string): ParsedRelease[] {
+  const releases: ParsedRelease[] = [];
+  // Split on ## [version] lines
+  const sections = md.split(/^## /m).slice(1); // skip header before first ##
+  for (const section of sections) {
+    const headerEnd = section.indexOf('\n');
+    const header = section.slice(0, headerEnd);
+    // e.g. [0.4.0](https://...) (2026-02-20)
+    const match = header.match(/\[([^\]]+)\].*?\((\d{4}-\d{2}-\d{2})\)/);
+    if (!match) continue;
+    releases.push({
+      version: match[1],
+      date: match[2],
+      body: section.slice(headerEnd + 1).trim(),
+    });
+  }
+  return releases;
+}
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=10`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`GitHub API returned ${r.status}`);
-        return r.json();
-      })
-      .then((data: ReleaseNote[]) => {
-        if (!cancelled) setReleases(data);
-      })
-      .catch((e) => {
-        if (!cancelled) setError(e.message);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, []);
+const parsedReleases = parseChangelog(__CHANGELOG__);
+
+function ReleaseNotesPopup({ onClose }: { onClose: () => void }) {
+  const popupRef = useRef<HTMLDivElement>(null);
 
   // Close on outside click
   useEffect(() => {
@@ -253,16 +248,12 @@ function ReleaseNotesPopup({ onClose }: { onClose: () => void }) {
         <button className="release-notes-close" onClick={onClose}>&times;</button>
       </div>
       <div className="release-notes-body">
-        {loading && <p className="release-notes-status">Loading...</p>}
-        {error && <p className="release-notes-status">Failed to load: {error}</p>}
-        {releases.map((r) => (
-          <div key={r.tag_name} className="release-notes-entry">
+        {parsedReleases.map((r) => (
+          <div key={r.version} className="release-notes-entry">
             <div className="release-notes-version">
-              <a href={r.html_url} target="_blank" rel="noopener noreferrer">
-                {r.name || r.tag_name}
-              </a>
+              <span>{r.version}</span>
               <span className="release-notes-date">
-                {new Date(r.published_at).toLocaleDateString()}
+                {new Date(r.date + 'T00:00:00').toLocaleDateString()}
               </span>
             </div>
             <ReleaseBody body={r.body} />

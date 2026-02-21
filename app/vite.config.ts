@@ -1,7 +1,11 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { readFileSync } from 'fs'
+import { resolve } from 'path'
 import pkg from './package.json' with { type: 'json' }
+
+const changelog = readFileSync(resolve(__dirname, '..', 'CHANGELOG.md'), 'utf-8')
 
 const isTauri = !!process.env.TAURI_ENV_PLATFORM
 
@@ -40,6 +44,7 @@ export default defineConfig({
   ],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
+    __CHANGELOG__: JSON.stringify(changelog),
   },
   // Tauri expects clearScreen: false so it can manage its own terminal output
   clearScreen: false,
