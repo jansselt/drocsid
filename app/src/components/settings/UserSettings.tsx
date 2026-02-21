@@ -61,22 +61,38 @@ export function UserSettings({ onClose }: UserSettingsProps) {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [cropFile, setCropFile] = useState<File | null>(null);
+  const [timezone, setTimezone] = useState(user?.timezone || '');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteError, setDeleteError] = useState('');
   const [deleting, setDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Auto-detect timezone from browser on mount if not set
+  useEffect(() => {
+    if (!user?.timezone) {
+      const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (detected) {
+        setTimezone(detected);
+        api.updateMe({ timezone: detected }).then((updated) => {
+          useAuthStore.setState({ user: updated });
+        }).catch(() => {});
+      }
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!user) return null;
 
   const originalDisplayName = user.display_name || '';
   const originalBio = user.bio || '';
   const originalAvatarUrl = user.avatar_url || '';
+  const originalTimezone = user.timezone || '';
 
   const isDirty =
     displayName !== originalDisplayName ||
     bio !== originalBio ||
-    avatarUrl !== originalAvatarUrl;
+    avatarUrl !== originalAvatarUrl ||
+    timezone !== originalTimezone;
 
   const handleSaveProfile = async () => {
     setSaving(true);
@@ -85,6 +101,7 @@ export function UserSettings({ onClose }: UserSettingsProps) {
       if (displayName !== originalDisplayName) updates.display_name = displayName;
       if (bio !== originalBio) updates.bio = bio;
       if (avatarUrl !== originalAvatarUrl) updates.avatar_url = avatarUrl;
+      if (timezone !== originalTimezone) updates.timezone = timezone;
 
       const updated = await api.updateMe(updates);
       useAuthStore.setState({ user: updated });
@@ -98,6 +115,7 @@ export function UserSettings({ onClose }: UserSettingsProps) {
     setDisplayName(originalDisplayName);
     setBio(originalBio);
     setAvatarUrl(originalAvatarUrl);
+    setTimezone(originalTimezone);
   };
 
   const handleAvatarFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -265,6 +283,28 @@ export function UserSettings({ onClose }: UserSettingsProps) {
                       rows={3}
                     />
                     <span className="profile-field-hint">{bio.length}/190</span>
+                  </div>
+
+                  <div className="profile-field">
+                    <label>Timezone</label>
+                    <select
+                      value={timezone}
+                      onChange={(e) => setTimezone(e.target.value)}
+                    >
+                      <option value="">Not set</option>
+                      {Intl.supportedValuesOf('timeZone').map((tz) => (
+                        <option key={tz} value={tz}>{tz.replace(/_/g, ' ')}</option>
+                      ))}
+                    </select>
+                    <span className="profile-field-hint">
+                      {timezone
+                        ? new Date().toLocaleTimeString([], {
+                            timeZone: timezone,
+                            hour: 'numeric',
+                            minute: '2-digit',
+                          })
+                        : 'Auto-detected from browser'}
+                    </span>
                   </div>
                 </div>
 

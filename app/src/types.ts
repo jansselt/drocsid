@@ -10,6 +10,7 @@ export interface User {
   bio: string | null;
   status: string;
   custom_status: string | null;
+  timezone: string | null;
   theme_preference?: string;
   is_admin?: boolean;
   bot: boolean;

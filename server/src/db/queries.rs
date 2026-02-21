@@ -43,7 +43,7 @@ pub async fn create_user(
         INSERT INTO users (id, instance_id, username, email, password_hash)
         VALUES ($1, $2, $3, $4, $5)
         RETURNING id, instance_id, username, display_name, email, password_hash,
-                  avatar_url, bio, status, custom_status, theme_preference, is_admin, bot, created_at, updated_at
+                  avatar_url, bio, status, custom_status, timezone, theme_preference, is_admin, bot, created_at, updated_at
         "#,
     )
     .bind(id)
@@ -59,7 +59,7 @@ pub async fn get_user_by_id(pool: &PgPool, id: Uuid) -> Result<Option<User>, sql
     sqlx::query_as::<_, User>(
         r#"
         SELECT id, instance_id, username, display_name, email, password_hash,
-               avatar_url, bio, status, custom_status, theme_preference, is_admin, bot, created_at, updated_at
+               avatar_url, bio, status, custom_status, timezone, theme_preference, is_admin, bot, created_at, updated_at
         FROM users WHERE id = $1
         "#,
     )
@@ -72,7 +72,7 @@ pub async fn get_user_by_email(pool: &PgPool, email: &str) -> Result<Option<User
     sqlx::query_as::<_, User>(
         r#"
         SELECT id, instance_id, username, display_name, email, password_hash,
-               avatar_url, bio, status, custom_status, theme_preference, is_admin, bot, created_at, updated_at
+               avatar_url, bio, status, custom_status, timezone, theme_preference, is_admin, bot, created_at, updated_at
         FROM users WHERE email = $1
         "#,
     )
@@ -1047,7 +1047,7 @@ pub async fn get_user_by_username(
     sqlx::query_as::<_, User>(
         r#"
         SELECT id, instance_id, username, display_name, email, password_hash,
-               avatar_url, bio, status, custom_status, theme_preference, is_admin, bot, created_at, updated_at
+               avatar_url, bio, status, custom_status, timezone, theme_preference, is_admin, bot, created_at, updated_at
         FROM users WHERE username = $1
         "#,
     )
@@ -1065,7 +1065,7 @@ pub async fn search_users_by_username(
     sqlx::query_as::<_, User>(
         r#"
         SELECT id, instance_id, username, display_name, email, password_hash,
-               avatar_url, bio, status, custom_status, theme_preference, is_admin, bot, created_at, updated_at
+               avatar_url, bio, status, custom_status, timezone, theme_preference, is_admin, bot, created_at, updated_at
         FROM users WHERE username ILIKE $1
         ORDER BY username
         LIMIT $2
@@ -1124,7 +1124,7 @@ pub async fn get_dm_members(
     sqlx::query_as::<_, User>(
         r#"
         SELECT u.id, u.instance_id, u.username, u.display_name, u.email, u.password_hash,
-               u.avatar_url, u.bio, u.status, u.custom_status, u.theme_preference, u.is_admin, u.bot, u.created_at, u.updated_at
+               u.avatar_url, u.bio, u.status, u.custom_status, u.timezone, u.theme_preference, u.is_admin, u.bot, u.created_at, u.updated_at
         FROM users u
         INNER JOIN dm_members dm ON u.id = dm.user_id
         WHERE dm.channel_id = $1
@@ -1619,6 +1619,7 @@ pub async fn update_user_profile(
     bio: Option<&str>,
     avatar_url: Option<&str>,
     theme_preference: Option<&str>,
+    timezone: Option<&str>,
 ) -> Result<User, sqlx::Error> {
     sqlx::query_as::<_, User>(
         r#"
@@ -1627,10 +1628,11 @@ pub async fn update_user_profile(
             bio = COALESCE($3, bio),
             avatar_url = COALESCE($4, avatar_url),
             theme_preference = COALESCE($5, theme_preference),
+            timezone = COALESCE($6, timezone),
             updated_at = now()
         WHERE id = $1
         RETURNING id, instance_id, username, display_name, email, password_hash,
-                  avatar_url, bio, status, custom_status, theme_preference, is_admin, bot, created_at, updated_at
+                  avatar_url, bio, status, custom_status, timezone, theme_preference, is_admin, bot, created_at, updated_at
         "#,
     )
     .bind(user_id)
@@ -1638,6 +1640,7 @@ pub async fn update_user_profile(
     .bind(bio)
     .bind(avatar_url)
     .bind(theme_preference)
+    .bind(timezone)
     .fetch_one(pool)
     .await
 }
@@ -2203,7 +2206,7 @@ pub async fn get_bookmarks_for_user(
             u.id AS author_uid, u.username AS author_username,
             u.display_name AS author_display_name, u.avatar_url AS author_avatar_url,
             u.bio AS author_bio, u.status AS author_status,
-            u.custom_status AS author_custom_status,
+            u.custom_status AS author_custom_status, u.timezone AS author_timezone,
             u.theme_preference AS author_theme_preference, u.bot AS author_bot
         FROM message_bookmarks mb
         JOIN messages m ON m.id = mb.message_id
@@ -2241,6 +2244,7 @@ pub async fn get_bookmarks_for_user(
             bio: row.get("author_bio"),
             status: row.get("author_status"),
             custom_status: row.get("author_custom_status"),
+            timezone: row.get("author_timezone"),
             theme_preference: row.get("author_theme_preference"),
             bot: row.get("author_bot"),
         });

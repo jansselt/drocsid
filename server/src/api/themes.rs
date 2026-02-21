@@ -212,7 +212,7 @@ async fn delete_custom_theme(
         .ok_or(ApiError::NotFound("User"))?;
 
     if user_data.theme_preference == format!("custom:{}", theme_id) {
-        queries::update_user_profile(&state.db, user.user_id, None, None, None, Some("dark"))
+        queries::update_user_profile(&state.db, user.user_id, None, None, None, Some("dark"), None)
             .await?;
     }
 

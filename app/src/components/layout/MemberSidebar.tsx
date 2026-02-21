@@ -7,6 +7,28 @@ import type { ServerMemberWithUser } from '../../types';
 import type { Role } from '../../types';
 import './MemberSidebar.css';
 
+function useMinuteTick(): number {
+  const [tick, setTick] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setTick(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  return tick;
+}
+
+function formatLocalTime(timezone: string | null | undefined, _tick: number): string | null {
+  if (!timezone) return null;
+  try {
+    return new Date().toLocaleTimeString([], {
+      timeZone: timezone,
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  } catch {
+    return null;
+  }
+}
+
 function getRoleColor(roleIds: string[], roles: Role[] | undefined): string | undefined {
   if (!roles || roleIds.length === 0) return undefined;
   // Find the highest-position role with a non-zero color
@@ -26,6 +48,7 @@ export function MemberSidebar() {
   const presences = useServerStore((s) => s.presences);
   const roles = useServerStore((s) => activeServerId ? s.roles.get(activeServerId) : undefined);
   const loadMembers = useServerStore((s) => s.loadMembers);
+  const tick = useMinuteTick();
 
   useEffect(() => {
     if (activeServerId && !members) {
@@ -89,7 +112,7 @@ export function MemberSidebar() {
             {group.label} — {group.members.length}
           </div>
           {group.members.map((m) => (
-            <MemberItem key={m.user_id} member={m} />
+            <MemberItem key={m.user_id} member={m} tick={tick} />
           ))}
         </div>
       ))}
@@ -100,7 +123,7 @@ export function MemberSidebar() {
             Online — {ungroupedOnline.length}
           </div>
           {ungroupedOnline.map((m) => (
-            <MemberItem key={m.user_id} member={m} />
+            <MemberItem key={m.user_id} member={m} tick={tick} />
           ))}
         </div>
       )}
@@ -111,7 +134,7 @@ export function MemberSidebar() {
             Offline — {offline.length}
           </div>
           {offline.map((m) => (
-            <MemberItem key={m.user_id} member={m} />
+            <MemberItem key={m.user_id} member={m} tick={tick} />
           ))}
         </div>
       )}
@@ -119,11 +142,12 @@ export function MemberSidebar() {
   );
 }
 
-function MemberItem({ member }: { member: ServerMemberWithUser & { status: string } }) {
+function MemberItem({ member, tick }: { member: ServerMemberWithUser & { status: string }; tick: number }) {
   // Use cached user for live custom_status updates from PRESENCE_UPDATE
   const cachedUser = useServerStore((s) => s.users.get(member.user_id));
   const user = cachedUser || member.user;
   const displayName = member.nickname || user.display_name || user.username;
+  const localTime = formatLocalTime(user.timezone, tick);
   const isOffline = member.status === 'offline';
   const openDm = useServerStore((s) => s.openDm);
   const sendFriendRequest = useServerStore((s) => s.sendFriendRequest);
@@ -199,8 +223,12 @@ function MemberItem({ member }: { member: ServerMemberWithUser & { status: strin
         </div>
         <div className="member-info">
           <span className="member-name" style={roleColor ? { color: roleColor } : undefined}>{displayName}</span>
-          {user.custom_status && (
-            <span className="member-custom-status">{user.custom_status}</span>
+          {(user.custom_status || localTime) && (
+            <span className="member-custom-status">
+              {user.custom_status}
+              {user.custom_status && localTime && ' \u00B7 '}
+              {localTime && <span className="member-local-time">{localTime}</span>}
+            </span>
           )}
         </div>
       </div>

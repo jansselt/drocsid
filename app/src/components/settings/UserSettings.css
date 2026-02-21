@@ -74,7 +74,8 @@
 }
 
 .profile-field input[type="text"],
-.profile-field textarea {
+.profile-field textarea,
+.profile-field select {
   padding: 8px 10px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
@@ -83,6 +84,12 @@
   font-size: 0.875rem;
   font-family: inherit;
   resize: vertical;
+  color-scheme: dark;
+}
+
+.profile-field select option {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
 }
 
 .profile-field input[type="text"]::placeholder,

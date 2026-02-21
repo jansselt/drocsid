@@ -96,6 +96,7 @@ struct UpdateUserRequest {
     bio: Option<String>,
     avatar_url: Option<String>,
     theme_preference: Option<String>,
+    timezone: Option<String>,
 }
 
 async fn update_me(
@@ -123,7 +124,7 @@ async fn update_me(
     }
 
     // Profile fields
-    if body.display_name.is_some() || body.bio.is_some() || body.avatar_url.is_some() || body.theme_preference.is_some() {
+    if body.display_name.is_some() || body.bio.is_some() || body.avatar_url.is_some() || body.theme_preference.is_some() || body.timezone.is_some() {
         if let Some(ref theme) = body.theme_preference {
             if let Some(id_str) = theme.strip_prefix("custom:") {
                 let theme_id = uuid::Uuid::parse_str(id_str).map_err(|_| {
@@ -164,6 +165,13 @@ async fn update_me(
                 ));
             }
         }
+        if let Some(ref tz) = body.timezone {
+            if tz.len() > 64 {
+                return Err(crate::error::ApiError::InvalidInput(
+                    "Invalid timezone".into(),
+                ));
+            }
+        }
 
         queries::update_user_profile(
             &state.db,
@@ -172,6 +180,7 @@ async fn update_me(
             body.bio.as_deref(),
             body.avatar_url.as_deref(),
             body.theme_preference.as_deref(),
+            body.timezone.as_deref(),
         )
         .await?;
     }

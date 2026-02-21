@@ -20,6 +20,7 @@ pub struct User {
     pub bio: Option<String>,
     pub status: String,
     pub custom_status: Option<String>,
+    pub timezone: Option<String>,
     pub theme_preference: String,
     pub is_admin: bool,
     pub bot: bool,
@@ -37,6 +38,7 @@ pub struct PublicUser {
     pub bio: Option<String>,
     pub status: String,
     pub custom_status: Option<String>,
+    pub timezone: Option<String>,
     pub theme_preference: Option<String>,
     pub bot: bool,
 }
@@ -51,6 +53,7 @@ impl From<User> for PublicUser {
             bio: u.bio,
             status: u.status,
             custom_status: u.custom_status,
+            timezone: u.timezone,
             theme_preference: Some(u.theme_preference),
             bot: u.bot,
         }

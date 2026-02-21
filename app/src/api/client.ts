@@ -182,6 +182,7 @@ export async function updateMe(data: {
   bio?: string;
   avatar_url?: string;
   theme_preference?: string;
+  timezone?: string;
 }): Promise<User> {
   return request('/users/@me', { method: 'PATCH', body: JSON.stringify(data) });
 }
