@@ -53,6 +53,7 @@ const TEST_USER: User = {
   bio: null,
   status: 'online',
   custom_status: null,
+  timezone: null,
   bot: false,
 };
 
