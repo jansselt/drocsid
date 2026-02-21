@@ -119,6 +119,9 @@ interface ServerState {
   // Soundboard
   soundboardSounds: Map<string, SoundboardSound[]>; // server_id -> sounds
 
+  // Bookmarks
+  bookmarkedMessageIds: Set<string>; // message IDs the user has bookmarked
+
   // Actions
   setView: (view: ViewMode) => void;
   setServers: (servers: Server[]) => void;
@@ -200,6 +203,10 @@ interface ServerState {
     level: NotificationLevel,
     muted: boolean,
   ) => Promise<void>;
+
+  // Bookmark actions
+  setBookmarkedIds: (ids: string[]) => void;
+  toggleBookmark: (messageId: string, tags?: string[]) => Promise<void>;
 
   toggleChannelSidebar: () => void;
   toggleMemberSidebar: () => void;
@@ -299,6 +306,7 @@ export const useServerStore = create<ServerState>((set, get) => ({
   voiceStates: new Map(),
   speakingUsers: new Set(),
   soundboardSounds: new Map(),
+  bookmarkedMessageIds: new Set(),
   members: new Map(),
   presences: new Map(),
   dmChannels: [],
@@ -1136,6 +1144,46 @@ export const useServerStore = create<ServerState>((set, get) => ({
       // Revert on failure
       const prefs = await api.getNotificationPreferences();
       get().setNotificationPrefs(prefs);
+    }
+  },
+
+  // ── Bookmark Actions ──────────────────────────────────
+
+  setBookmarkedIds: (ids) => {
+    set({ bookmarkedMessageIds: new Set(ids) });
+  },
+
+  toggleBookmark: async (messageId, tags) => {
+    const isBookmarked = get().bookmarkedMessageIds.has(messageId);
+
+    // Optimistic update
+    set((state) => {
+      const bookmarkedMessageIds = new Set(state.bookmarkedMessageIds);
+      if (isBookmarked) {
+        bookmarkedMessageIds.delete(messageId);
+      } else {
+        bookmarkedMessageIds.add(messageId);
+      }
+      return { bookmarkedMessageIds };
+    });
+
+    try {
+      if (isBookmarked) {
+        await api.removeBookmark(messageId);
+      } else {
+        await api.addBookmark(messageId, tags ? { tags } : undefined);
+      }
+    } catch {
+      // Revert on failure
+      set((state) => {
+        const bookmarkedMessageIds = new Set(state.bookmarkedMessageIds);
+        if (isBookmarked) {
+          bookmarkedMessageIds.add(messageId);
+        } else {
+          bookmarkedMessageIds.delete(messageId);
+        }
+        return { bookmarkedMessageIds };
+      });
     }
   },
 

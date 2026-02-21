@@ -38,6 +38,31 @@ export interface CustomTheme {
   updated_at: string;
 }
 
+// ── Bookmarks ─────────────────────────────────────────
+
+export interface Bookmark {
+  message_id: string;
+  tags: string[];
+  note: string | null;
+  bookmarked_at: string;
+  // Flattened message fields
+  id: string;
+  instance_id: string;
+  channel_id: string;
+  author_id: string | null;
+  content: string | null;
+  reply_to_id: string | null;
+  edited_at: string | null;
+  pinned: boolean;
+  created_at: string;
+  // Author info
+  author: User | null;
+  // Context
+  channel_name: string | null;
+  server_id: string | null;
+  server_name: string | null;
+}
+
 // ── Servers ────────────────────────────────────────────
 
 export interface Server {
@@ -215,6 +240,7 @@ export interface ReadyPayload {
   servers: Server[];
   read_states: ReadState[];
   notification_preferences?: NotificationPreference[];
+  bookmarked_message_ids?: string[];
 }
 
 export interface MessageAckEvent {

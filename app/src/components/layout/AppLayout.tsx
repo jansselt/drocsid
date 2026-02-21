@@ -22,6 +22,7 @@ export function AppLayout() {
   const setServers = useServerStore((s) => s.setServers);
   const setReadStates = useServerStore((s) => s.setReadStates);
   const setNotificationPrefs = useServerStore((s) => s.setNotificationPrefs);
+  const setBookmarkedIds = useServerStore((s) => s.setBookmarkedIds);
   const restoreNavigation = useServerStore((s) => s.restoreNavigation);
   const activeServerId = useServerStore((s) => s.activeServerId);
   const showChannelSidebar = useServerStore((s) => s.showChannelSidebar);
@@ -47,6 +48,9 @@ export function AppLayout() {
       if (data.notification_preferences) {
         setNotificationPrefs(data.notification_preferences);
       }
+      if (data.bookmarked_message_ids) {
+        setBookmarkedIds(data.bookmarked_message_ids);
+      }
       restoreNavigation();
     };
 
@@ -61,7 +65,7 @@ export function AppLayout() {
       cleanup();
       cleanupSoundboard();
     };
-  }, [initGatewayHandlers, setServers, setReadStates, setNotificationPrefs, restoreNavigation]);
+  }, [initGatewayHandlers, setServers, setReadStates, setNotificationPrefs, setBookmarkedIds, restoreNavigation]);
 
   // Unlock audio context on first user interaction (browser autoplay policy)
   useEffect(() => {

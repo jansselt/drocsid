@@ -81,6 +81,37 @@ pub struct UpdateCustomThemeRequest {
     pub colors: Option<serde_json::Value>,
 }
 
+// ── Message Bookmarks ─────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct MessageBookmark {
+    pub user_id: Uuid,
+    pub message_id: Uuid,
+    pub tags: Vec<String>,
+    pub note: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateBookmarkRequest {
+    pub tags: Option<Vec<String>>,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateBookmarkRequest {
+    pub tags: Option<Vec<String>>,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BookmarkListQuery {
+    pub tag: Option<String>,
+    pub search: Option<String>,
+    pub before: Option<Uuid>,
+    pub limit: Option<i64>,
+}
+
 // ── Sessions ───────────────────────────────────────────
 
 #[derive(Debug, Clone, FromRow)]

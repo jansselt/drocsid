@@ -4,10 +4,11 @@ use uuid::Uuid;
 
 use crate::types::entities::{
     Attachment, AuditAction, AuditLogEntry, Ban, Channel, ChannelOverride, ChannelType, DmMember,
-    Invite, Message, Reaction, ReadState, Relationship, RelationshipType, RegistrationCode, Role,
-    SearchResult, Server, ServerMember, Session, SoundboardSound, ThreadMetadata, User,
-    UserCustomTheme, Webhook,
+    Invite, Message, MessageBookmark, Reaction, ReadState, Relationship, RelationshipType,
+    RegistrationCode, Role, SearchResult, Server, ServerMember, Session, SoundboardSound,
+    ThreadMetadata, User, UserCustomTheme, Webhook,
 };
+use crate::types::entities::PublicUser;
 
 // ── Instance ───────────────────────────────────────────
 
@@ -2160,6 +2161,210 @@ pub async fn count_user_custom_themes(
 ) -> Result<i64, sqlx::Error> {
     let row: (i64,) = sqlx::query_as(
         "SELECT COUNT(*) FROM user_custom_themes WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
+}
+
+// ── Message Bookmarks ─────────────────────────────────
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BookmarkWithMessage {
+    pub message_id: Uuid,
+    pub tags: Vec<String>,
+    pub note: Option<String>,
+    pub bookmarked_at: DateTime<Utc>,
+    #[serde(flatten)]
+    pub message: Message,
+    pub author: Option<PublicUser>,
+    pub channel_name: Option<String>,
+    pub server_id: Option<Uuid>,
+    pub server_name: Option<String>,
+}
+
+pub async fn get_bookmarks_for_user(
+    pool: &PgPool,
+    user_id: Uuid,
+    tag: Option<&str>,
+    search: Option<&str>,
+    before: Option<Uuid>,
+    limit: i64,
+) -> Result<Vec<BookmarkWithMessage>, sqlx::Error> {
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            mb.message_id, mb.tags, mb.note, mb.created_at AS bookmarked_at,
+            m.id, m.instance_id, m.channel_id, m.author_id, m.content,
+            m.reply_to_id, m.edited_at, m.pinned, m.created_at AS msg_created_at,
+            c.name AS channel_name, c.server_id,
+            s.name AS server_name,
+            u.id AS author_uid, u.username AS author_username,
+            u.display_name AS author_display_name, u.avatar_url AS author_avatar_url,
+            u.bio AS author_bio, u.status AS author_status,
+            u.custom_status AS author_custom_status,
+            u.theme_preference AS author_theme_preference, u.bot AS author_bot
+        FROM message_bookmarks mb
+        JOIN messages m ON m.id = mb.message_id
+        JOIN channels c ON c.id = m.channel_id
+        LEFT JOIN servers s ON s.id = c.server_id
+        LEFT JOIN users u ON u.id = m.author_id
+        WHERE mb.user_id = $1
+          AND ($2::text IS NULL OR mb.tags @> ARRAY[$2::text])
+          AND ($3::text IS NULL OR m.content ILIKE '%' || $3 || '%')
+          AND ($4::uuid IS NULL OR mb.created_at < (
+              SELECT created_at FROM message_bookmarks
+              WHERE user_id = $1 AND message_id = $4
+          ))
+        ORDER BY mb.created_at DESC
+        LIMIT $5
+        "#,
+    )
+    .bind(user_id)
+    .bind(tag)
+    .bind(search)
+    .bind(before)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+
+    let mut results = Vec::with_capacity(rows.len());
+    for row in &rows {
+        use sqlx::Row;
+        let author_uid: Option<Uuid> = row.get("author_uid");
+        let author = author_uid.map(|id| PublicUser {
+            id,
+            username: row.get("author_username"),
+            display_name: row.get("author_display_name"),
+            avatar_url: row.get("author_avatar_url"),
+            bio: row.get("author_bio"),
+            status: row.get("author_status"),
+            custom_status: row.get("author_custom_status"),
+            theme_preference: row.get("author_theme_preference"),
+            bot: row.get("author_bot"),
+        });
+        results.push(BookmarkWithMessage {
+            message_id: row.get("message_id"),
+            tags: row.get("tags"),
+            note: row.get("note"),
+            bookmarked_at: row.get("bookmarked_at"),
+            message: Message {
+                id: row.get("id"),
+                instance_id: row.get("instance_id"),
+                channel_id: row.get("channel_id"),
+                author_id: row.get("author_id"),
+                content: row.get("content"),
+                reply_to_id: row.get("reply_to_id"),
+                edited_at: row.get("edited_at"),
+                pinned: row.get("pinned"),
+                created_at: row.get("msg_created_at"),
+            },
+            author,
+            channel_name: row.get("channel_name"),
+            server_id: row.get("server_id"),
+            server_name: row.get("server_name"),
+        });
+    }
+    Ok(results)
+}
+
+pub async fn upsert_bookmark(
+    pool: &PgPool,
+    user_id: Uuid,
+    message_id: Uuid,
+    tags: &[String],
+    note: Option<&str>,
+) -> Result<MessageBookmark, sqlx::Error> {
+    sqlx::query_as::<_, MessageBookmark>(
+        r#"
+        INSERT INTO message_bookmarks (user_id, message_id, tags, note)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (user_id, message_id) DO UPDATE SET
+            tags = $3,
+            note = $4
+        RETURNING *
+        "#,
+    )
+    .bind(user_id)
+    .bind(message_id)
+    .bind(tags)
+    .bind(note)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn update_bookmark(
+    pool: &PgPool,
+    user_id: Uuid,
+    message_id: Uuid,
+    tags: Option<&[String]>,
+    note: Option<&str>,
+) -> Result<MessageBookmark, sqlx::Error> {
+    sqlx::query_as::<_, MessageBookmark>(
+        r#"
+        UPDATE message_bookmarks SET
+            tags = COALESCE($3, tags),
+            note = COALESCE($4, note)
+        WHERE user_id = $1 AND message_id = $2
+        RETURNING *
+        "#,
+    )
+    .bind(user_id)
+    .bind(message_id)
+    .bind(tags)
+    .bind(note)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn delete_bookmark(
+    pool: &PgPool,
+    user_id: Uuid,
+    message_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "DELETE FROM message_bookmarks WHERE user_id = $1 AND message_id = $2",
+    )
+    .bind(user_id)
+    .bind(message_id)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+pub async fn get_user_bookmark_tags(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Vec<String>, sqlx::Error> {
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT DISTINCT unnest(tags) AS tag FROM message_bookmarks WHERE user_id = $1 ORDER BY tag",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|r| r.0).collect())
+}
+
+pub async fn get_bookmarked_message_ids(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT message_id FROM message_bookmarks WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|r| r.0).collect())
+}
+
+pub async fn count_user_bookmarks(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<i64, sqlx::Error> {
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM message_bookmarks WHERE user_id = $1",
     )
     .bind(user_id)
     .fetch_one(pool)

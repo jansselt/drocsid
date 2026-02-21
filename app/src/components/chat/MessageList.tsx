@@ -29,6 +29,8 @@ export function MessageList({ channelId }: MessageListProps) {
   const activeServerId = useServerStore((s) => s.activeServerId);
   const members = useServerStore((s) => activeServerId ? s.members.get(activeServerId) : undefined);
   const roles = useServerStore((s) => activeServerId ? s.roles.get(activeServerId) : undefined);
+  const bookmarkedMessageIds = useServerStore((s) => s.bookmarkedMessageIds);
+  const toggleBookmark = useServerStore((s) => s.toggleBookmark);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -300,6 +302,15 @@ export function MessageList({ channelId }: MessageListProps) {
                       Pin
                     </button>
                   )}
+                  <button
+                    className={`message-action-btn${bookmarkedMessageIds.has(msg.id) ? ' bookmarked' : ''}`}
+                    title={bookmarkedMessageIds.has(msg.id) ? 'Remove Bookmark' : 'Bookmark'}
+                    onClick={() => toggleBookmark(msg.id)}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill={bookmarkedMessageIds.has(msg.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+                      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                    </svg>
+                  </button>
                   {isOwn && (
                     <button className="message-action-btn" title="Edit" onClick={() => startEditing(msg)}>
                       Edit

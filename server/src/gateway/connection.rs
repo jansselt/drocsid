@@ -157,6 +157,9 @@ async fn handle_identify(
     // Get notification preferences
     let notification_preferences = queries::get_notification_preferences(&state.db, uid).await.unwrap_or_default();
 
+    // Get bookmarked message IDs
+    let bookmarked_message_ids = queries::get_bookmarked_message_ids(&state.db, uid).await.unwrap_or_default();
+
     // Send Ready
     let ready = ReadyPayload {
         session_id,
@@ -164,6 +167,7 @@ async fn handle_identify(
         servers,
         read_states,
         notification_preferences,
+        bookmarked_message_ids,
     };
 
     let seq = state.gateway.next_seq(session_id).unwrap_or(1);

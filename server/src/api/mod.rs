@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod auth;
 pub mod bans;
+pub mod bookmarks;
 pub mod bug_reports;
 pub mod channels;
 pub mod dms;
@@ -69,6 +70,7 @@ fn user_routes() -> Router<AppState> {
             get(get_notification_prefs).put(set_notification_pref),
         )
         .nest("/@me/themes", themes::routes())
+        .nest("/@me/bookmarks", bookmarks::routes())
         .route("/search", get(search_users))
 }
 

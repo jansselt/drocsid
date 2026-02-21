@@ -157,6 +157,14 @@
   color: var(--danger);
 }
 
+.message-action-btn.bookmarked {
+  color: var(--accent);
+}
+
+.message-action-btn svg {
+  vertical-align: middle;
+}
+
 /* ── Emoji picker ───────────────────────────────────── */
 
 .emoji-quick-picker {
@@ -322,4 +330,15 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── Bookmark navigation highlight ─────────────────── */
+
+@keyframes highlight-flash-anim {
+  0% { background: var(--accent); opacity: 0.15; }
+  100% { background: transparent; opacity: 0; }
+}
+
+.message.highlight-flash {
+  animation: highlight-flash-anim 2s ease-out;
 }

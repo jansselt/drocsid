@@ -6,6 +6,7 @@ import { MessageInput } from './MessageInput';
 import { ThreadPanel } from './ThreadPanel';
 import { SearchModal } from './SearchModal';
 import { VoicePanel } from '../voice/VoicePanel';
+import { BookmarksPanel } from './BookmarksPanel';
 import { Markdown } from './Markdown';
 import type { Message, User } from '../../types';
 import { AddGroupDmMembersModal } from '../dm/AddGroupDmMembersModal';
@@ -36,6 +37,7 @@ export function ChatArea() {
 
   const [showSearch, setShowSearch] = useState(false);
   const [showPins, setShowPins] = useState(false);
+  const [showBookmarks, setShowBookmarks] = useState(false);
   const [showAddMembers, setShowAddMembers] = useState(false);
 
   // If connected to voice and no text channel selected, show voice panel full-width
@@ -109,6 +111,15 @@ export function ChatArea() {
           <span className="chat-header-hash">{channelPrefix}</span>
           <span className="chat-header-name">{channelName}</span>
           <div style={{ flex: 1 }} />
+          <button
+            className={`chat-header-action ${showBookmarks ? 'active' : ''}`}
+            title="Bookmarks"
+            onClick={() => { setShowBookmarks(!showBookmarks); if (showPins) setShowPins(false); }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill={showBookmarks ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+            </svg>
+          </button>
           {isDm && (
             <button
               className="chat-header-action"
@@ -125,7 +136,7 @@ export function ChatArea() {
               <button
                 className={`chat-header-action ${showPins ? 'active' : ''}`}
                 title="Pinned Messages"
-                onClick={() => setShowPins(!showPins)}
+                onClick={() => { setShowPins(!showPins); if (showBookmarks) setShowBookmarks(false); }}
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z" />
@@ -163,6 +174,10 @@ export function ChatArea() {
 
       {showPins && activeChannelId && (
         <PinnedMessagesPanel channelId={activeChannelId} onClose={() => setShowPins(false)} />
+      )}
+
+      {showBookmarks && (
+        <BookmarksPanel onClose={() => setShowBookmarks(false)} />
       )}
 
       {showSearch && (

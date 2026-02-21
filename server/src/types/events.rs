@@ -106,6 +106,7 @@ pub struct ReadyPayload {
     pub servers: Vec<Server>,
     pub read_states: Vec<super::entities::ReadState>,
     pub notification_preferences: Vec<crate::db::queries::NotificationPreference>,
+    pub bookmarked_message_ids: Vec<Uuid>,
 }
 
 // ── Dispatch Events ────────────────────────────────────

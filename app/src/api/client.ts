@@ -4,7 +4,7 @@ import type {
   VoiceTokenResponse, VoiceState, Invite, InviteResolve, Ban, AuditLogEntry,
   Webhook, GifSearchResponse, ServerMemberWithUser, RegistrationCode,
   NotificationPreference, NotificationLevel, LinkPreviewData,
-  SoundboardSound, CustomTheme,
+  SoundboardSound, CustomTheme, Bookmark,
 } from '../types';
 
 import { getApiUrl } from './instance';
@@ -804,4 +804,49 @@ export async function updateCustomTheme(themeId: string, data: { name?: string; 
 
 export async function deleteCustomTheme(themeId: string): Promise<void> {
   return request(`/users/@me/themes/${themeId}`, { method: 'DELETE' });
+}
+
+// ── Bookmarks ─────────────────────────────────────────
+
+export async function getBookmarks(params?: {
+  tag?: string;
+  search?: string;
+  before?: string;
+  limit?: number;
+}): Promise<Bookmark[]> {
+  const sp = new URLSearchParams();
+  if (params?.tag) sp.set('tag', params.tag);
+  if (params?.search) sp.set('search', params.search);
+  if (params?.before) sp.set('before', params.before);
+  if (params?.limit) sp.set('limit', String(params.limit));
+  const qs = sp.toString();
+  return request(`/users/@me/bookmarks${qs ? `?${qs}` : ''}`);
+}
+
+export async function addBookmark(
+  messageId: string,
+  data?: { tags?: string[]; note?: string },
+): Promise<void> {
+  return request(`/users/@me/bookmarks/${messageId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data || {}),
+  });
+}
+
+export async function updateBookmark(
+  messageId: string,
+  data: { tags?: string[]; note?: string },
+): Promise<void> {
+  return request(`/users/@me/bookmarks/${messageId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function removeBookmark(messageId: string): Promise<void> {
+  return request(`/users/@me/bookmarks/${messageId}`, { method: 'DELETE' });
+}
+
+export async function getBookmarkTags(): Promise<string[]> {
+  return request('/users/@me/bookmarks/tags');
 }
