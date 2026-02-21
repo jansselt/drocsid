@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.5.0...drocsid-v0.6.0) (2026-02-21)
+
+
+### Features
+
+* add custom CSS color themes (drocsid-c1b) ([682079a](https://github.com/jansselt/drocsid/commit/682079a293affc5f0688765ef7fea977743e2ce3))
+
+
+### Bug Fixes
+
+* use bundled CHANGELOG.md for release notes instead of GitHub API (drocsid-lgy) ([e70fa82](https://github.com/jansselt/drocsid/commit/e70fa8247954c8746693a69150e6095ba582f4f5))
+
 ## [0.5.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.4.0...drocsid-v0.5.0) (2026-02-20)
 
 
