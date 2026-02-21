@@ -1,6 +1,6 @@
 {
   "productName": "Drocsid",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "identifier": "com.drocsid.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
