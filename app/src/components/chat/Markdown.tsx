@@ -246,7 +246,7 @@ export function Markdown({ content }: MarkdownProps) {
               <div key={i} className="md-embed">
                 <iframe
                   className="md-youtube"
-                  src={`https://www.youtube-nocookie.com/embed/${token.text}`}
+                  src={`https://www.youtube.com/embed/${token.text}`}
                   title="YouTube"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   allowFullScreen
