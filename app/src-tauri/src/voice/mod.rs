@@ -1,5 +1,6 @@
 mod audio_io;
 mod manager;
+pub(crate) mod suppressor;
 
 use std::sync::Arc;
 use tauri::State;
@@ -93,6 +94,19 @@ pub async fn voice_set_deaf(state: State<'_, VoiceState>, deaf: bool) -> Result<
     let guard = state.0.lock().await;
     if let Some(mgr) = guard.as_ref() {
         mgr.set_deaf(deaf);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn voice_set_noise_suppression(
+    state: State<'_, VoiceState>,
+    enabled: bool,
+) -> Result<(), String> {
+    log::debug!("voice_set_noise_suppression: {enabled}");
+    let guard = state.0.lock().await;
+    if let Some(mgr) = guard.as_ref() {
+        mgr.set_noise_suppression(enabled);
     }
     Ok(())
 }

@@ -27,7 +27,7 @@ import {
 import * as api from '../../api/client';
 import type { RegistrationCode, Channel, CustomTheme } from '../../types';
 import { isPushSupported, getPushEnabled, subscribeToPush, unsubscribeFromPush } from '../../utils/pushSubscription';
-import { listAudioOutputs, listAudioInputs, saveSpeaker, saveMicrophone, type AudioOutputDevice, type AudioInputDevice } from '../../utils/audioDevices';
+import { listAudioOutputs, listAudioInputs, saveSpeaker, saveMicrophone, getNoiseSuppression, saveNoiseSuppression, type AudioOutputDevice, type AudioInputDevice } from '../../utils/audioDevices';
 import { SHORTCUT_CATEGORIES, mod } from '../common/KeyboardShortcutsDialog';
 import '../common/KeyboardShortcutsDialog.css';
 import './UserSettings.css';
@@ -788,6 +788,9 @@ function VoiceVideoSettings() {
   const [pttKey, setPttKey] = useState(() => localStorage.getItem('drocsid_ptt_key') || 'Space');
   const [recordingKey, setRecordingKey] = useState(false);
 
+  // Audio processing
+  const [noiseSuppression, setNoiseSuppression] = useState(() => getNoiseSuppression());
+
   const micStreamRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -1040,6 +1043,25 @@ function VoiceVideoSettings() {
           )}
         </div>
       )}
+
+      <h3>Audio Processing</h3>
+      <div className="profile-field">
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', textTransform: 'none', letterSpacing: 'normal', fontWeight: 400, fontSize: '0.875rem', color: 'var(--text-primary)' }}>
+          <input
+            type="checkbox"
+            checked={noiseSuppression}
+            onChange={(e) => {
+              const val = e.target.checked;
+              setNoiseSuppression(val);
+              saveNoiseSuppression(val);
+            }}
+          />
+          Noise Suppression
+        </label>
+        <span className="profile-field-hint" style={{ textAlign: 'left' }}>
+          Reduces background noise from your microphone
+        </span>
+      </div>
 
       <h3>Output Device</h3>
       <div className="profile-field">

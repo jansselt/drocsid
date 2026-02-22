@@ -221,6 +221,7 @@ pub fn run() {
             voice::voice_disconnect,
             voice::voice_set_mute,
             voice::voice_set_deaf,
+            voice::voice_set_noise_suppression,
             voice::voice_set_user_volume,
             voice::voice_set_input_device,
             voice::voice_set_output_device,

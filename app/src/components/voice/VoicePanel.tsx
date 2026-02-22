@@ -11,7 +11,7 @@ import {
 import { Track, RoomEvent, RemoteParticipant, type Participant } from 'livekit-client';
 import { useServerStore } from '../../stores/serverStore';
 import { isTauri } from '../../api/instance';
-import { applyAudioOutputTauri, labelAudioStreamsTauri } from '../../utils/audioDevices';
+import { applyAudioOutputTauri, labelAudioStreamsTauri, getNoiseSuppression } from '../../utils/audioDevices';
 import { NativeVoicePanel } from './NativeVoicePanel';
 import { SoundboardPanel } from './SoundboardPanel';
 import './VoicePanel.css';
@@ -23,14 +23,18 @@ export function VoicePanel({ compact }: { compact?: boolean } = {}) {
   const voiceLeave = useServerStore((s) => s.voiceLeave);
   const channels = useServerStore((s) => s.channels);
 
-  // Pass saved device ID directly to getUserMedia via LiveKit.
-  // enumerateDevices() provides browser-native device IDs on all platforms.
+  // Pass saved device ID + noise suppression directly to getUserMedia via LiveKit.
   const audioOptions = useMemo(() => {
     const savedMic = localStorage.getItem('drocsid_mic');
+    const constraints: MediaTrackConstraints = {
+      noiseSuppression: getNoiseSuppression(),
+      autoGainControl: true,
+      echoCancellation: true,
+    };
     if (savedMic && savedMic !== 'default') {
-      return { deviceId: { exact: savedMic } } as MediaTrackConstraints;
+      constraints.deviceId = { exact: savedMic };
     }
-    return true as const;
+    return constraints;
   }, []);
 
   if (!voiceToken || !voiceUrl || !voiceChannelId) return null;
@@ -342,25 +346,34 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
     return () => window.removeEventListener('drocsid-speaker-changed', handler);
   }, [room]);
 
-  // Re-publish mic track when user changes mic selection in settings.
+  // Re-publish mic track when user changes mic or noise suppression settings.
   useEffect(() => {
     if (!room || !localParticipant) return;
 
-    const handler = async () => {
+    const republishMic = async () => {
       const deviceId = localStorage.getItem('drocsid_mic');
-      const constraints: MediaTrackConstraints = (deviceId && deviceId !== 'default')
-        ? { deviceId: { exact: deviceId } }
-        : {};
+      const constraints: MediaTrackConstraints = {
+        noiseSuppression: getNoiseSuppression(),
+        autoGainControl: true,
+        echoCancellation: true,
+      };
+      if (deviceId && deviceId !== 'default') {
+        constraints.deviceId = { exact: deviceId };
+      }
       try {
         await localParticipant.setMicrophoneEnabled(false);
         await localParticipant.setMicrophoneEnabled(true, constraints);
       } catch (e) {
-        console.warn('[VoicePanel] Failed to switch mic:', e);
+        console.warn('[VoicePanel] Failed to republish mic:', e);
       }
     };
 
-    window.addEventListener('drocsid-mic-changed', handler);
-    return () => window.removeEventListener('drocsid-mic-changed', handler);
+    window.addEventListener('drocsid-mic-changed', republishMic);
+    window.addEventListener('drocsid-noise-suppression-changed', republishMic);
+    return () => {
+      window.removeEventListener('drocsid-mic-changed', republishMic);
+      window.removeEventListener('drocsid-noise-suppression-changed', republishMic);
+    };
   }, [room, localParticipant]);
 
   // Label PipeWire audio streams with distinct names (best-effort, after connection)

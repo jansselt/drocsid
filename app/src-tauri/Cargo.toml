@@ -24,6 +24,7 @@ cpal = "0.17"
 rtrb = "0.3"
 futures-util = "0.3"
 tokio = { version = "1", features = ["rt", "time", "sync", "macros"] }
+nnnoiseless = "0.5"
 log = "0.4"
 simplelog = "0.12"
 

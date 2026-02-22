@@ -287,6 +287,21 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
     invoke('voice_set_deaf', { deaf: voiceSelfDeaf }).catch(() => {});
   }, [voiceSelfDeaf]);
 
+  // Sync noise suppression setting to Rust
+  useEffect(() => {
+    // Apply initial value
+    const initial = localStorage.getItem('drocsid_noise_suppression') !== 'false';
+    invoke('voice_set_noise_suppression', { enabled: initial }).catch(() => {});
+
+    // Listen for live changes from settings
+    const handler = () => {
+      const enabled = localStorage.getItem('drocsid_noise_suppression') !== 'false';
+      invoke('voice_set_noise_suppression', { enabled }).catch(() => {});
+    };
+    window.addEventListener('drocsid-noise-suppression-changed', handler);
+    return () => window.removeEventListener('drocsid-noise-suppression-changed', handler);
+  }, []);
+
   // Push-to-talk
   const pttActiveRef = useRef(false);
   useEffect(() => {

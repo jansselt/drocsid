@@ -156,3 +156,23 @@ export function saveMicrophone(deviceId: string): void {
   localStorage.setItem('drocsid_mic', deviceId);
   window.dispatchEvent(new CustomEvent('drocsid-mic-changed'));
 }
+
+// ---------------------------------------------------------------------------
+// Noise suppression preference
+// ---------------------------------------------------------------------------
+
+/**
+ * Get noise suppression preference from localStorage.
+ * Defaults to true (enabled) if never set.
+ */
+export function getNoiseSuppression(): boolean {
+  return localStorage.getItem('drocsid_noise_suppression') !== 'false';
+}
+
+/**
+ * Save noise suppression preference and notify listeners.
+ */
+export function saveNoiseSuppression(enabled: boolean): void {
+  localStorage.setItem('drocsid_noise_suppression', String(enabled));
+  window.dispatchEvent(new CustomEvent('drocsid-noise-suppression-changed'));
+}

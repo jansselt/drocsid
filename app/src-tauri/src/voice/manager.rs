@@ -18,6 +18,7 @@ use tauri::Emitter;
 use tokio::sync::{mpsc, Mutex};
 
 use super::audio_io;
+use super::suppressor;
 
 const SAMPLE_RATE: u32 = 48000;
 const NUM_CHANNELS: u32 = 1;
@@ -31,6 +32,7 @@ pub struct VoiceManager {
     output_stream: cpal::Stream,
     mic_muted: Arc<AtomicBool>,
     deaf: Arc<AtomicBool>,
+    noise_suppression: Arc<AtomicBool>,
     shutdown_tx: mpsc::Sender<()>,
     /// Per-user volume (0.0-2.0). Protected by tokio Mutex since only accessed from async tasks.
     user_volumes: Arc<Mutex<HashMap<String, f32>>>,
@@ -145,6 +147,7 @@ impl VoiceManager {
         // 6. Shared state
         let mic_muted = Arc::new(AtomicBool::new(false));
         let deaf = Arc::new(AtomicBool::new(false));
+        let noise_suppression = Arc::new(AtomicBool::new(true));
         let user_volumes: Arc<Mutex<HashMap<String, f32>>> =
             Arc::new(Mutex::new(HashMap::new()));
         let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>(1);
@@ -160,6 +163,7 @@ impl VoiceManager {
             mic_consumer,
             audio_source,
             mic_muted.clone(),
+            noise_suppression.clone(),
             shutdown_rx,
             mic_swap_rx,
         );
@@ -190,6 +194,7 @@ impl VoiceManager {
             output_stream,
             mic_muted,
             deaf,
+            noise_suppression,
             shutdown_tx,
             user_volumes,
             mic_swap_tx,
@@ -211,6 +216,10 @@ impl VoiceManager {
 
     pub fn set_deaf(&self, deaf: bool) {
         self.deaf.store(deaf, Ordering::Relaxed);
+    }
+
+    pub fn set_noise_suppression(&self, enabled: bool) {
+        self.noise_suppression.store(enabled, Ordering::Relaxed);
     }
 
     pub async fn set_user_volume(&self, identity: &str, volume_percent: u32) {
@@ -260,6 +269,7 @@ impl VoiceManager {
         mut consumer: rtrb::Consumer<i16>,
         audio_source: NativeAudioSource,
         mic_muted: Arc<AtomicBool>,
+        noise_suppression: Arc<AtomicBool>,
         mut shutdown_rx: mpsc::Receiver<()>,
         mut swap_rx: mpsc::Receiver<rtrb::Consumer<i16>>,
     ) {
@@ -269,6 +279,12 @@ impl VoiceManager {
             let mut buf = Vec::with_capacity(480); // 10ms at 48kHz mono
             let mut first_samples_logged = false;
             let mut empty_ticks: u64 = 0;
+
+            // Noise suppression state
+            let mut denoiser = suppressor::create_default_suppressor();
+            let ns_frame_size = denoiser.frame_size();
+            let mut ns_in = vec![0.0f32; ns_frame_size];
+            let mut ns_out = vec![0.0f32; ns_frame_size];
 
             // Periodic diagnostic counters
             let mut diag_ticks: u64 = 0;
@@ -329,7 +345,23 @@ impl VoiceManager {
                         empty_ticks = 0;
                         diag_samples_total += buf.len() as u64;
 
-                        // Compute RMS level for local speaking indicator
+                        // Apply noise suppression if enabled (process complete frames)
+                        if noise_suppression.load(Ordering::Relaxed) {
+                            let mut i = 0;
+                            while i + ns_frame_size <= buf.len() {
+                                for j in 0..ns_frame_size {
+                                    ns_in[j] = buf[i + j] as f32;
+                                }
+                                denoiser.process_frame(&ns_in, &mut ns_out);
+                                for j in 0..ns_frame_size {
+                                    buf[i + j] = ns_out[j].clamp(-32768.0, 32767.0) as i16;
+                                }
+                                i += ns_frame_size;
+                            }
+                            // Remaining samples (< frame_size) pass through unprocessed.
+                        }
+
+                        // Compute RMS level for local speaking indicator (after NS for accuracy)
                         let sum_sq: f64 = buf.iter().map(|&s| {
                             let f = s as f64 / i16::MAX as f64;
                             f * f
