@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/jansselt/drocsid/compare/drocsid-v0.7.0...drocsid-v0.7.1) (2026-02-22)
+
+
+### Bug Fixes
+
+* use Image::new_owned instead of removed new_raw in tray icon code ([186775c](https://github.com/jansselt/drocsid/commit/186775c95eed59f14c492bd9e33a3c11bf068c31))
+
 ## [0.7.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.6.0...drocsid-v0.7.0) (2026-02-22)
 
 
