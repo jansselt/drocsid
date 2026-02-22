@@ -205,6 +205,26 @@ fn detect_linux_pkg_type() -> Option<String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // AppImage bundles GStreamer core libs but not the audio output plugins
+    // (pulsesink, pipewiresink).  The bundled libgstreamer may have different
+    // compiled-in plugin search paths than the host, so explicitly point it
+    // at common system locations.  Must happen before GTK/WebKit init.
+    #[cfg(target_os = "linux")]
+    if std::env::var("APPIMAGE").is_ok() {
+        let sys_paths = [
+            "/usr/lib64/gstreamer-1.0",                     // Fedora/RHEL/Nobara
+            "/usr/lib/x86_64-linux-gnu/gstreamer-1.0",      // Debian/Ubuntu
+            "/usr/lib/gstreamer-1.0",                        // generic
+        ];
+        let existing = std::env::var("GST_PLUGIN_SYSTEM_PATH_1_0").unwrap_or_default();
+        let combined = if existing.is_empty() {
+            sys_paths.join(":")
+        } else {
+            format!("{}:{}", existing, sys_paths.join(":"))
+        };
+        unsafe { std::env::set_var("GST_PLUGIN_SYSTEM_PATH_1_0", &combined); }
+    }
+
     // In production on Linux/macOS, Tauri uses the tauri:// protocol which
     // breaks YouTube embeds (Error 153) and may affect Web Audio.  Serve
     // the frontend on http://localhost:<port> instead.
