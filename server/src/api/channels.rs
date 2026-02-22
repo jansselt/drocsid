@@ -66,7 +66,7 @@ pub fn routes() -> Router<AppState> {
 
 /// Helper: resolve channel and verify VIEW_CHANNEL permission.
 /// Returns (channel, server_id, owner_id) — server_id/owner_id are None for DMs.
-async fn resolve_channel_with_perm(
+pub(crate) async fn resolve_channel_with_perm(
     state: &AppState,
     channel_id: Uuid,
     user_id: Uuid,
@@ -254,17 +254,60 @@ async fn get_messages(
         }
     }
 
+    // Batch-load polls for messages that have them
+    let all_polls = queries::get_polls_for_messages(&state.db, &message_ids).await?;
+    let poll_map: std::collections::HashMap<Uuid, _> = if !all_polls.is_empty() {
+        let poll_ids: Vec<Uuid> = all_polls.iter().map(|p| p.id).collect();
+        let all_poll_options =
+            queries::get_poll_options_for_polls(&state.db, &poll_ids).await?;
+        let all_poll_votes =
+            queries::get_poll_votes_for_polls(&state.db, &poll_ids).await?;
+
+        let mut options_by_poll: std::collections::HashMap<Uuid, Vec<crate::types::entities::PollOption>> =
+            std::collections::HashMap::new();
+        for opt in all_poll_options {
+            options_by_poll.entry(opt.poll_id).or_default().push(opt);
+        }
+        let mut votes_by_poll: std::collections::HashMap<Uuid, Vec<crate::types::entities::PollVote>> =
+            std::collections::HashMap::new();
+        for vote in all_poll_votes {
+            votes_by_poll.entry(vote.poll_id).or_default().push(vote);
+        }
+
+        all_polls
+            .into_iter()
+            .map(|poll| {
+                let options = options_by_poll.get(&poll.id).map(|v| v.as_slice()).unwrap_or(&[]);
+                let votes = votes_by_poll.get(&poll.id).map(|v| v.as_slice()).unwrap_or(&[]);
+                let msg_id = poll.message_id;
+                let results = crate::api::polls::build_poll_results(
+                    poll, options, votes, user.user_id,
+                );
+                (msg_id, results)
+            })
+            .collect()
+    } else {
+        std::collections::HashMap::new()
+    };
+
     let result: Vec<serde_json::Value> = messages
         .iter()
         .map(|msg| {
             let mut val = serde_json::to_value(msg).unwrap();
-            val.as_object_mut().unwrap().insert(
+            let obj = val.as_object_mut().unwrap();
+            obj.insert(
                 "reactions".to_string(),
                 serde_json::to_value(
                     reaction_map.get(&msg.id).unwrap_or(&Vec::new()),
                 )
                 .unwrap(),
             );
+            if let Some(poll_results) = poll_map.get(&msg.id) {
+                obj.insert(
+                    "poll".to_string(),
+                    serde_json::to_value(poll_results).unwrap(),
+                );
+            }
             val
         })
         .collect();
@@ -1071,7 +1114,7 @@ static RE_MENTION_NAME: LazyLock<Regex> =
 
 /// Parse `<@uuid>`, `@username`, `@everyone`, and `@here` mentions from message content.
 /// Returns a deduplicated list of mentioned user IDs (excluding the author).
-async fn parse_mentions(
+pub(crate) async fn parse_mentions(
     pool: &sqlx::PgPool,
     gateway: &crate::gateway::GatewayState,
     content: &str,

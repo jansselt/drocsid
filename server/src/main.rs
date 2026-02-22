@@ -71,6 +71,9 @@ async fn main() -> anyhow::Result<()> {
         s3,
     };
 
+    // Start background scheduler for scheduled messages
+    let _scheduler = services::scheduler::spawn_scheduler(state.clone());
+
     // Build router
     let app = api::router()
         .layer(TraceLayer::new_for_http())

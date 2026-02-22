@@ -227,6 +227,42 @@ pub struct ChannelOverrideUpdateEvent {
     pub overrides: Vec<ChannelOverride>,
 }
 
+// ── Link Collection Events ───────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LinkCollectionUpdateEvent {
+    pub channel_id: Uuid,
+}
+
+// ── Poll Events ──────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PollCreateEvent {
+    pub channel_id: Uuid,
+    pub message_id: Uuid,
+    pub poll: super::entities::PollWithResults,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PollVoteEvent {
+    pub channel_id: Uuid,
+    pub message_id: Uuid,
+    pub poll_id: Uuid,
+    pub options: Vec<super::entities::PollOptionResult>,
+    pub total_votes: i64,
+    pub ranked_results: Option<Vec<super::entities::RankedResult>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PollCloseEvent {
+    pub channel_id: Uuid,
+    pub message_id: Uuid,
+    pub poll_id: Uuid,
+    pub options: Vec<super::entities::PollOptionResult>,
+    pub total_votes: i64,
+    pub ranked_results: Option<Vec<super::entities::RankedResult>>,
+}
+
 // ── DM & Relationship Events ─────────────────────────
 
 #[derive(Debug, Clone, Serialize)]

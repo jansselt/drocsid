@@ -7,6 +7,8 @@ import { ThreadPanel } from './ThreadPanel';
 import { SearchModal } from './SearchModal';
 import { VoicePanel } from '../voice/VoicePanel';
 import { BookmarksPanel } from './BookmarksPanel';
+import { ScheduledMessagesPanel } from './ScheduledMessagesPanel';
+import { LinkCollectionPanel } from './LinkCollectionPanel';
 import { Markdown } from './Markdown';
 import type { Message, User } from '../../types';
 import { AddGroupDmMembersModal } from '../dm/AddGroupDmMembersModal';
@@ -38,6 +40,8 @@ export function ChatArea() {
   const [showSearch, setShowSearch] = useState(false);
   const [showPins, setShowPins] = useState(false);
   const [showBookmarks, setShowBookmarks] = useState(false);
+  const [showScheduled, setShowScheduled] = useState(false);
+  const [showLinks, setShowLinks] = useState(false);
   const [showAddMembers, setShowAddMembers] = useState(false);
 
   // If connected to voice and no text channel selected, show voice panel full-width
@@ -112,9 +116,29 @@ export function ChatArea() {
           <span className="chat-header-name">{channelName}</span>
           <div style={{ flex: 1 }} />
           <button
+            className={`chat-header-action ${showLinks ? 'active' : ''}`}
+            title="Links"
+            onClick={() => { setShowLinks(!showLinks); if (showBookmarks) setShowBookmarks(false); if (showPins) setShowPins(false); if (showScheduled) setShowScheduled(false); }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+            </svg>
+          </button>
+          <button
+            className={`chat-header-action ${showScheduled ? 'active' : ''}`}
+            title="Scheduled Messages"
+            onClick={() => { setShowScheduled(!showScheduled); if (showBookmarks) setShowBookmarks(false); if (showPins) setShowPins(false); if (showLinks) setShowLinks(false); }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill={showScheduled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+          </button>
+          <button
             className={`chat-header-action ${showBookmarks ? 'active' : ''}`}
             title="Bookmarks"
-            onClick={() => { setShowBookmarks(!showBookmarks); if (showPins) setShowPins(false); }}
+            onClick={() => { setShowBookmarks(!showBookmarks); if (showPins) setShowPins(false); if (showScheduled) setShowScheduled(false); if (showLinks) setShowLinks(false); }}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill={showBookmarks ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
               <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
@@ -178,6 +202,14 @@ export function ChatArea() {
 
       {showBookmarks && (
         <BookmarksPanel onClose={() => setShowBookmarks(false)} />
+      )}
+
+      {showScheduled && (
+        <ScheduledMessagesPanel onClose={() => setShowScheduled(false)} />
+      )}
+
+      {showLinks && activeChannelId && (
+        <LinkCollectionPanel channelId={activeChannelId} onClose={() => setShowLinks(false)} />
       )}
 
       {showSearch && (

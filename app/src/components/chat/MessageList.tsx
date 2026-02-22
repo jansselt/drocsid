@@ -3,6 +3,7 @@ import { useServerStore } from '../../stores/serverStore';
 import { useAuthStore } from '../../stores/authStore';
 import type { Message, ReactionGroup } from '../../types';
 import { Markdown } from './Markdown';
+import { PollCard } from './PollCard';
 import './MessageList.css';
 
 interface MessageListProps {
@@ -31,6 +32,7 @@ export function MessageList({ channelId }: MessageListProps) {
   const roles = useServerStore((s) => activeServerId ? s.roles.get(activeServerId) : undefined);
   const bookmarkedMessageIds = useServerStore((s) => s.bookmarkedMessageIds);
   const toggleBookmark = useServerStore((s) => s.toggleBookmark);
+  const polls = useServerStore((s) => s.polls);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -404,6 +406,10 @@ export function MessageList({ channelId }: MessageListProps) {
                   {msg.content && <Markdown content={msg.content} />}
                   {msg.edited_at && <span className="message-edited">(edited)</span>}
                 </div>
+              )}
+
+              {polls.has(msg.id) && (
+                <PollCard messageId={msg.id} channelId={channelId} />
               )}
 
               {msgReactions.length > 0 && (

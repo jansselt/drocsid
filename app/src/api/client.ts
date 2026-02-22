@@ -4,8 +4,9 @@ import type {
   VoiceTokenResponse, VoiceState, Invite, InviteResolve, Ban, AuditLogEntry,
   Webhook, GifSearchResponse, ServerMemberWithUser, RegistrationCode,
   NotificationPreference, NotificationLevel, LinkPreviewData,
-  SoundboardSound, CustomTheme, Bookmark,
+  SoundboardSound, CustomTheme, Bookmark, ScheduledMessage, ChannelLink, Poll,
 } from '../types';
+import type { PollType } from '../types';
 
 import { getApiUrl } from './instance';
 
@@ -850,4 +851,150 @@ export async function removeBookmark(messageId: string): Promise<void> {
 
 export async function getBookmarkTags(): Promise<string[]> {
   return request('/users/@me/bookmarks/tags');
+}
+
+// ── Scheduled Messages ────────────────────────────────
+
+export async function createScheduledMessage(
+  channelId: string,
+  content: string,
+  sendAt: string,
+  replyToId?: string,
+): Promise<ScheduledMessage> {
+  return request(`/channels/${channelId}/scheduled-messages`, {
+    method: 'POST',
+    body: JSON.stringify({
+      content,
+      reply_to_id: replyToId,
+      send_at: sendAt,
+    }),
+  });
+}
+
+export async function getScheduledMessages(): Promise<ScheduledMessage[]> {
+  return request('/users/@me/scheduled-messages');
+}
+
+export async function updateScheduledMessage(
+  scheduledId: string,
+  data: { content?: string; send_at?: string },
+): Promise<ScheduledMessage> {
+  return request(`/users/@me/scheduled-messages/${scheduledId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteScheduledMessage(
+  scheduledId: string,
+): Promise<void> {
+  return request(`/users/@me/scheduled-messages/${scheduledId}`, {
+    method: 'DELETE',
+  });
+}
+
+// ── Channel Links ─────────────────────────────────────
+
+export async function getChannelLinks(
+  channelId: string,
+  options?: { tag?: string; search?: string; limit?: number },
+): Promise<ChannelLink[]> {
+  const params = new URLSearchParams();
+  if (options?.tag) params.set('tag', options.tag);
+  if (options?.search) params.set('search', options.search);
+  if (options?.limit) params.set('limit', String(options.limit));
+  const query = params.toString();
+  return request(`/channels/${channelId}/links${query ? `?${query}` : ''}`);
+}
+
+export async function getChannelLinkTags(
+  channelId: string,
+): Promise<string[]> {
+  return request(`/channels/${channelId}/links/tags`);
+}
+
+export async function addChannelLink(
+  channelId: string,
+  url: string,
+  tags?: string[],
+  note?: string,
+): Promise<ChannelLink> {
+  return request(`/channels/${channelId}/links`, {
+    method: 'POST',
+    body: JSON.stringify({ url, tags, note }),
+  });
+}
+
+export async function updateChannelLink(
+  channelId: string,
+  linkId: string,
+  data: { tags?: string[]; note?: string },
+): Promise<ChannelLink> {
+  return request(`/channels/${channelId}/links/${linkId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteChannelLink(
+  channelId: string,
+  linkId: string,
+): Promise<void> {
+  return request(`/channels/${channelId}/links/${linkId}`, {
+    method: 'DELETE',
+  });
+}
+
+// ── Polls ─────────────────────────────────────────────
+
+export async function createPoll(
+  channelId: string,
+  data: {
+    question: string;
+    options: { label: string }[];
+    poll_type?: PollType;
+    anonymous?: boolean;
+    closes_at?: string;
+  },
+): Promise<Poll> {
+  return request(`/channels/${channelId}/polls`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getPoll(
+  channelId: string,
+  pollId: string,
+): Promise<Poll> {
+  return request(`/channels/${channelId}/polls/${pollId}`);
+}
+
+export async function castVote(
+  channelId: string,
+  pollId: string,
+  optionIds: string[],
+): Promise<Poll> {
+  return request(`/channels/${channelId}/polls/${pollId}/votes`, {
+    method: 'POST',
+    body: JSON.stringify({ option_ids: optionIds }),
+  });
+}
+
+export async function retractVote(
+  channelId: string,
+  pollId: string,
+): Promise<void> {
+  return request(`/channels/${channelId}/polls/${pollId}/votes`, {
+    method: 'DELETE',
+  });
+}
+
+export async function closePoll(
+  channelId: string,
+  pollId: string,
+): Promise<Poll> {
+  return request(`/channels/${channelId}/polls/${pollId}/close`, {
+    method: 'POST',
+  });
 }

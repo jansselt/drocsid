@@ -7,8 +7,11 @@ pub mod channels;
 pub mod dms;
 pub mod gif;
 pub mod invites;
+pub mod links;
+pub mod polls;
 pub mod relationships;
 pub mod roles;
+pub mod scheduled;
 pub mod search;
 pub mod servers;
 pub mod soundboard;
@@ -48,7 +51,10 @@ fn api_routes() -> Router<AppState> {
             "/channels",
             channels::routes()
                 .merge(voice::routes())
-                .merge(webhooks::routes()),
+                .merge(webhooks::routes())
+                .merge(scheduled::channel_routes())
+                .merge(links::routes())
+                .merge(polls::routes()),
         )
         .nest("/admin", admin::routes())
         .nest("/dms", dms::routes())
@@ -71,6 +77,7 @@ fn user_routes() -> Router<AppState> {
         )
         .nest("/@me/themes", themes::routes())
         .nest("/@me/bookmarks", bookmarks::routes())
+        .nest("/@me/scheduled-messages", scheduled::routes())
         .route("/search", get(search_users))
 }
 

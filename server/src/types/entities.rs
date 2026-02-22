@@ -201,6 +201,114 @@ pub struct Message {
     pub created_at: DateTime<Utc>,
 }
 
+// ── Scheduled Messages ────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct ScheduledMessage {
+    pub id: Uuid,
+    pub channel_id: Uuid,
+    pub author_id: Uuid,
+    pub content: String,
+    pub reply_to_id: Option<Uuid>,
+    pub send_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+}
+
+// ── Channel Links ─────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct ChannelLink {
+    pub id: Uuid,
+    pub channel_id: Uuid,
+    pub added_by: Uuid,
+    pub url: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub image: Option<String>,
+    pub site_name: Option<String>,
+    pub tags: Vec<String>,
+    pub note: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+// ── Polls ──────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(type_name = "poll_type", rename_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
+pub enum PollType {
+    Single,
+    Multiple,
+    Ranked,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct Poll {
+    pub id: Uuid,
+    pub message_id: Uuid,
+    pub channel_id: Uuid,
+    pub creator_id: Uuid,
+    pub question: String,
+    pub poll_type: PollType,
+    pub anonymous: bool,
+    pub closes_at: Option<DateTime<Utc>>,
+    pub closed: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct PollOption {
+    pub id: Uuid,
+    pub poll_id: Uuid,
+    pub label: String,
+    pub position: i16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct PollVote {
+    pub id: Uuid,
+    pub poll_id: Uuid,
+    pub option_id: Uuid,
+    pub user_id: Uuid,
+    pub rank: Option<i16>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PollOptionResult {
+    pub option_id: Uuid,
+    pub label: String,
+    pub position: i16,
+    pub vote_count: i64,
+    pub percentage: f64,
+    pub voters: Vec<Uuid>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MyVote {
+    pub option_id: Uuid,
+    pub rank: Option<i16>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RankedResult {
+    pub option_id: Uuid,
+    pub label: String,
+    pub round_eliminated: Option<usize>,
+    pub final_votes: i64,
+    pub winner: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PollWithResults {
+    #[serde(flatten)]
+    pub poll: Poll,
+    pub options: Vec<PollOptionResult>,
+    pub total_votes: i64,
+    pub my_votes: Vec<MyVote>,
+    pub ranked_results: Option<Vec<RankedResult>>,
+}
+
 // ── Server Members ─────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -446,6 +554,58 @@ pub struct UpdateChannelRequest {
 pub struct SendMessageRequest {
     pub content: String,
     pub reply_to_id: Option<Uuid>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateScheduledMessageRequest {
+    pub content: String,
+    pub reply_to_id: Option<Uuid>,
+    pub send_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateScheduledMessageRequest {
+    pub content: Option<String>,
+    pub send_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateChannelLinkRequest {
+    pub url: String,
+    pub tags: Option<Vec<String>>,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateChannelLinkRequest {
+    pub tags: Option<Vec<String>>,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChannelLinkQuery {
+    pub tag: Option<String>,
+    pub search: Option<String>,
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreatePollOptionInput {
+    pub label: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreatePollRequest {
+    pub question: String,
+    pub options: Vec<CreatePollOptionInput>,
+    pub poll_type: Option<PollType>,
+    pub anonymous: Option<bool>,
+    pub closes_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CastVoteRequest {
+    pub option_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]

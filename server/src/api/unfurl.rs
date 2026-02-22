@@ -129,6 +129,68 @@ async fn unfurl(
     Ok(Json(data))
 }
 
+/// Fetch and parse link preview metadata for a URL.
+/// Returns None if the URL can't be fetched or isn't HTML.
+pub(crate) async fn fetch_unfurl(url: &str, instance_domain: &str) -> Option<UnfurlResponse> {
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        return None;
+    }
+    if url.contains(instance_domain) {
+        return None;
+    }
+
+    // Check cache
+    {
+        let cache = CACHE.read().await;
+        if let Some(cached) = cache.get(url) {
+            if cached.fetched_at.elapsed() < CACHE_TTL {
+                return Some(cached.data.clone());
+            }
+        }
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(FETCH_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .user_agent("facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)")
+        .build()
+        .ok()?;
+
+    let resp = client.get(url).send().await.ok()?;
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+
+    if !content_type.contains("text/html") {
+        return None;
+    }
+
+    let body_bytes = resp.bytes().await.ok()?;
+    let end = body_bytes.len().min(MAX_BODY_BYTES);
+    let html = String::from_utf8_lossy(&body_bytes[..end]);
+    let data = extract_og_metadata(url, &html);
+
+    // Cache
+    {
+        let mut cache = CACHE.write().await;
+        cache.insert(
+            url.to_string(),
+            CachedUnfurl {
+                data: data.clone(),
+                fetched_at: Instant::now(),
+            },
+        );
+        if cache.len() % 100 == 0 {
+            cache.retain(|_, v| v.fetched_at.elapsed() < CACHE_TTL);
+        }
+    }
+
+    Some(data)
+}
+
 fn extract_og_metadata(url: &str, html: &str) -> UnfurlResponse {
     use scraper::{Html, Selector};
 

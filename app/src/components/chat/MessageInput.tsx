@@ -2,6 +2,8 @@ import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import { GifPicker } from './GifPicker';
 import { EmojiPicker } from './EmojiPicker';
+import { SchedulePicker } from './SchedulePicker';
+import { PollCreator } from './PollCreator';
 import * as api from '../../api/client';
 import './MessageInput.css';
 
@@ -26,6 +28,7 @@ const SLASH_COMMANDS: Record<string, string | null> = {
   '/spoiler':   null, // special: wraps text in ||spoiler||
   '/gif':       null, // special: opens GIF picker
   '/bug':       null, // special: opens bug report modal
+  '/poll':      null, // special: opens poll creator
 };
 
 export function MessageInput({ channelId }: MessageInputProps) {
@@ -36,7 +39,10 @@ export function MessageInput({ channelId }: MessageInputProps) {
   const [gifQuery, setGifQuery] = useState('');
   const [showEmojis, setShowEmojis] = useState(false);
   const [showFormatHelp, setShowFormatHelp] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [showPoll, setShowPoll] = useState(false);
   const sendMessage = useServerStore((s) => s.sendMessage);
+  const scheduleMessage = useServerStore((s) => s.scheduleMessage);
   const replyingTo = useServerStore((s) => s.replyingTo);
   const setReplyingTo = useServerStore((s) => s.setReplyingTo);
   const sendTypingAction = useServerStore((s) => s.sendTyping);
@@ -90,6 +96,11 @@ export function MessageInput({ channelId }: MessageInputProps) {
         if (cmd === '/bug') {
           setContent('');
           window.dispatchEvent(new CustomEvent('open-bug-report', { detail: rest }));
+          return;
+        }
+        if (cmd === '/poll') {
+          setContent('');
+          setShowPoll(true);
           return;
         }
         if (replacement !== null) {
@@ -331,7 +342,7 @@ export function MessageInput({ channelId }: MessageInputProps) {
             >
               <span className="slash-cmd-name">{cmd}</span>
               <span className="slash-cmd-desc">
-                {cmd === '/spoiler' ? 'Hide text behind spoiler' : cmd === '/gif' ? 'Open GIF picker' : cmd === '/bug' ? 'Report a bug' : SLASH_COMMANDS[cmd]}
+                {cmd === '/spoiler' ? 'Hide text behind spoiler' : cmd === '/gif' ? 'Open GIF picker' : cmd === '/bug' ? 'Report a bug' : cmd === '/poll' ? 'Create a poll' : SLASH_COMMANDS[cmd]}
               </span>
             </button>
           ))}
@@ -471,6 +482,20 @@ export function MessageInput({ channelId }: MessageInputProps) {
         </button>
         <button
           className="gif-btn"
+          onClick={() => setShowSchedule(!showSchedule)}
+          title="Schedule message"
+        >
+          {'\u{1F552}'}
+        </button>
+        <button
+          className="gif-btn"
+          onClick={() => setShowPoll(!showPoll)}
+          title="Create poll"
+        >
+          {'\u{1F4CA}'}
+        </button>
+        <button
+          className="gif-btn"
           onClick={() => setShowFormatHelp(!showFormatHelp)}
           title="Formatting help"
         >
@@ -496,6 +521,28 @@ export function MessageInput({ channelId }: MessageInputProps) {
             inputRef.current?.focus();
           }}
           onClose={() => setShowEmojis(false)}
+        />
+      )}
+
+      {showSchedule && (
+        <SchedulePicker
+          onSchedule={async (sendAt) => {
+            const trimmed = content.trim();
+            if (!trimmed) return;
+            const replyId = replyingTo?.id;
+            setReplyingTo(null);
+            setContent('');
+            setShowSchedule(false);
+            await scheduleMessage(channelId, trimmed, sendAt, replyId);
+          }}
+          onClose={() => setShowSchedule(false)}
+        />
+      )}
+
+      {showPoll && (
+        <PollCreator
+          channelId={channelId}
+          onClose={() => setShowPoll(false)}
         />
       )}
 

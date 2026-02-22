@@ -36,6 +36,11 @@ import type {
   SoundboardSoundCreateEvent,
   SoundboardSoundDeleteEvent,
   SoundboardPlayEvent,
+  ScheduledMessage,
+  Poll,
+  PollCreateEvent,
+  PollVoteEvent,
+  PollCloseEvent,
 } from '../types';
 import * as api from '../api/client';
 import { getApiUrl } from '../api/instance';
@@ -208,6 +213,37 @@ interface ServerState {
   setBookmarkedIds: (ids: string[]) => void;
   toggleBookmark: (messageId: string, tags?: string[]) => Promise<void>;
 
+  // Scheduled message state & actions
+  scheduledMessages: ScheduledMessage[];
+  loadScheduledMessages: () => Promise<void>;
+  scheduleMessage: (
+    channelId: string,
+    content: string,
+    sendAt: string,
+    replyToId?: string,
+  ) => Promise<void>;
+  updateScheduledMessage: (
+    id: string,
+    data: { content?: string; send_at?: string },
+  ) => Promise<void>;
+  cancelScheduledMessage: (id: string) => Promise<void>;
+
+  // Poll state & actions
+  polls: Map<string, Poll>;
+  createPoll: (
+    channelId: string,
+    data: {
+      question: string;
+      options: { label: string }[];
+      poll_type?: 'single' | 'multiple' | 'ranked';
+      anonymous?: boolean;
+      closes_at?: string;
+    },
+  ) => Promise<void>;
+  castVote: (channelId: string, pollId: string, optionIds: string[]) => Promise<void>;
+  retractVote: (channelId: string, pollId: string) => Promise<void>;
+  closePoll: (channelId: string, pollId: string) => Promise<void>;
+
   toggleChannelSidebar: () => void;
   toggleMemberSidebar: () => void;
 
@@ -307,6 +343,8 @@ export const useServerStore = create<ServerState>((set, get) => ({
   speakingUsers: new Set(),
   soundboardSounds: new Map(),
   bookmarkedMessageIds: new Set(),
+  scheduledMessages: [],
+  polls: new Map(),
   members: new Map(),
   presences: new Map(),
   dmChannels: [],
@@ -384,13 +422,18 @@ export const useServerStore = create<ServerState>((set, get) => ({
       const messages = new Map(state.messages);
       messages.set(channelId, msgs);
       const reactions = new Map(state.reactions);
+      const polls = new Map(state.polls);
       for (const msg of msgs) {
         if (msg.reactions && msg.reactions.length > 0) {
           reactions.set(msg.id, msg.reactions);
         }
+        if ((msg as any).poll) {
+          polls.set(msg.id, (msg as any).poll as Poll);
+        }
       }
       const channelAccessOrder = touchLru(state.channelAccessOrder, channelId);
-      return evictLruChannels(messages, reactions, channelAccessOrder);
+      const evicted = evictLruChannels(messages, reactions, channelAccessOrder);
+      return { ...evicted, polls };
     });
   },
 
@@ -408,12 +451,16 @@ export const useServerStore = create<ServerState>((set, get) => ({
       const current = messages.get(channelId) || [];
       messages.set(channelId, [...older, ...current]);
       const reactions = new Map(state.reactions);
+      const polls = new Map(state.polls);
       for (const msg of older) {
         if (msg.reactions && msg.reactions.length > 0) {
           reactions.set(msg.id, msg.reactions);
         }
+        if ((msg as any).poll) {
+          polls.set(msg.id, (msg as any).poll as Poll);
+        }
       }
-      return { messages, reactions };
+      return { messages, reactions, polls };
     });
     return true;
   },
@@ -1187,6 +1234,79 @@ export const useServerStore = create<ServerState>((set, get) => ({
     }
   },
 
+  // ── Scheduled Messages ──────────────────────────────
+
+  loadScheduledMessages: async () => {
+    try {
+      const messages = await api.getScheduledMessages();
+      set({ scheduledMessages: messages });
+    } catch {
+      // ignore
+    }
+  },
+
+  scheduleMessage: async (channelId, content, sendAt, replyToId) => {
+    const scheduled = await api.createScheduledMessage(channelId, content, sendAt, replyToId);
+    set((state) => ({
+      scheduledMessages: [...state.scheduledMessages, scheduled].sort(
+        (a, b) => new Date(a.send_at).getTime() - new Date(b.send_at).getTime(),
+      ),
+    }));
+  },
+
+  updateScheduledMessage: async (id, data) => {
+    const updated = await api.updateScheduledMessage(id, data);
+    set((state) => ({
+      scheduledMessages: state.scheduledMessages
+        .map((m) => (m.id === id ? updated : m))
+        .sort((a, b) => new Date(a.send_at).getTime() - new Date(b.send_at).getTime()),
+    }));
+  },
+
+  cancelScheduledMessage: async (id) => {
+    await api.deleteScheduledMessage(id);
+    set((state) => ({
+      scheduledMessages: state.scheduledMessages.filter((m) => m.id !== id),
+    }));
+  },
+
+  createPoll: async (channelId, data) => {
+    const poll = await api.createPoll(channelId, data);
+    set((state) => {
+      const polls = new Map(state.polls);
+      polls.set(poll.message_id, poll);
+      return { polls };
+    });
+  },
+
+  castVote: async (channelId, pollId, optionIds) => {
+    const poll = await api.castVote(channelId, pollId, optionIds);
+    set((state) => {
+      const polls = new Map(state.polls);
+      polls.set(poll.message_id, poll);
+      return { polls };
+    });
+  },
+
+  retractVote: async (channelId, pollId) => {
+    await api.retractVote(channelId, pollId);
+    const poll = await api.getPoll(channelId, pollId);
+    set((state) => {
+      const polls = new Map(state.polls);
+      polls.set(poll.message_id, poll);
+      return { polls };
+    });
+  },
+
+  closePoll: async (channelId, pollId) => {
+    const poll = await api.closePoll(channelId, pollId);
+    set((state) => {
+      const polls = new Map(state.polls);
+      polls.set(poll.message_id, poll);
+      return { polls };
+    });
+  },
+
   toggleChannelSidebar: () => {
     set((state) => {
       const next = !state.showChannelSidebar;
@@ -1650,6 +1770,57 @@ export const useServerStore = create<ServerState>((set, get) => ({
           window.dispatchEvent(
             new CustomEvent('drocsid-soundboard-play', { detail: ev }),
           );
+          break;
+        }
+        case 'LINK_COLLECTION_UPDATE': {
+          const ev = data as { channel_id: string };
+          window.dispatchEvent(
+            new CustomEvent('drocsid-link-collection-update', { detail: ev }),
+          );
+          break;
+        }
+        case 'POLL_CREATE': {
+          const ev = data as PollCreateEvent;
+          set((state) => {
+            const polls = new Map(state.polls);
+            polls.set(ev.message_id, ev.poll);
+            return { polls };
+          });
+          break;
+        }
+        case 'POLL_VOTE': {
+          const ev = data as PollVoteEvent;
+          set((state) => {
+            const polls = new Map(state.polls);
+            const existing = polls.get(ev.message_id);
+            if (existing) {
+              polls.set(ev.message_id, {
+                ...existing,
+                options: ev.options,
+                total_votes: ev.total_votes,
+                ranked_results: ev.ranked_results,
+              });
+            }
+            return { polls };
+          });
+          break;
+        }
+        case 'POLL_CLOSE': {
+          const ev = data as PollCloseEvent;
+          set((state) => {
+            const polls = new Map(state.polls);
+            const existing = polls.get(ev.message_id);
+            if (existing) {
+              polls.set(ev.message_id, {
+                ...existing,
+                closed: true,
+                options: ev.options,
+                total_votes: ev.total_votes,
+                ranked_results: ev.ranked_results,
+              });
+            }
+            return { polls };
+          });
           break;
         }
         case 'PRESENCE_UPDATE': {

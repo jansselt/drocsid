@@ -64,6 +64,101 @@ export interface Bookmark {
   server_name: string | null;
 }
 
+// ── Channel Links ─────────────────────────────────────
+
+export interface ChannelLink {
+  id: string;
+  channel_id: string;
+  added_by: string;
+  url: string;
+  title: string | null;
+  description: string | null;
+  image: string | null;
+  site_name: string | null;
+  tags: string[];
+  note: string | null;
+  created_at: string;
+}
+
+// ── Scheduled Messages ────────────────────────────────
+
+export interface ScheduledMessage {
+  id: string;
+  channel_id: string;
+  author_id: string;
+  content: string;
+  reply_to_id: string | null;
+  send_at: string;
+  created_at: string;
+}
+
+// ── Polls ─────────────────────────────────────────────
+
+export type PollType = 'single' | 'multiple' | 'ranked';
+
+export interface PollOptionResult {
+  option_id: string;
+  label: string;
+  position: number;
+  vote_count: number;
+  percentage: number;
+  voters: string[];
+}
+
+export interface MyVote {
+  option_id: string;
+  rank: number | null;
+}
+
+export interface RankedResult {
+  option_id: string;
+  label: string;
+  round_eliminated: number | null;
+  final_votes: number;
+  winner: boolean;
+}
+
+export interface Poll {
+  id: string;
+  message_id: string;
+  channel_id: string;
+  creator_id: string;
+  question: string;
+  poll_type: PollType;
+  anonymous: boolean;
+  closes_at: string | null;
+  closed: boolean;
+  created_at: string;
+  options: PollOptionResult[];
+  total_votes: number;
+  my_votes: MyVote[];
+  ranked_results: RankedResult[] | null;
+}
+
+export interface PollCreateEvent {
+  channel_id: string;
+  message_id: string;
+  poll: Poll;
+}
+
+export interface PollVoteEvent {
+  channel_id: string;
+  message_id: string;
+  poll_id: string;
+  options: PollOptionResult[];
+  total_votes: number;
+  ranked_results: RankedResult[] | null;
+}
+
+export interface PollCloseEvent {
+  channel_id: string;
+  message_id: string;
+  poll_id: string;
+  options: PollOptionResult[];
+  total_votes: number;
+  ranked_results: RankedResult[] | null;
+}
+
 // ── Servers ────────────────────────────────────────────
 
 export interface Server {
