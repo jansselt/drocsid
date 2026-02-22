@@ -125,6 +125,11 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[tauri::command]
+fn read_dropped_file(path: String) -> Result<Vec<u8>, String> {
+    std::fs::read(&path).map_err(|e| format!("Failed to read {path}: {e}"))
+}
+
+#[tauri::command]
 fn update_tray_badge(app: tauri::AppHandle, count: u32) {
     let tray_state = match app.try_state::<TrayState>() {
         Some(s) => s,
@@ -225,6 +230,7 @@ pub fn run() {
             voice::voice_mic_test_stop,
             get_update_method,
             update_tray_badge,
+            read_dropped_file,
         ])
         .setup(|app| {
             // Initialize file + terminal logging

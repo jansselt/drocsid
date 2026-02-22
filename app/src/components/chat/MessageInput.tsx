@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useServerStore } from '../../stores/serverStore';
+import { isTauri } from '../../api/instance';
 import type { ServerMemberWithUser } from '../../types';
 import { GifPicker } from './GifPicker';
 import { EmojiPicker } from './EmojiPicker';
@@ -203,6 +204,8 @@ export function MessageInput({ channelId }: MessageInputProps) {
     e.stopPropagation();
     dragCounterRef.current = 0;
     setIsDragging(false);
+    // In Tauri, the native onDragDropEvent handles file reading — skip DOM handler
+    if (isTauri()) return;
     if (e.dataTransfer.files.length > 0) {
       addFiles(e.dataTransfer.files);
     }
@@ -239,6 +242,61 @@ export function MessageInput({ channelId }: MessageInputProps) {
       });
     }
   }, [addFiles]);
+
+  // Tauri: listen for native drag-drop events (webkit2gtk doesn't forward
+  // DOM drag events on Linux). Reads files via Rust and creates File objects.
+  // Use a ref for addFiles so the effect only registers once.
+  const addFilesRef = useRef(addFiles);
+  addFilesRef.current = addFiles;
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    import('@tauri-apps/api/webview').then(({ getCurrentWebview }) => {
+      if (cancelled) return;
+      getCurrentWebview().onDragDropEvent(async (event) => {
+        if (event.payload.type === 'over') {
+          setIsDragging(true);
+        } else if (event.payload.type === 'drop') {
+          setIsDragging(false);
+          const paths = event.payload.paths;
+          if (!paths.length) return;
+          const { invoke } = await import('@tauri-apps/api/core');
+          const files: File[] = [];
+          for (const path of paths) {
+            try {
+              const bytes: number[] = await invoke('read_dropped_file', { path });
+              const name = path.split('/').pop() || 'file';
+              const ext = name.split('.').pop()?.toLowerCase() || '';
+              const mimeMap: Record<string, string> = {
+                png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+                gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
+                mp4: 'video/mp4', webm: 'video/webm', mp3: 'audio/mpeg',
+                pdf: 'application/pdf', txt: 'text/plain',
+              };
+              const type = mimeMap[ext] || 'application/octet-stream';
+              files.push(new File([new Uint8Array(bytes)], name, { type }));
+            } catch (e) {
+              console.warn('Failed to read dropped file:', path, e);
+            }
+          }
+          if (files.length > 0) {
+            const dt = new DataTransfer();
+            files.forEach((f) => dt.items.add(f));
+            addFilesRef.current(dt.files);
+          }
+        } else {
+          setIsDragging(false);
+        }
+      }).then((fn) => {
+        if (cancelled) { fn(); return; }
+        unlisten = fn;
+      });
+    });
+    return () => { cancelled = true; unlisten?.(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
