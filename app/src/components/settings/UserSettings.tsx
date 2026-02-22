@@ -11,6 +11,10 @@ import {
   playVoiceLeaveSound,
   getNotificationVolume,
   setNotificationVolume,
+  getSoundTheme,
+  setSoundTheme,
+  SOUND_THEME_LABELS,
+  type SoundTheme,
 } from '../../utils/notificationSounds';
 import { isTauri } from '../../api/instance';
 import { useUpdateStore } from '../../stores/updateStore';
@@ -634,6 +638,7 @@ function UpdateCheckSection() {
 
 function NotificationSettings() {
   const [volume, setVolume] = useState(() => Math.round(getNotificationVolume() * 100));
+  const [soundTheme, setSoundThemeState] = useState<SoundTheme>(() => getSoundTheme());
   const [browserEnabled, setBrowserEnabled] = useState(() => getBrowserNotificationsEnabled());
   const [permState, setPermState] = useState(() => getPermissionState());
   const [pushSupported] = useState(() => isPushSupported());
@@ -684,6 +689,22 @@ function NotificationSettings() {
           onChange={(e) => handleVolumeChange(Number(e.target.value))}
         />
         <span className="profile-field-hint">{volume}%</span>
+      </div>
+      <div className="profile-field">
+        <label>Sound Theme</label>
+        <select
+          value={soundTheme}
+          onChange={(e) => {
+            const theme = e.target.value as SoundTheme;
+            setSoundThemeState(theme);
+            setSoundTheme(theme);
+          }}
+          style={{ maxWidth: 200 }}
+        >
+          {(Object.keys(SOUND_THEME_LABELS) as SoundTheme[]).map((key) => (
+            <option key={key} value={key}>{SOUND_THEME_LABELS[key]}</option>
+          ))}
+        </select>
       </div>
 
       <h3>Browser Notifications</h3>

@@ -63,6 +63,34 @@ async function getAudioContextReady(): Promise<AudioContext | null> {
 }
 
 const VOLUME_KEY = 'drocsid:notification-volume';
+const SOUND_THEME_KEY = 'drocsid:notification-sound-theme';
+
+export type SoundTheme = 'classic' | 'soft' | 'pop' | 'bell' | 'none';
+
+export const SOUND_THEME_LABELS: Record<SoundTheme, string> = {
+  classic: 'Classic',
+  soft: 'Soft',
+  pop: 'Pop',
+  bell: 'Bell',
+  none: 'None',
+};
+
+let currentTheme: SoundTheme = (() => {
+  try {
+    const stored = localStorage.getItem(SOUND_THEME_KEY);
+    if (stored && stored in SOUND_THEME_LABELS) return stored as SoundTheme;
+  } catch { /* */ }
+  return 'classic';
+})();
+
+export function getSoundTheme(): SoundTheme {
+  return currentTheme;
+}
+
+export function setSoundTheme(theme: SoundTheme) {
+  currentTheme = theme;
+  try { localStorage.setItem(SOUND_THEME_KEY, theme); } catch { /* */ }
+}
 
 let notificationVolume = (() => {
   try {
@@ -112,28 +140,71 @@ async function playTone(
   }
 }
 
-function playChime(frequencies: number[], interval: number, duration: number) {
+function playChime(frequencies: number[], interval: number, duration: number, wave: OscillatorType = 'sine') {
   frequencies.forEach((freq, i) => {
-    setTimeout(() => playTone(freq, duration), i * interval);
+    setTimeout(() => playTone(freq, duration, wave), i * interval);
   });
 }
 
-/** Two-note rising chime for new DM / message */
+// ── Sound theme definitions ──────────────────────────
+// Each theme defines [frequencies, interval, duration, waveform] for each sound type.
+
+type ChimeDef = [number[], number, number, OscillatorType?];
+
+const themes: Record<Exclude<SoundTheme, 'none'>, {
+  message: ChimeDef;
+  mention: ChimeDef;
+  voiceJoin: ChimeDef;
+  voiceLeave: ChimeDef;
+}> = {
+  classic: {
+    message:    [[587, 784], 120, 0.15],
+    mention:    [[784, 988, 1175], 80, 0.12],
+    voiceJoin:  [[392, 523], 150, 0.2],
+    voiceLeave: [[523, 392], 150, 0.2],
+  },
+  soft: {
+    message:    [[440], 0, 0.25],
+    mention:    [[523, 659], 140, 0.2],
+    voiceJoin:  [[330, 440], 180, 0.25],
+    voiceLeave: [[440, 330], 180, 0.25],
+  },
+  pop: {
+    message:    [[880, 1047], 60, 0.08, 'triangle'],
+    mention:    [[1047, 1319, 1568], 50, 0.07, 'triangle'],
+    voiceJoin:  [[523, 784], 80, 0.1, 'triangle'],
+    voiceLeave: [[784, 523], 80, 0.1, 'triangle'],
+  },
+  bell: {
+    message:    [[1175, 880], 100, 0.3, 'sine'],
+    mention:    [[1319, 1568, 1760], 90, 0.25, 'sine'],
+    voiceJoin:  [[523, 659, 784], 120, 0.3, 'sine'],
+    voiceLeave: [[784, 659, 523], 120, 0.3, 'sine'],
+  },
+};
+
+function playThemed(key: 'message' | 'mention' | 'voiceJoin' | 'voiceLeave') {
+  if (currentTheme === 'none') return;
+  const def = themes[currentTheme][key];
+  playChime(def[0], def[1], def[2], def[3]);
+}
+
+/** Notification sound for new messages / DMs */
 export function playMessageSound() {
-  playChime([587, 784], 120, 0.15);
+  playThemed('message');
 }
 
-/** Higher pitched short ping for @mentions */
+/** Higher pitched sound for @mentions */
 export function playMentionSound() {
-  playChime([784, 988, 1175], 80, 0.12);
+  playThemed('mention');
 }
 
-/** Low rising tone — someone joined voice */
+/** Rising tone — someone joined voice */
 export function playVoiceJoinSound() {
-  playChime([392, 523], 150, 0.2);
+  playThemed('voiceJoin');
 }
 
-/** Low falling tone — someone left voice */
+/** Falling tone — someone left voice */
 export function playVoiceLeaveSound() {
-  playChime([523, 392], 150, 0.2);
+  playThemed('voiceLeave');
 }
