@@ -138,16 +138,14 @@ fn update_tray_badge(app: tauri::AppHandle, count: u32) {
 
     if count == 0 {
         // Restore original icon
-        if let Ok(icon) = Image::new_raw(tray_state.original_rgba.clone(), w, h) {
-            let _ = tray.set_icon(Some(icon));
-        }
+        let icon = Image::new_owned(tray_state.original_rgba.clone(), w, h);
+        let _ = tray.set_icon(Some(icon));
         let _ = tray.set_tooltip(Some("Drocsid"));
     } else {
         // Render badge onto icon
         let badged = render_badge_icon(&tray_state.original_rgba, w, h);
-        if let Ok(icon) = Image::new_raw(badged, w, h) {
-            let _ = tray.set_icon(Some(icon));
-        }
+        let icon = Image::new_owned(badged, w, h);
+        let _ = tray.set_icon(Some(icon));
         let label = if count > 99 { "99+".to_string() } else { count.to_string() };
         let _ = tray.set_tooltip(Some(&format!("Drocsid ({label} unread)")));
     }
