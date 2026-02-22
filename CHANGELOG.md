@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.1](https://github.com/jansselt/drocsid/compare/drocsid-v0.8.0...drocsid-v0.8.1) (2026-02-22)
+
+
+### Bug Fixes
+
+* grant full ACL permissions to localhost origin in production ([6e2a740](https://github.com/jansselt/drocsid/commit/6e2a7401d7ed8d915b98dba16763b27c4a6a8cb3))
+* set GStreamer plugin path in AppImage for Web Audio support ([130bf65](https://github.com/jansselt/drocsid/commit/130bf655ca0bde1157e9673ae71ea45eb0d7b1f9))
+* use localhost plugin to fix YouTube embeds and Web Audio in Tauri production ([aefb6ce](https://github.com/jansselt/drocsid/commit/aefb6ceef174fc7bd990758127065fbde7794570))
+
 ## [0.8.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.7.1...drocsid-v0.8.0) (2026-02-22)
 
 
