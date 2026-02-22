@@ -522,7 +522,7 @@ export function ServerSettings({ serverId, onClose }: ServerSettingsProps) {
                     style={{ minWidth: 150 }}
                   >
                     <option value="">Select channel</option>
-                    {channels.filter((c: Channel) => c.type === 'text').map((c: Channel) => (
+                    {channels.filter((c: Channel) => c.channel_type === 'text').map((c: Channel) => (
                       <option key={c.id} value={c.id}>#{c.name}</option>
                     ))}
                   </select>
