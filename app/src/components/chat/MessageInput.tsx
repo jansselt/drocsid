@@ -1,11 +1,16 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useServerStore } from '../../stores/serverStore';
+import type { ServerMemberWithUser } from '../../types';
 import { GifPicker } from './GifPicker';
 import { EmojiPicker } from './EmojiPicker';
 import { SchedulePicker } from './SchedulePicker';
 import { PollCreator } from './PollCreator';
 import * as api from '../../api/client';
 import './MessageInput.css';
+
+type MentionItem =
+  | { kind: 'member'; member: ServerMemberWithUser }
+  | { kind: 'special'; label: string };
 
 interface MessageInputProps {
   channelId: string;
@@ -235,14 +240,27 @@ export function MessageInput({ channelId }: MessageInputProps) {
       )
     : [];
 
-  // Mention suggestions - filtered member list
-  const mentionSuggestions = useMemo(() => {
-    if (!mentionQuery || !members) return [];
+  // Mention suggestions - filtered member list + @everyone/@here
+  const mentionSuggestions: MentionItem[] = useMemo(() => {
+    if (!mentionQuery) return [];
     const q = mentionQuery.query.toLowerCase();
-    return members.filter((m) => {
-      const name = m.nickname || m.user.display_name || m.user.username;
-      return name.toLowerCase().includes(q) || m.user.username.toLowerCase().includes(q);
-    }).slice(0, 10);
+    const items: MentionItem[] = [];
+    // Add @everyone / @here when they match
+    for (const label of ['everyone', 'here']) {
+      if (label.startsWith(q)) {
+        items.push({ kind: 'special', label });
+      }
+    }
+    if (members) {
+      for (const m of members) {
+        if (items.length >= 10) break;
+        const name = m.nickname || m.user.display_name || m.user.username;
+        if (name.toLowerCase().includes(q) || m.user.username.toLowerCase().includes(q)) {
+          items.push({ kind: 'member', member: m });
+        }
+      }
+    }
+    return items.slice(0, 10);
   }, [mentionQuery, members]);
 
   // Detect @mention trigger from cursor position
@@ -272,6 +290,15 @@ export function MessageInput({ channelId }: MessageInputProps) {
     setMentionQuery(null);
     inputRef.current?.focus();
   }, [mentionQuery, content, users]);
+
+  const insertSpecialMention = useCallback((label: string) => {
+    if (!mentionQuery) return;
+    const before = content.slice(0, mentionQuery.startPos);
+    const after = content.slice(mentionQuery.startPos + mentionQuery.query.length + 1);
+    setContent(before + `@${label} ` + after);
+    setMentionQuery(null);
+    inputRef.current?.focus();
+  }, [mentionQuery, content]);
 
   return (
     <div
@@ -351,7 +378,26 @@ export function MessageInput({ channelId }: MessageInputProps) {
 
       {mentionSuggestions.length > 0 && (
         <div className="slash-suggestions">
-          {mentionSuggestions.map((m, i) => {
+          {mentionSuggestions.map((item, i) => {
+            if (item.kind === 'special') {
+              return (
+                <button
+                  key={item.label}
+                  className={`slash-suggestion ${i === mentionIndex ? 'active' : ''}`}
+                  ref={i === mentionIndex ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    insertSpecialMention(item.label);
+                  }}
+                  onMouseEnter={() => setMentionIndex(i)}
+                >
+                  <span className="mention-avatar">@</span>
+                  <span className="slash-cmd-name">@{item.label}</span>
+                  <span className="slash-cmd-desc">{item.label === 'everyone' ? 'Notify all members' : 'Notify online members'}</span>
+                </button>
+              );
+            }
+            const m = item.member;
             const name = m.nickname || m.user.display_name || m.user.username;
             return (
               <button
@@ -417,12 +463,12 @@ export function MessageInput({ channelId }: MessageInputProps) {
             if (slashSuggestions.length > 0) {
               if (e.key === 'ArrowDown') {
                 e.preventDefault();
-                setSlashIndex((i) => Math.min(i + 1, slashSuggestions.length - 1));
+                setSlashIndex((i) => (i + 1) % slashSuggestions.length);
                 return;
               }
               if (e.key === 'ArrowUp') {
                 e.preventDefault();
-                setSlashIndex((i) => Math.max(i - 1, 0));
+                setSlashIndex((i) => (i - 1 + slashSuggestions.length) % slashSuggestions.length);
                 return;
               }
               if (e.key === 'Tab' || e.key === 'Enter') {
@@ -441,18 +487,23 @@ export function MessageInput({ channelId }: MessageInputProps) {
             if (mentionSuggestions.length > 0) {
               if (e.key === 'ArrowDown') {
                 e.preventDefault();
-                setMentionIndex((i) => Math.min(i + 1, mentionSuggestions.length - 1));
+                setMentionIndex((i) => (i + 1) % mentionSuggestions.length);
                 return;
               }
               if (e.key === 'ArrowUp') {
                 e.preventDefault();
-                setMentionIndex((i) => Math.max(i - 1, 0));
+                setMentionIndex((i) => (i - 1 + mentionSuggestions.length) % mentionSuggestions.length);
                 return;
               }
               if (e.key === 'Tab' || e.key === 'Enter') {
                 e.preventDefault();
-                const m = mentionSuggestions[mentionIndex];
-                insertMention(m.user_id, m.nickname || m.user.display_name || m.user.username);
+                const item = mentionSuggestions[mentionIndex];
+                if (item.kind === 'special') {
+                  insertSpecialMention(item.label);
+                } else {
+                  const m = item.member;
+                  insertMention(m.user_id, m.nickname || m.user.display_name || m.user.username);
+                }
                 return;
               }
               if (e.key === 'Escape') {
