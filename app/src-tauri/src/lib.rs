@@ -9,6 +9,7 @@ use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent, TrayIcon},
+    WebviewWindowBuilder, WebviewUrl,
     Manager,
 };
 
@@ -204,10 +205,16 @@ fn detect_linux_pkg_type() -> Option<String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // In production on Linux/macOS, Tauri uses the tauri:// protocol which
+    // breaks YouTube embeds (Error 153) and may affect Web Audio.  Serve
+    // the frontend on http://localhost:<port> instead.
+    let port = portpicker::pick_unused_port().expect("failed to find unused port");
+
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_localhost::Builder::new(port).build())
         .invoke_handler(tauri::generate_handler![
             #[cfg(target_os = "linux")]
             audio::list_audio_sinks,
@@ -233,7 +240,7 @@ pub fn run() {
             update_tray_badge,
             read_dropped_file,
         ])
-        .setup(|app| {
+        .setup(move |app| {
             // Initialize file + terminal logging
             {
                 let log_dir = app.path().app_log_dir().unwrap_or_else(|_| {
@@ -290,44 +297,69 @@ pub fn run() {
             app.manage(voice::VoiceState::new());
             app.manage(voice::MicTestState::new());
 
+            // Create the main window.  In dev mode, use the Vite dev server;
+            // in production, use the localhost plugin's HTTP server so we get
+            // a proper http:// origin (needed for YouTube embeds, Web Audio, etc).
+            #[cfg(dev)]
+            let url = WebviewUrl::App(std::path::PathBuf::from("/"));
+
+            #[cfg(not(dev))]
+            let url = {
+                let localhost_url: tauri::Url =
+                    format!("http://localhost:{}", port).parse().unwrap();
+
+                // Grant IPC capabilities for the localhost origin
+                app.add_capability(
+                    tauri::ipc::CapabilityBuilder::new("localhost-ipc")
+                        .remote(localhost_url.to_string())
+                        .window("main"),
+                )?;
+
+                WebviewUrl::External(localhost_url)
+            };
+
+            let window = WebviewWindowBuilder::new(app, "main", url)
+                .title("Drocsid")
+                .inner_size(1280.0, 800.0)
+                .resizable(true)
+                .fullscreen(false)
+                .build()?;
+
             // Open devtools in debug builds
             if cfg!(debug_assertions) {
-                if let Some(window) = app.get_webview_window("main") {
-                    window.open_devtools();
-                }
+                window.open_devtools();
             }
 
-            // Enable media devices (getUserMedia) and WebRTC in the webview
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.with_webview(|webview| {
-                    #[cfg(target_os = "linux")]
-                    {
-                        use webkit2gtk::{
-                            glib::prelude::ObjectExt, DeviceInfoPermissionRequest,
-                            PermissionRequestExt, SettingsExt,
-                            UserMediaPermissionRequest, WebViewExt,
-                        };
+            // Enable media devices (getUserMedia), WebRTC, and Web Audio in webkit2gtk
+            #[cfg(target_os = "linux")]
+            {
+                use webkit2gtk::{
+                    glib::prelude::ObjectExt, DeviceInfoPermissionRequest,
+                    PermissionRequestExt, SettingsExt,
+                    UserMediaPermissionRequest, WebViewExt,
+                };
 
-                        let wv = webview.inner();
-                        if let Some(settings) = wv.settings() {
-                            settings.set_enable_media_stream(true);
-                            settings.set_enable_webrtc(true);
-                            settings.set_enable_mediasource(true);
-                            settings.set_enable_media_capabilities(true);
-                            settings.set_enable_webaudio(true);
-                        }
-
-                        // Auto-grant camera/mic and device-enumeration permissions
-                        wv.connect_permission_request(|_, request| {
-                            if request.is::<UserMediaPermissionRequest>()
-                                || request.is::<DeviceInfoPermissionRequest>()
-                            {
-                                request.allow();
-                                return true;
-                            }
-                            false // default handling for other permission types
-                        });
+                let _ = window.with_webview(|webview: tauri::webview::PlatformWebview| {
+                    let wv: webkit2gtk::WebView = webview.inner();
+                    if let Some(settings) = WebViewExt::settings(&wv) {
+                        settings.set_enable_media_stream(true);
+                        settings.set_enable_webrtc(true);
+                        settings.set_enable_mediasource(true);
+                        settings.set_enable_media_capabilities(true);
+                        settings.set_enable_webaudio(true);
+                        settings.set_enable_encrypted_media(true);
                     }
+
+                    // Auto-grant camera/mic and device-enumeration permissions
+                    wv.connect_permission_request(|_, request: &webkit2gtk::PermissionRequest| {
+                        if request.is::<UserMediaPermissionRequest>()
+                            || request.is::<DeviceInfoPermissionRequest>()
+                        {
+                            request.allow();
+                            return true;
+                        }
+                        false // default handling for other permission types
+                    });
                 });
             }
 
