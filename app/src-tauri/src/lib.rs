@@ -313,6 +313,7 @@ pub fn run() {
                             settings.set_enable_webrtc(true);
                             settings.set_enable_mediasource(true);
                             settings.set_enable_media_capabilities(true);
+                            settings.set_enable_webaudio(true);
                         }
 
                         // Auto-grant camera/mic and device-enumeration permissions
