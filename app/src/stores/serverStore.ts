@@ -560,6 +560,14 @@ export const useServerStore = create<ServerState>((set, get) => ({
         result.users = users;
       }
 
+      // Extract inline poll data if present (poll messages include poll in MESSAGE_CREATE)
+      const inlinePoll = (message as any).poll as Poll | undefined;
+      if (inlinePoll && !state.polls.has(message.id)) {
+        const polls = new Map(state.polls);
+        polls.set(message.id, inlinePoll);
+        result.polls = polls;
+      }
+
       // If channel was LRU-evicted, don't create a partial cache entry
       const channelMessages = state.messages.get(message.channel_id);
       if (channelMessages) {

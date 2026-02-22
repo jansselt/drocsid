@@ -127,10 +127,20 @@ async fn create_poll(
     let public_author =
         crate::types::entities::PublicUser::from(author);
 
-    let msg_event = MessageCreateEvent {
-        message,
-        author: public_author,
-    };
+    // Include poll data in MESSAGE_CREATE so the message + poll arrive atomically
+    let msg_event = serde_json::json!({
+        "id": message.id,
+        "instance_id": message.instance_id,
+        "channel_id": message.channel_id,
+        "author_id": message.author_id,
+        "content": message.content,
+        "created_at": message.created_at,
+        "edited_at": message.edited_at,
+        "reply_to_id": message.reply_to_id,
+        "pinned": message.pinned,
+        "author": public_author,
+        "poll": &results,
+    });
     let poll_event = PollCreateEvent {
         channel_id,
         message_id,
