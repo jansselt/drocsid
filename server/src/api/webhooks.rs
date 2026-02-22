@@ -28,6 +28,11 @@ pub fn routes() -> Router<AppState> {
         )
 }
 
+/// Server-level webhook routes (nested under /servers)
+pub fn server_routes() -> Router<AppState> {
+    Router::new().route("/{server_id}/webhooks", get(get_server_webhooks))
+}
+
 /// Standalone route for executing webhooks (no auth needed, uses token)
 pub fn execute_routes() -> Router<AppState> {
     Router::new().route(
@@ -145,6 +150,31 @@ async fn get_webhooks(
     Ok(Json(webhooks))
 }
 
+async fn get_server_webhooks(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(server_id): Path<Uuid>,
+) -> Result<impl IntoResponse, ApiError> {
+    let server = queries::get_server_by_id(&state.db, server_id)
+        .await?
+        .ok_or(ApiError::NotFound("Server"))?;
+
+    if !perm_service::has_server_permission(
+        &state.db,
+        server_id,
+        user.user_id,
+        server.owner_id,
+        Permissions::MANAGE_WEBHOOKS,
+    )
+    .await?
+    {
+        return Err(ApiError::Forbidden);
+    }
+
+    let webhooks = queries::get_server_webhooks(&state.db, server_id).await?;
+    Ok(Json(webhooks))
+}
+
 async fn update_webhook(
     State(state): State<AppState>,
     user: AuthUser,
@@ -252,6 +282,27 @@ async fn execute_webhook(
     Path((webhook_id, token)): Path<(Uuid, String)>,
     Json(body): Json<ExecuteWebhookRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
+    // Rate limit: 30 requests per minute per webhook
+    let rate_key = format!("webhook_rate:{}", webhook_id);
+    let mut redis = state.redis.clone();
+    let count: i64 = redis::cmd("INCR")
+        .arg(&rate_key)
+        .query_async(&mut redis)
+        .await
+        .unwrap_or(0);
+    if count == 1 {
+        let _: Result<(), _> = redis::cmd("EXPIRE")
+            .arg(&rate_key)
+            .arg(60)
+            .query_async(&mut state.redis.clone())
+            .await;
+    }
+    if count > 30 {
+        return Err(ApiError::RateLimited {
+            retry_after_ms: 60_000,
+        });
+    }
+
     let webhook = queries::get_webhook_by_id(&state.db, webhook_id)
         .await?
         .ok_or(ApiError::NotFound("Webhook"))?;
