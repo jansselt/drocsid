@@ -327,7 +327,7 @@ async fn send_message(
         ));
     }
 
-    let (channel, _, _) = resolve_channel_with_perm(
+    let (channel, server_id_opt, owner_id_opt) = resolve_channel_with_perm(
         &state,
         channel_id,
         user.user_id,
@@ -353,6 +353,19 @@ async fn send_message(
     // Update the channel's last_message_id for unread tracking
     let _ = queries::update_channel_last_message(&state.db, channel_id, message_id).await;
 
+    // Check if author can use @everyone/@here (requires MENTION_EVERYONE permission)
+    let can_mention_everyone = match (server_id_opt, owner_id_opt) {
+        (Some(sid), Some(oid)) => {
+            perm_service::has_channel_permission(
+                &state.db, sid, channel_id, user.user_id, oid,
+                Permissions::MENTION_EVERYONE,
+            )
+            .await
+            .unwrap_or(false)
+        }
+        _ => false,
+    };
+
     // Parse mentions and increment mention counts
     let mentioned_user_ids = parse_mentions(
         &state.db,
@@ -360,6 +373,7 @@ async fn send_message(
         &body.content,
         user.user_id,
         channel.server_id,
+        can_mention_everyone,
     )
     .await;
     if !mentioned_user_ids.is_empty() {
@@ -382,10 +396,14 @@ async fn send_message(
     } else {
         // DM/GroupDM — reopen for any members who closed it, then dispatch
         queries::reopen_dm_for_members(&state.db, channel_id).await?;
+        // Re-fetch channel to get the updated last_message_id (set above)
+        let updated_channel = queries::get_channel_by_id(&state.db, channel_id)
+            .await?
+            .ok_or(ApiError::NotFound("Channel"))?;
         let members = queries::get_dm_members(&state.db, channel_id).await?;
         let recipients: Vec<PublicUser> = members.iter().map(|m| PublicUser::from(m.clone())).collect();
         let dm_event = crate::types::events::DmChannelCreateEvent {
-            channel: channel.clone(),
+            channel: updated_channel,
             recipients,
         };
         for member in &members {
@@ -1114,32 +1132,36 @@ static RE_MENTION_NAME: LazyLock<Regex> =
 
 /// Parse `<@uuid>`, `@username`, `@everyone`, and `@here` mentions from message content.
 /// Returns a deduplicated list of mentioned user IDs (excluding the author).
+/// `can_mention_everyone` gates whether @everyone/@here actually trigger mention counts.
 pub(crate) async fn parse_mentions(
     pool: &sqlx::PgPool,
     gateway: &crate::gateway::GatewayState,
     content: &str,
     author_id: Uuid,
     server_id: Option<Uuid>,
+    can_mention_everyone: bool,
 ) -> Vec<Uuid> {
     let mut mentioned: std::collections::HashSet<Uuid> = std::collections::HashSet::new();
 
-    // @everyone and @here only apply in server channels
+    // @everyone and @here only apply in server channels when the author has permission
     if let Some(sid) = server_id {
-        if content.contains("@everyone") {
-            if let Ok(members) = queries::get_server_members(pool, sid).await {
-                for m in &members {
-                    if m.user_id != author_id {
-                        mentioned.insert(m.user_id);
+        if can_mention_everyone {
+            if content.contains("@everyone") {
+                if let Ok(members) = queries::get_server_members(pool, sid).await {
+                    for m in &members {
+                        if m.user_id != author_id {
+                            mentioned.insert(m.user_id);
+                        }
                     }
                 }
+                return mentioned.into_iter().collect();
             }
-            return mentioned.into_iter().collect();
-        }
 
-        if content.contains("@here") {
-            for uid in gateway.get_online_server_user_ids(sid) {
-                if uid != author_id {
-                    mentioned.insert(uid);
+            if content.contains("@here") {
+                for uid in gateway.get_online_server_user_ids(sid) {
+                    if uid != author_id {
+                        mentioned.insert(uid);
+                    }
                 }
             }
         }

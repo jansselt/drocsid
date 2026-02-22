@@ -83,6 +83,16 @@ async fn process_due_messages(state: &AppState) -> Result<(), anyhow::Error> {
             queries::update_channel_last_message(&state.db, scheduled.channel_id, message_id)
                 .await;
 
+        // Check if author can use @everyone/@here
+        let can_mention_everyone = if let Some(sid) = channel.server_id {
+            if let Ok(Some(server)) = queries::get_server_by_id(&state.db, sid).await {
+                crate::services::permissions::has_channel_permission(
+                    &state.db, sid, scheduled.channel_id, scheduled.author_id,
+                    server.owner_id, crate::types::permissions::Permissions::MENTION_EVERYONE,
+                ).await.unwrap_or(false)
+            } else { false }
+        } else { false };
+
         // Parse mentions (same logic as send_message)
         let mentioned_user_ids = crate::api::channels::parse_mentions(
             &state.db,
@@ -90,6 +100,7 @@ async fn process_due_messages(state: &AppState) -> Result<(), anyhow::Error> {
             &scheduled.content,
             scheduled.author_id,
             channel.server_id,
+            can_mention_everyone,
         )
         .await;
         if !mentioned_user_ids.is_empty() {

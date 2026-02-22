@@ -2,13 +2,67 @@
 mod audio;
 mod voice;
 
+use std::sync::Mutex;
 use log::LevelFilter;
 use simplelog::{CombinedLogger, ConfigBuilder, TermLogger, TerminalMode, ColorChoice, WriteLogger};
 use tauri::{
+    image::Image,
     menu::{Menu, MenuItem},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent, TrayIcon},
     Manager,
 };
+
+// ── Tray badge state ──────────────────────────────────
+
+struct TrayState {
+    tray: Mutex<Option<TrayIcon>>,
+    /// Original icon RGBA pixel data for badge compositing
+    original_rgba: Vec<u8>,
+    original_width: u32,
+    original_height: u32,
+}
+
+/// Render a red notification badge dot onto the bottom-right of the icon.
+fn render_badge_icon(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
+    let mut pixels = rgba.to_vec();
+    let w = width as f32;
+    let h = height as f32;
+
+    // Badge circle: ~30% of icon size, positioned at bottom-right
+    let radius = w.min(h) * 0.28;
+    let cx = w - radius - 1.0;
+    let cy = h - radius - 1.0;
+    let r_sq = radius * radius;
+
+    // Anti-aliased circle (1px edge feather)
+    for y in 0..height {
+        for x in 0..width {
+            let dx = x as f32 - cx;
+            let dy = y as f32 - cy;
+            let dist_sq = dx * dx + dy * dy;
+            if dist_sq <= r_sq {
+                let idx = ((y * width + x) * 4) as usize;
+                // Edge anti-aliasing: blend at the boundary
+                let dist = dist_sq.sqrt();
+                let alpha = ((radius - dist).clamp(0.0, 1.0) * 255.0) as u8;
+                let bg_a = pixels[idx + 3] as f32 / 255.0;
+                let fg_a = alpha as f32 / 255.0;
+                let out_a = fg_a + bg_a * (1.0 - fg_a);
+                if out_a > 0.0 {
+                    // Discord red: #ED4245
+                    let blend = |fg: u8, bg: u8| -> u8 {
+                        ((fg as f32 * fg_a + bg as f32 * bg_a * (1.0 - fg_a)) / out_a) as u8
+                    };
+                    pixels[idx] = blend(237, pixels[idx]);
+                    pixels[idx + 1] = blend(66, pixels[idx + 1]);
+                    pixels[idx + 2] = blend(69, pixels[idx + 2]);
+                    pixels[idx + 3] = (out_a * 255.0) as u8;
+                }
+            }
+        }
+    }
+    pixels
+}
 
 fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let icon = app
@@ -16,11 +70,16 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .cloned()
         .ok_or("no default window icon")?;
 
+    // Save original icon data for later badge compositing
+    let original_rgba = icon.rgba().to_vec();
+    let original_width = icon.width();
+    let original_height = icon.height();
+
     let show_i = MenuItem::with_id(app, "show", "Show Drocsid", true, None::<&str>)?;
     let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
 
-    let _tray = TrayIconBuilder::new()
+    let tray = TrayIconBuilder::new()
         .icon(icon)
         .tooltip("Drocsid")
         .menu(&menu)
@@ -55,7 +114,43 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         })
         .build(app)?;
 
+    app.manage(TrayState {
+        tray: Mutex::new(Some(tray)),
+        original_rgba,
+        original_width,
+        original_height,
+    });
+
     Ok(())
+}
+
+#[tauri::command]
+fn update_tray_badge(app: tauri::AppHandle, count: u32) {
+    let tray_state = match app.try_state::<TrayState>() {
+        Some(s) => s,
+        None => return,
+    };
+    let tray_guard = tray_state.tray.lock().unwrap();
+    let Some(tray) = tray_guard.as_ref() else { return };
+
+    let w = tray_state.original_width;
+    let h = tray_state.original_height;
+
+    if count == 0 {
+        // Restore original icon
+        if let Ok(icon) = Image::new_raw(tray_state.original_rgba.clone(), w, h) {
+            let _ = tray.set_icon(Some(icon));
+        }
+        let _ = tray.set_tooltip(Some("Drocsid"));
+    } else {
+        // Render badge onto icon
+        let badged = render_badge_icon(&tray_state.original_rgba, w, h);
+        if let Ok(icon) = Image::new_raw(badged, w, h) {
+            let _ = tray.set_icon(Some(icon));
+        }
+        let label = if count > 99 { "99+".to_string() } else { count.to_string() };
+        let _ = tray.set_tooltip(Some(&format!("Drocsid ({label} unread)")));
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -131,6 +226,7 @@ pub fn run() {
             voice::voice_mic_test_start,
             voice::voice_mic_test_stop,
             get_update_method,
+            update_tray_badge,
         ])
         .setup(|app| {
             // Initialize file + terminal logging

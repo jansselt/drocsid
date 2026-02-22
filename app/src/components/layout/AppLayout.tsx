@@ -13,6 +13,7 @@ import { BugReportModal } from '../feedback/BugReportModal';
 import { KeyboardShortcutsDialog } from '../common/KeyboardShortcutsDialog';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 import { useFaviconBadge } from '../../hooks/useFaviconBadge';
+import { useTrayBadge } from '../../hooks/useTrayBadge';
 import './AppLayout.css';
 
 const IDLE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
@@ -37,6 +38,7 @@ export function AppLayout() {
 
   useDocumentTitle();
   useFaviconBadge();
+  useTrayBadge();
 
   useEffect(() => {
     // Set up gateway READY handler

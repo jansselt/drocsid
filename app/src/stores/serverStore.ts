@@ -1591,9 +1591,23 @@ export const useServerStore = create<ServerState>((set, get) => ({
         case 'DM_CHANNEL_CREATE': {
           const ev = data as DmChannelCreateEvent;
           set((state) => {
-            const dmChannels = state.dmChannels.some((c) => c.id === ev.channel.id)
-              ? state.dmChannels
-              : [ev.channel, ...state.dmChannels];
+            const existing = state.dmChannels.find((c) => c.id === ev.channel.id);
+            let dmChannels: Channel[];
+            if (existing) {
+              // Update last_message_id if the event carries a newer value
+              if (ev.channel.last_message_id &&
+                  (!existing.last_message_id || ev.channel.last_message_id > existing.last_message_id)) {
+                dmChannels = state.dmChannels.map((c) =>
+                  c.id === ev.channel.id
+                    ? { ...c, last_message_id: ev.channel.last_message_id }
+                    : c,
+                );
+              } else {
+                dmChannels = state.dmChannels;
+              }
+            } else {
+              dmChannels = [ev.channel, ...state.dmChannels];
+            }
             const dmRecipients = new Map(state.dmRecipients);
             dmRecipients.set(ev.channel.id, ev.recipients);
             const users = new Map(state.users);

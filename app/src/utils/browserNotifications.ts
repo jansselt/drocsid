@@ -55,15 +55,26 @@ export async function requestNotificationPermission(): Promise<
   return Notification.requestPermission();
 }
 
-export function showBrowserNotification(
+// ── Notification batching ──────────────────────────────
+
+interface PendingNotification {
+  title: string;
+  body: string;
+  onClick?: () => void;
+  tag: string;
+  channelId: string;
+}
+
+const BATCH_WINDOW_MS = 2000;
+let pendingNotifications: PendingNotification[] = [];
+let batchTimer: ReturnType<typeof setTimeout> | null = null;
+
+function showNotificationDirect(
   title: string,
   body: string,
   onClick?: () => void,
   tag?: string,
 ): void {
-  if (!browserNotificationsEnabled) return;
-  if (!document.hidden) return;
-
   if (isTauri()) {
     import('@tauri-apps/plugin-notification').then(({ sendNotification }) => {
       sendNotification({ title, body });
@@ -89,4 +100,59 @@ export function showBrowserNotification(
     notification.close();
     onClick?.();
   };
+}
+
+function flushNotifications(): void {
+  batchTimer = null;
+  const batch = pendingNotifications;
+  pendingNotifications = [];
+
+  if (batch.length === 0) return;
+
+  if (batch.length === 1) {
+    const n = batch[0];
+    showNotificationDirect(n.title, n.body, n.onClick, n.tag);
+    return;
+  }
+
+  // Group by channel
+  const byChannel = new Map<string, PendingNotification[]>();
+  for (const n of batch) {
+    const existing = byChannel.get(n.channelId) || [];
+    existing.push(n);
+    byChannel.set(n.channelId, existing);
+  }
+
+  if (byChannel.size === 1) {
+    // All from same channel — summarize
+    const items = [...byChannel.values()][0];
+    const title = `${items.length} new messages`;
+    const body = items.map((n) => `${n.title}: ${n.body}`).join('\n').slice(0, 200);
+    showNotificationDirect(title, body, items[items.length - 1].onClick, items[0].tag);
+  } else {
+    // Multiple channels
+    const title = `${batch.length} new messages in ${byChannel.size} conversations`;
+    const body = [...byChannel.entries()]
+      .map(([, items]) => `${items[0].title}: ${items.length} message${items.length > 1 ? 's' : ''}`)
+      .join('\n')
+      .slice(0, 200);
+    showNotificationDirect(title, body, batch[batch.length - 1].onClick, 'drocsid-batch');
+  }
+}
+
+export function showBrowserNotification(
+  title: string,
+  body: string,
+  onClick?: () => void,
+  tag?: string,
+): void {
+  if (!browserNotificationsEnabled) return;
+  if (!document.hidden) return;
+
+  const channelId = tag?.replace(/^(mention-|dm-)/, '') || 'unknown';
+
+  pendingNotifications.push({ title, body, onClick, tag: tag || 'drocsid-message', channelId });
+
+  if (batchTimer) clearTimeout(batchTimer);
+  batchTimer = setTimeout(flushNotifications, BATCH_WINDOW_MS);
 }

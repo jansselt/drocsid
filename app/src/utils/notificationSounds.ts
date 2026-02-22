@@ -39,6 +39,29 @@ export function getAudioContext(): AudioContext | null {
   return audioCtx;
 }
 
+/**
+ * Async version that awaits resume() before returning.
+ * Used by playTone so sounds work even when the tab is backgrounded
+ * and the AudioContext has been suspended by the browser.
+ */
+async function getAudioContextReady(): Promise<AudioContext | null> {
+  if (!audioCtx) {
+    try {
+      audioCtx = new AudioContext();
+    } catch {
+      return null;
+    }
+  }
+  if (audioCtx.state === 'suspended') {
+    try {
+      await audioCtx.resume();
+    } catch {
+      return null;
+    }
+  }
+  return audioCtx.state === 'running' ? audioCtx : null;
+}
+
 const VOLUME_KEY = 'drocsid:notification-volume';
 
 let notificationVolume = (() => {
@@ -58,14 +81,14 @@ export function getNotificationVolume(): number {
   return notificationVolume;
 }
 
-function playTone(
+async function playTone(
   frequency: number,
   duration: number,
   type: OscillatorType = 'sine',
 ) {
   try {
-    const ctx = getAudioContext();
-    if (!ctx || ctx.state !== 'running') return;
+    const ctx = await getAudioContextReady();
+    if (!ctx) return;
 
     const vol = notificationVolume;
     if (vol === 0) return;
