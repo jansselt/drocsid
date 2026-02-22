@@ -308,11 +308,18 @@ pub fn run() {
                 let localhost_url: tauri::Url =
                     format!("http://localhost:{}", port).parse().unwrap();
 
-                // Grant IPC capabilities for the localhost origin
+                // Grant the same capabilities the default.json gives to the
+                // tauri:// origin — the localhost origin is "remote" in Tauri's
+                // ACL, so the static capability file doesn't cover it.
                 app.add_capability(
                     tauri::ipc::CapabilityBuilder::new("localhost-ipc")
                         .remote(localhost_url.to_string())
-                        .window("main"),
+                        .window("main")
+                        .permission("core:default")
+                        .permission("core:tray:default")
+                        .permission("notification:default")
+                        .permission("updater:default")
+                        .permission("process:default"),
                 )?;
 
                 WebviewUrl::External(localhost_url)
