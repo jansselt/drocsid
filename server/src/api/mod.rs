@@ -46,7 +46,8 @@ fn api_routes() -> Router<AppState> {
                 .merge(roles::routes())
                 .merge(invites::routes())
                 .merge(bans::routes())
-                .merge(soundboard::routes()),
+                .merge(soundboard::routes())
+                .merge(webhooks::server_routes()),
         )
         .nest(
             "/channels",

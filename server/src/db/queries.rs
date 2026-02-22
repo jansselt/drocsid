@@ -1555,6 +1555,22 @@ pub async fn get_channel_webhooks(
     .await
 }
 
+pub async fn get_server_webhooks(
+    pool: &PgPool,
+    server_id: Uuid,
+) -> Result<Vec<Webhook>, sqlx::Error> {
+    sqlx::query_as::<_, Webhook>(
+        r#"
+        SELECT id, server_id, channel_id, creator_id, name, avatar_url, token, created_at
+        FROM webhooks WHERE server_id = $1
+        ORDER BY created_at DESC
+        "#,
+    )
+    .bind(server_id)
+    .fetch_all(pool)
+    .await
+}
+
 pub async fn update_webhook(
     pool: &PgPool,
     id: Uuid,

@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import { useAuthStore } from '../../stores/authStore';
-import type { Role, Ban, AuditLogEntry } from '../../types';
+import type { Role, Ban, AuditLogEntry, Webhook, Channel } from '../../types';
 import { Permissions, PermissionLabels } from '../../types';
+import { getApiUrl } from '../../api/instance';
 import * as api from '../../api/client';
 import { ImageCropModal } from '../shared/ImageCropModal';
 import './ServerSettings.css';
@@ -18,9 +19,15 @@ export function ServerSettings({ serverId, onClose }: ServerSettingsProps) {
   const currentUser = useAuthStore((s) => s.user);
   const isOwner = server?.owner_id === currentUser?.id;
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'roles' | 'bans' | 'audit-log'>(isOwner ? 'overview' : 'roles');
+  const channels = useServerStore((s) => s.channels.get(serverId) || []);
+  const [activeTab, setActiveTab] = useState<'overview' | 'roles' | 'webhooks' | 'bans' | 'audit-log'>(isOwner ? 'overview' : 'roles');
   const [bans, setBans] = useState<Ban[]>([]);
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
+  const [webhooks, setWebhooks] = useState<Webhook[]>([]);
+  const [webhookName, setWebhookName] = useState('');
+  const [webhookChannel, setWebhookChannel] = useState('');
+  const [creatingWebhook, setCreatingWebhook] = useState(false);
+  const [copiedWebhookId, setCopiedWebhookId] = useState<string | null>(null);
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
   const [creating, setCreating] = useState(false);
   const [newRoleName, setNewRoleName] = useState('');
@@ -138,6 +145,15 @@ export function ServerSettings({ serverId, onClose }: ServerSettingsProps) {
               onClick={() => setActiveTab('roles')}
             >
               Roles
+            </button>
+            <button
+              className={`settings-nav-item ${activeTab === 'webhooks' ? 'active' : ''}`}
+              onClick={() => {
+                setActiveTab('webhooks');
+                api.getServerWebhooks(serverId).then(setWebhooks).catch(() => {});
+              }}
+            >
+              Webhooks
             </button>
             {isOwner && (
               <button
@@ -480,6 +496,97 @@ export function ServerSettings({ serverId, onClose }: ServerSettingsProps) {
                         </button>
                       </div>
                     )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'webhooks' && (
+              <div className="bans-panel">
+                <h3>Webhooks</h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
+                  Webhooks allow external services to send messages to channels in this server.
+                </p>
+
+                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                  <input
+                    type="text"
+                    placeholder="Webhook name"
+                    value={webhookName}
+                    onChange={(e) => setWebhookName(e.target.value)}
+                    style={{ flex: 1, minWidth: 150 }}
+                  />
+                  <select
+                    value={webhookChannel}
+                    onChange={(e) => setWebhookChannel(e.target.value)}
+                    style={{ minWidth: 150 }}
+                  >
+                    <option value="">Select channel</option>
+                    {channels.filter((c: Channel) => c.type === 'text').map((c: Channel) => (
+                      <option key={c.id} value={c.id}>#{c.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    className="profile-avatar-upload-btn"
+                    disabled={!webhookName.trim() || !webhookChannel || creatingWebhook}
+                    onClick={async () => {
+                      setCreatingWebhook(true);
+                      try {
+                        const wh = await api.createWebhook(webhookChannel, webhookName.trim());
+                        setWebhooks((prev) => [wh, ...prev]);
+                        setWebhookName('');
+                        setWebhookChannel('');
+                      } catch { /* */ }
+                      setCreatingWebhook(false);
+                    }}
+                  >
+                    {creatingWebhook ? 'Creating...' : 'Create'}
+                  </button>
+                </div>
+
+                {webhooks.length === 0 ? (
+                  <p className="settings-empty">No webhooks yet</p>
+                ) : (
+                  <div className="bans-list">
+                    {webhooks.map((wh) => {
+                      const ch = channels.find((c: Channel) => c.id === wh.channel_id);
+                      const webhookUrl = `${getApiUrl().replace('/api/v1', '')}/api/v1/webhooks/${wh.id}/${wh.token}`;
+                      return (
+                        <div key={wh.id} className="ban-item" style={{ flexDirection: 'column', gap: '0.5rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                            <div>
+                              <span className="ban-username">{wh.name}</span>
+                              {ch && <span className="ban-reason">#{ch.name}</span>}
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                              <button
+                                className="profile-avatar-upload-btn"
+                                style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                                onClick={() => {
+                                  navigator.clipboard.writeText(webhookUrl);
+                                  setCopiedWebhookId(wh.id);
+                                  setTimeout(() => setCopiedWebhookId(null), 2000);
+                                }}
+                              >
+                                {copiedWebhookId === wh.id ? 'Copied!' : 'Copy URL'}
+                              </button>
+                              <button
+                                className="ban-unban-btn"
+                                onClick={async () => {
+                                  await api.deleteWebhook(wh.channel_id, wh.id);
+                                  setWebhooks((prev) => prev.filter((w) => w.id !== wh.id));
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                            {webhookUrl}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

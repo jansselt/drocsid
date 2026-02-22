@@ -634,8 +634,19 @@ export async function createWebhook(channelId: string, name: string): Promise<We
   });
 }
 
+export async function updateWebhook(channelId: string, webhookId: string, data: { name?: string; channel_id?: string }): Promise<Webhook> {
+  return request(`/channels/${channelId}/webhooks/${webhookId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
 export async function deleteWebhook(channelId: string, webhookId: string): Promise<void> {
   return request(`/channels/${channelId}/webhooks/${webhookId}`, { method: 'DELETE' });
+}
+
+export async function getServerWebhooks(serverId: string): Promise<Webhook[]> {
+  return request(`/servers/${serverId}/webhooks`);
 }
 
 // ── GIFs ────────────────────────────────────────────
