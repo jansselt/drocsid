@@ -83,7 +83,11 @@ export function MessageList({ channelId }: MessageListProps) {
     const isOwn = lastMsg?.author_id === currentUser?.id;
 
     if (atBottomRef.current || isOwn) {
-      requestAnimationFrame(() => scrollToBottom(isOwn && !atBottomRef.current ? 'smooth' : 'instant'));
+      const behavior = isOwn && !atBottomRef.current ? 'smooth' : 'instant';
+      // Double-rAF: first rAF schedules after React commit, second rAF
+      // fires after the browser has actually laid out the new content.
+      // Fixes Tauri/webkit2gtk where scrollHeight isn't ready after one frame.
+      requestAnimationFrame(() => requestAnimationFrame(() => scrollToBottom(behavior)));
     }
   }, [messages.length, messages, currentUser?.id, scrollToBottom]);
 

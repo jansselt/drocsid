@@ -213,6 +213,30 @@ export function MessageInput({ channelId }: MessageInputProps) {
     if (files.length > 0) {
       e.preventDefault();
       addFiles(files);
+      return;
+    }
+    // Fallback: webkit2gtk older versions return empty clipboardData.files
+    // for pasted images. Use the async Clipboard API to read image blobs.
+    if (navigator.clipboard?.read) {
+      navigator.clipboard.read().then((items) => {
+        const promises = items.map(async (item) => {
+          const imageType = item.types.find((t) => t.startsWith('image/'));
+          if (!imageType) return null;
+          const blob = await item.getType(imageType);
+          const ext = imageType.split('/')[1] || 'png';
+          return new File([blob], `pasted-image.${ext}`, { type: imageType });
+        });
+        return Promise.all(promises);
+      }).then((results) => {
+        const imageFiles = results.filter((f): f is File => f !== null);
+        if (imageFiles.length > 0) {
+          const dt = new DataTransfer();
+          imageFiles.forEach((f) => dt.items.add(f));
+          addFiles(dt.files);
+        }
+      }).catch(() => {
+        // Clipboard API unavailable or denied — no-op
+      });
     }
   }, [addFiles]);
 

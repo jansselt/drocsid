@@ -3,6 +3,7 @@ import { useServerStore } from '../../stores/serverStore';
 import { useAuthStore } from '../../stores/authStore';
 import { SHORTCODE_MAP } from './EmojiPicker';
 import { LinkPreview } from './LinkPreview';
+import { isTauri } from '../../api/instance';
 import './Markdown.css';
 
 interface MarkdownProps {
@@ -246,7 +247,7 @@ export function Markdown({ content }: MarkdownProps) {
               <div key={i} className="md-embed">
                 <iframe
                   className="md-youtube"
-                  src={`https://www.youtube.com/embed/${token.text}`}
+                  src={`https://www.youtube${isTauri() ? '-nocookie' : ''}.com/embed/${token.text}`}
                   title="YouTube"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   allowFullScreen
