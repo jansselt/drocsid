@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.8.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.7.1...drocsid-v0.8.0) (2026-02-22)
+
+
+### Features
+
+* add noise suppression for voice chat with pluggable backend ([3e41db6](https://github.com/jansselt/drocsid/commit/3e41db6f0839780aa1a87642dd4eaaa2e76b0a27))
+* use youtube.com embed domain to support Premium ad-free playback ([af949f4](https://github.com/jansselt/drocsid/commit/af949f43bb3506e1c7e97f4bea382eb3fe10c3c2))
+
+
+### Bug Fixes
+
+* enable WebAudio in webkit2gtk for notification sounds in Tauri ([c9bc7f0](https://github.com/jansselt/drocsid/commit/c9bc7f09cadc719fc9bf0b905087b49df7e3a915))
+* Tauri drag-drop via native event handler + Rust file reader ([37d9e02](https://github.com/jansselt/drocsid/commit/37d9e02e5ab171c0701072e44a1d537e1225695c))
+* Tauri drag-drop, image paste, scroll-to-bottom, and YouTube embed ([e63c9a8](https://github.com/jansselt/drocsid/commit/e63c9a8a8a93b7b5a6b52a4a613ec9f4aa42480e))
+
 ## [0.7.1](https://github.com/jansselt/drocsid/compare/drocsid-v0.7.0...drocsid-v0.7.1) (2026-02-22)
 
 
