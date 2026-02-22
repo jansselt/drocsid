@@ -22,6 +22,7 @@ import {
 } from '../../utils/browserNotifications';
 import * as api from '../../api/client';
 import type { RegistrationCode, Channel, CustomTheme } from '../../types';
+import { isPushSupported, getPushEnabled, subscribeToPush, unsubscribeFromPush } from '../../utils/pushSubscription';
 import { listAudioOutputs, listAudioInputs, saveSpeaker, saveMicrophone, type AudioOutputDevice, type AudioInputDevice } from '../../utils/audioDevices';
 import { SHORTCUT_CATEGORIES, mod } from '../common/KeyboardShortcutsDialog';
 import '../common/KeyboardShortcutsDialog.css';
@@ -635,6 +636,9 @@ function NotificationSettings() {
   const [volume, setVolume] = useState(() => Math.round(getNotificationVolume() * 100));
   const [browserEnabled, setBrowserEnabled] = useState(() => getBrowserNotificationsEnabled());
   const [permState, setPermState] = useState(() => getPermissionState());
+  const [pushSupported] = useState(() => isPushSupported());
+  const [pushEnabled, setPushEnabledState] = useState(() => getPushEnabled());
+  const [pushLoading, setPushLoading] = useState(false);
 
   const handleVolumeChange = (val: number) => {
     setVolume(val);
@@ -649,6 +653,22 @@ function NotificationSettings() {
     }
     setBrowserEnabled(enabled);
     setBrowserNotificationsEnabled(enabled);
+  };
+
+  const handlePushToggle = async (enabled: boolean) => {
+    setPushLoading(true);
+    try {
+      if (enabled) {
+        const ok = await subscribeToPush();
+        if (ok) setPushEnabledState(true);
+      } else {
+        await unsubscribeFromPush();
+        setPushEnabledState(false);
+      }
+    } catch {
+      // silently fail
+    }
+    setPushLoading(false);
   };
 
   return (
@@ -687,6 +707,24 @@ function NotificationSettings() {
         <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '0.5rem' }}>
           Your browser does not support desktop notifications.
         </p>
+      )}
+
+      {pushSupported && (
+        <>
+          <h3>Push Notifications</h3>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '0.75rem', fontSize: '0.85rem' }}>
+            Receive notifications even when Drocsid is closed. Only sent when you have no active sessions.
+          </p>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: pushLoading ? 'wait' : 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={pushEnabled}
+              onChange={(e) => handlePushToggle(e.target.checked)}
+              disabled={pushLoading}
+            />
+            {pushLoading ? 'Setting up...' : 'Enable push notifications'}
+          </label>
+        </>
       )}
 
       <h3>Test Sounds</h3>

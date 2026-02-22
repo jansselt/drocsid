@@ -62,6 +62,24 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
+    // Initialize Web Push service (optional)
+    let push = match config.web_push {
+        Some(ref wpc) => match services::push::PushService::new(wpc) {
+            Ok(svc) => {
+                tracing::info!("Web Push notifications enabled");
+                Some(Arc::new(svc))
+            }
+            Err(e) => {
+                tracing::error!("Failed to initialize Web Push: {e}");
+                None
+            }
+        },
+        None => {
+            tracing::warn!("Web Push not configured — push notifications disabled");
+            None
+        }
+    };
+
     // Build application state
     let state = AppState {
         db,
@@ -69,6 +87,7 @@ async fn main() -> anyhow::Result<()> {
         config: Arc::new(config.clone()),
         gateway: Arc::new(GatewayState::new()),
         s3,
+        push,
     };
 
     // Start background scheduler for scheduled messages

@@ -19,6 +19,10 @@ export default defineConfig({
       registerType: 'prompt',
       // Disable SW generation for Tauri — no service worker support in webviews
       selfDestroying: isTauri,
+      // Use custom service worker for push notification support (web only)
+      strategies: isTauri ? undefined : 'injectManifest',
+      srcDir: isTauri ? undefined : 'src',
+      filename: isTauri ? undefined : 'sw.ts',
       manifest: isTauri ? false : {
         name: 'Drocsid',
         short_name: 'Drocsid',
@@ -39,6 +43,9 @@ export default defineConfig({
             purpose: 'any maskable',
           },
         ],
+      },
+      injectManifest: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
       },
     }),
   ],

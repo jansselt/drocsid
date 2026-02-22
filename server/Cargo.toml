@@ -67,6 +67,10 @@ scraper = "0.22"
 # Regex
 regex = "1"
 
+# Web Push notifications
+web-push-native = "0.4"
+base64 = "0.22"
+
 # Config
 config = "0.15"
 

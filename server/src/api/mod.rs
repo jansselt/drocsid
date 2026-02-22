@@ -9,6 +9,7 @@ pub mod gif;
 pub mod invites;
 pub mod links;
 pub mod polls;
+pub mod push;
 pub mod relationships;
 pub mod roles;
 pub mod scheduled;
@@ -65,6 +66,7 @@ fn api_routes() -> Router<AppState> {
         .merge(webhooks::execute_routes())
         .merge(bug_reports::routes())
         .merge(unfurl::routes())
+        .nest("/push", push::routes())
 }
 
 fn user_routes() -> Router<AppState> {

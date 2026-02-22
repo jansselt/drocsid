@@ -12,6 +12,7 @@ pub struct AppConfig {
     pub gif: Option<GifConfig>,
     pub email: Option<EmailConfig>,
     pub github: Option<GitHubConfig>,
+    pub web_push: Option<WebPushConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -80,6 +81,13 @@ pub struct EmailConfig {
 pub struct GitHubConfig {
     pub token: String,
     pub repo: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WebPushConfig {
+    pub vapid_private_key: String,
+    pub vapid_public_key: String,
+    pub subject: String,
 }
 
 impl AppConfig {

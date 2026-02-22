@@ -416,6 +416,33 @@ async fn send_message(
         }
     }
 
+    // Send push notifications to offline users (fire-and-forget)
+    if let Some(ref push) = state.push {
+        let push = std::sync::Arc::clone(push);
+        let state = state.clone();
+        let author_name = event
+            .author
+            .display_name
+            .clone()
+            .unwrap_or_else(|| event.author.username.clone());
+        let content = body.content.clone();
+        let server_id = channel.server_id;
+        let mentioned = mentioned_user_ids.clone();
+        tokio::spawn(async move {
+            crate::services::push::send_push_for_message(
+                &state,
+                &push,
+                channel_id,
+                server_id,
+                user.user_id,
+                &author_name,
+                &content,
+                &mentioned,
+            )
+            .await;
+        });
+    }
+
     Ok(Json(message))
 }
 

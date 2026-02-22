@@ -2821,3 +2821,83 @@ pub async fn get_poll_votes_for_polls(
         .fetch_all(pool)
         .await
 }
+
+// ── Push Subscriptions ───────────────────────────────
+
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize)]
+pub struct PushSubscription {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub endpoint: String,
+    pub p256dh_key: String,
+    pub auth_key: String,
+    pub user_agent: Option<String>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+pub async fn upsert_push_subscription(
+    pool: &PgPool,
+    user_id: Uuid,
+    endpoint: &str,
+    p256dh_key: &str,
+    auth_key: &str,
+    user_agent: Option<&str>,
+) -> Result<PushSubscription, sqlx::Error> {
+    sqlx::query_as::<_, PushSubscription>(
+        r#"
+        INSERT INTO push_subscriptions (user_id, endpoint, p256dh_key, auth_key, user_agent)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (endpoint) DO UPDATE SET
+            user_id = $1,
+            p256dh_key = $3,
+            auth_key = $4,
+            user_agent = $5,
+            created_at = now()
+        RETURNING *
+        "#,
+    )
+    .bind(user_id)
+    .bind(endpoint)
+    .bind(p256dh_key)
+    .bind(auth_key)
+    .bind(user_agent)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn delete_push_subscription(
+    pool: &PgPool,
+    user_id: Uuid,
+    endpoint: &str,
+) -> Result<bool, sqlx::Error> {
+    let result =
+        sqlx::query("DELETE FROM push_subscriptions WHERE user_id = $1 AND endpoint = $2")
+            .bind(user_id)
+            .bind(endpoint)
+            .execute(pool)
+            .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+pub async fn delete_push_subscription_by_endpoint(
+    pool: &PgPool,
+    endpoint: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM push_subscriptions WHERE endpoint = $1")
+        .bind(endpoint)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn get_push_subscriptions_for_users(
+    pool: &PgPool,
+    user_ids: &[Uuid],
+) -> Result<Vec<PushSubscription>, sqlx::Error> {
+    sqlx::query_as::<_, PushSubscription>(
+        "SELECT * FROM push_subscriptions WHERE user_id = ANY($1)",
+    )
+    .bind(user_ids)
+    .fetch_all(pool)
+    .await
+}

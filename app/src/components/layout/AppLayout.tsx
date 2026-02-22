@@ -85,6 +85,32 @@ export function AppLayout() {
     };
   }, []);
 
+  // Handle push notification clicks (service worker → app navigation)
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type !== 'NOTIFICATION_CLICK' || !event.data.url) return;
+
+      const url: string = event.data.url;
+      // Parse /channels/<server_id>/<channel_id> or /channels/@me/<channel_id>
+      const match = url.match(/^\/channels\/([^/]+)\/([^/]+)$/);
+      if (!match) return;
+
+      const [, serverOrMe, channelId] = match;
+      const store = useServerStore.getState();
+      if (serverOrMe === '@me') {
+        store.setActiveDmChannel(channelId);
+      } else {
+        store.setActiveServer(serverOrMe);
+        store.setActiveChannel(channelId);
+      }
+    };
+
+    navigator.serviceWorker.addEventListener('message', handler);
+    return () => navigator.serviceWorker.removeEventListener('message', handler);
+  }, []);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
