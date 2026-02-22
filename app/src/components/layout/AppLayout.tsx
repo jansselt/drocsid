@@ -153,9 +153,14 @@ export function AppLayout() {
       }
     };
 
+    let lastOnlineSent = 0;
     const goOnline = () => {
-      if (isIdleRef.current) {
+      const now = Date.now();
+      // Always re-send if we were idle; throttle to every 30s otherwise
+      // to recover from any client/server state mismatch
+      if (isIdleRef.current || now - lastOnlineSent > 30_000) {
         isIdleRef.current = false;
+        lastOnlineSent = now;
         gateway.sendPresenceUpdate('online');
       }
       clearTimeout(idleTimerRef.current);
