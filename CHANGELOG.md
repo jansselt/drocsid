@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.7.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.6.0...drocsid-v0.7.0) (2026-02-22)
+
+
+### Features
+
+* add personal message bookmarks with tags (drocsid-mw3) ([e7cd562](https://github.com/jansselt/drocsid/commit/e7cd562dd1fe5725c2a47da37f62e50bcd2445f7))
+* add scheduled messages, shared link collections, and inline polls ([2d5236b](https://github.com/jansselt/drocsid/commit/2d5236b025c94d658701e702359590774afbc396))
+* add timezone-aware member list (drocsid-62d) ([94a0098](https://github.com/jansselt/drocsid/commit/94a0098c90ba3617e6520b58cc60f8c60b714710))
+* custom notification sound themes — classic, soft, pop, bell, none ([3067875](https://github.com/jansselt/drocsid/commit/3067875a242d5fa8572114a041416045fd4a3692))
+* PWA push notifications for web users ([e823142](https://github.com/jansselt/drocsid/commit/e8231423febcd28944a1dbc2c6ce4b47cbe46522))
+* rate limit webhook execution — 30 req/min per webhook via Redis ([09fcd88](https://github.com/jansselt/drocsid/commit/09fcd88321e809277507879730f7408959ee9167))
+* webhook management UI in server settings ([f8d4e24](https://github.com/jansselt/drocsid/commit/f8d4e245fa809b8c76d6d07d60ab8f9b376094ec))
+
+
+### Bug Fixes
+
+* add timezone field to test User fixture ([2a6a41f](https://github.com/jansselt/drocsid/commit/2a6a41fed26aa19dfaad6062e3d464c98dc4b02c))
+* add timezone field to test User fixture ([652ee0f](https://github.com/jansselt/drocsid/commit/652ee0f52a796cfee37f5d2af6e7a87cd1e4da77))
+* collapsed channel sidebar traps user in DM view ([0ee3668](https://github.com/jansselt/drocsid/commit/0ee36681eff7f55a3d0982cd84b8e24d41515ef2))
+* idle status gets stuck — add 30s presence heartbeat on activity ([7d28698](https://github.com/jansselt/drocsid/commit/7d2869878416058cc28f6905834b2320a9db4985))
+* notification system overhaul — permissions, unread dots, sounds, batching, tray badge ([1f999bf](https://github.com/jansselt/drocsid/commit/1f999bffcff9eac5ff332a765bb10e688b91222b))
+* poll not visible after creation until refresh ([5d830bb](https://github.com/jansselt/drocsid/commit/5d830bb9896845bd0ad3d90e8cdeeffac5b00ec5))
+* TypeScript type errors in push notification code ([6596697](https://github.com/jansselt/drocsid/commit/65966973eaabea7499fbe4598a1215e6e99e3099))
+* use channel_type instead of type in webhook UI channel filter ([bce8c52](https://github.com/jansselt/drocsid/commit/bce8c5259876c063b4a61f65aa1fa31108fb3616))
+* wrap-around keyboard nav for slash/mention menus, add @everyone/[@here](https://github.com/here) ([983ac0e](https://github.com/jansselt/drocsid/commit/983ac0ef6391bd977bedaf49ba8cc0e22852cd7e))
+
 ## [0.6.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.5.0...drocsid-v0.6.0) (2026-02-21)
 
 
