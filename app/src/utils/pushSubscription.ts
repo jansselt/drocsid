@@ -46,7 +46,7 @@ export async function subscribeToPush(): Promise<boolean> {
 
   const subscription = await registration.pushManager.subscribe({
     userVisibleOnly: true,
-    applicationServerKey,
+    applicationServerKey: applicationServerKey.buffer as ArrayBuffer,
   });
 
   // Send subscription to backend

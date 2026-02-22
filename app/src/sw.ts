@@ -19,7 +19,7 @@ self.addEventListener('push', (event) => {
     return;
   }
 
-  const options: NotificationOptions = {
+  const options: NotificationOptions & { renotify?: boolean } = {
     body: data.body || '',
     icon: '/pwa-192x192.png',
     tag: data.tag || 'drocsid-push',
