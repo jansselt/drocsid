@@ -358,7 +358,12 @@ export const useServerStore = create<ServerState>((set, get) => ({
   searchQuery: '',
 
   setView: (view) => {
-    set({ view, activeServerId: null, activeChannelId: null, activeThreadId: null });
+    const updates: Partial<ServerState> = { view, activeServerId: null, activeChannelId: null, activeThreadId: null };
+    // Always show the sidebar in DM/home view (no collapse toggle there)
+    if (view === 'home') {
+      updates.showChannelSidebar = true;
+    }
+    set(updates);
     if (view === 'home') {
       get().loadDmChannels();
       get().loadRelationships();
