@@ -93,18 +93,33 @@ export function MessageList({ channelId }: MessageListProps) {
         // User sent a message while scrolled up — smooth scroll once
         el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
       } else {
-        // At bottom: scroll immediately + grace period re-scrolls.
-        // Images/embeds have no explicit dimensions and start at 0px,
-        // so scrollHeight grows as media loads. The grace period catches
-        // fast-loading media; the capture-phase load listener (below)
-        // handles anything that finishes after the grace window.
-        const doScroll = () => {
+        // At bottom: scroll immediately, then poll scrollHeight until
+        // it stabilizes (~500ms of no change). This handles:
+        //  - Flex layout settling on initial app load
+        //  - Images/embeds expanding as they load (no explicit dimensions)
+        //  - Iframes (YouTube embeds) rendering
+        // The capture-phase load listener (below) covers slow media that
+        // finishes after the polling window.
+        el.scrollTop = el.scrollHeight;
+        let raf: number;
+        let lastH = el.scrollHeight;
+        let stable = 0;
+        const poll = () => {
           if (!atBottomRef.current) return;
-          el.scrollTop = el.scrollHeight;
+          const h = el.scrollHeight;
+          if (h !== lastH) {
+            el.scrollTop = h;
+            lastH = h;
+            stable = 0;
+          } else {
+            stable++;
+          }
+          if (stable < 30) { // ~500ms at 60fps
+            raf = requestAnimationFrame(poll);
+          }
         };
-        doScroll();
-        const timers = [50, 150, 400].map((ms) => setTimeout(doScroll, ms));
-        return () => timers.forEach(clearTimeout);
+        raf = requestAnimationFrame(poll);
+        return () => cancelAnimationFrame(raf);
       }
     }
   }, [messages.length, messages, currentUser?.id]);
