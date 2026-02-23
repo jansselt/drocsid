@@ -42,6 +42,7 @@ export function MessageList({ channelId }: MessageListProps) {
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const isLoadingMore = useRef(false);
   const atBottomRef = useRef(true);
+  const isAutoScrolling = useRef(false);
   const prevMsgCountRef = useRef(0);
 
   // ── Helpers ──────────────────────────────────────────────────────────
@@ -100,12 +101,19 @@ export function MessageList({ channelId }: MessageListProps) {
         //  - Iframes (YouTube embeds) rendering
         // The capture-phase load listener (below) covers slow media that
         // finishes after the polling window.
+        //
+        // isAutoScrolling prevents the scroll event handler from setting
+        // atBottomRef=false during the poll. Without this guard, images
+        // loading between the programmatic scroll and its async scroll
+        // event cause scrollHeight to grow, making isAtBottom() return
+        // false and aborting the poll on the very first frame.
+        isAutoScrolling.current = true;
+        atBottomRef.current = true;
         el.scrollTop = el.scrollHeight;
         let raf: number;
         let lastH = el.scrollHeight;
         let stable = 0;
         const poll = () => {
-          if (!atBottomRef.current) return;
           const h = el.scrollHeight;
           if (h !== lastH) {
             el.scrollTop = h;
@@ -116,13 +124,19 @@ export function MessageList({ channelId }: MessageListProps) {
           }
           if (stable < 30) { // ~500ms at 60fps
             raf = requestAnimationFrame(poll);
+          } else {
+            isAutoScrolling.current = false;
+            atBottomRef.current = isAtBottom();
           }
         };
         raf = requestAnimationFrame(poll);
-        return () => cancelAnimationFrame(raf);
+        return () => {
+          cancelAnimationFrame(raf);
+          isAutoScrolling.current = false;
+        };
       }
     }
-  }, [messages.length, messages, currentUser?.id]);
+  }, [messages.length, messages, currentUser?.id, isAtBottom]);
 
   // When images/embeds finish loading they expand content height.
   // Re-scroll to bottom if user hasn't scrolled away. Uses capture
@@ -131,7 +145,7 @@ export function MessageList({ channelId }: MessageListProps) {
     const el = scrollRef.current;
     if (!el) return;
     const handleLoad = () => {
-      if (atBottomRef.current) {
+      if (atBottomRef.current || isAutoScrolling.current) {
         el.scrollTop = el.scrollHeight;
       }
     };
@@ -146,10 +160,16 @@ export function MessageList({ channelId }: MessageListProps) {
     if (!el) return;
 
     const handleScroll = () => {
-      const bottom = isAtBottom();
-      if (atBottomRef.current !== bottom) {
-        atBottomRef.current = bottom;
-        setShowScrollBtn(!bottom);
+      // During auto-scroll (poll active), images loading between the
+      // programmatic scroll and its async scroll event cause scrollHeight
+      // to grow, making isAtBottom() transiently false. Skip the update
+      // so the poll isn't aborted.
+      if (!isAutoScrolling.current) {
+        const bottom = isAtBottom();
+        if (atBottomRef.current !== bottom) {
+          atBottomRef.current = bottom;
+          setShowScrollBtn(!bottom);
+        }
       }
 
       // Load more when near top
