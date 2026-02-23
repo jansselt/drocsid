@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.2](https://github.com/jansselt/drocsid/compare/drocsid-v0.8.1...drocsid-v0.8.2) (2026-02-23)
+
+
+### Bug Fixes
+
+* prevent forced scroll-to-bottom when loading message history ([2630239](https://github.com/jansselt/drocsid/commit/263023913b35eca74b5e42c0166b4a3f2aca6c7c))
+* scroll-to-bottom on initial channel load with async media ([955e1d8](https://github.com/jansselt/drocsid/commit/955e1d8907d1dc5d5a57c1a6baef79eee75688a8))
+* scroll-to-bottom race with async image loads ([bda6410](https://github.com/jansselt/drocsid/commit/bda64103e318befabd002fe69a1ddb9afad84f85))
+* scroll-to-bottom race with async image loads ([d9c9c82](https://github.com/jansselt/drocsid/commit/d9c9c82fe0052ade75b5d6c60424e301b81223c0))
+* use fixed port for localhost plugin to persist auth across restarts ([62d5fed](https://github.com/jansselt/drocsid/commit/62d5fedf2aa01b011778bd3196011e1a6e86bd79))
+* use rAF polling for scroll-to-bottom on app start ([6e66498](https://github.com/jansselt/drocsid/commit/6e6649867f51b695988d1af3aee29de999e0ff4f))
+
 ## [0.8.1](https://github.com/jansselt/drocsid/compare/drocsid-v0.8.0...drocsid-v0.8.1) (2026-02-22)
 
 
