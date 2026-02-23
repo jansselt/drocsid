@@ -228,7 +228,14 @@ pub fn run() {
     // In production on Linux/macOS, Tauri uses the tauri:// protocol which
     // breaks YouTube embeds (Error 153) and may affect Web Audio.  Serve
     // the frontend on http://localhost:<port> instead.
-    let port = portpicker::pick_unused_port().expect("failed to find unused port");
+    // Use a fixed port so localStorage (auth tokens, settings) persists
+    // across restarts.  Fall back to a random port if it's occupied.
+    const PREFERRED_PORT: u16 = 14544;
+    let port = if portpicker::is_free(PREFERRED_PORT) {
+        PREFERRED_PORT
+    } else {
+        portpicker::pick_unused_port().expect("failed to find unused port")
+    };
 
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
