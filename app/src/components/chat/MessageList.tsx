@@ -86,17 +86,32 @@ export function MessageList({ channelId }: MessageListProps) {
     const isOwn = lastMsg?.author_id === currentUser?.id;
 
     if (atBottomRef.current || isOwn) {
-      const behavior = isOwn && !atBottomRef.current ? 'smooth' : 'instant';
-      // Double-rAF: first rAF schedules after React commit, second rAF
-      // fires after the browser has actually laid out the new content.
-      // Fixes Tauri/webkit2gtk where scrollHeight isn't ready after one frame.
-      requestAnimationFrame(() => requestAnimationFrame(() => scrollToBottom(behavior)));
+      const el = scrollRef.current;
+      if (!el) return;
+
+      if (isOwn && !atBottomRef.current) {
+        // User sent a message while scrolled up — smooth scroll once
+        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+      } else {
+        // At bottom: scroll immediately + grace period re-scrolls.
+        // Images/embeds have no explicit dimensions and start at 0px,
+        // so scrollHeight grows as media loads. The grace period catches
+        // fast-loading media; the capture-phase load listener (below)
+        // handles anything that finishes after the grace window.
+        const doScroll = () => {
+          if (!atBottomRef.current) return;
+          el.scrollTop = el.scrollHeight;
+        };
+        doScroll();
+        const timers = [50, 150, 400].map((ms) => setTimeout(doScroll, ms));
+        return () => timers.forEach(clearTimeout);
+      }
     }
-  }, [messages.length, messages, currentUser?.id, scrollToBottom]);
+  }, [messages.length, messages, currentUser?.id]);
 
   // When images/embeds finish loading they expand content height.
-  // Scroll to bottom if user hasn't scrolled away. Each image fires load
-  // exactly once (no virtualization = no re-mounting = no loops).
+  // Re-scroll to bottom if user hasn't scrolled away. Uses capture
+  // phase because the load event doesn't bubble.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -107,7 +122,7 @@ export function MessageList({ channelId }: MessageListProps) {
     };
     el.addEventListener('load', handleLoad, true);
     return () => el.removeEventListener('load', handleLoad, true);
-  }, [channelId, messages.length]);
+  }, [channelId]);
 
   // ── Scroll event: track atBottom + load-more-on-scroll-up ───────────
 
