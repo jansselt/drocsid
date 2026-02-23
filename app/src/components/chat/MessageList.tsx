@@ -79,6 +79,9 @@ export function MessageList({ channelId }: MessageListProps) {
 
     if (count <= prevCount || count === 0) return;
 
+    // Older messages were prepended (history load) — don't scroll to bottom
+    if (isLoadingMore.current) return;
+
     const lastMsg = messages[count - 1];
     const isOwn = lastMsg?.author_id === currentUser?.id;
 
@@ -126,12 +129,17 @@ export function MessageList({ channelId }: MessageListProps) {
         loadMoreMessages(channelId)
           .then((hasMore) => {
             if (hasMore !== false) {
-              // Preserve scroll position after prepending older messages
+              // Preserve scroll position after prepending older messages.
+              // Clear isLoadingMore INSIDE the rAF, after the scroll
+              // restoration, so the scroll event doesn't immediately
+              // re-trigger another load.
               requestAnimationFrame(() => {
                 el.scrollTop = el.scrollHeight - prevHeight;
+                isLoadingMore.current = false;
               });
+            } else {
+              isLoadingMore.current = false;
             }
-            isLoadingMore.current = false;
           })
           .catch(() => {
             isLoadingMore.current = false;
