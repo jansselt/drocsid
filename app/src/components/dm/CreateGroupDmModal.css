@@ -1,0 +1,219 @@
+.create-group-dm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.create-group-dm-modal {
+  width: 440px;
+  max-height: 80vh;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.create-group-dm-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 1rem;
+}
+
+.create-group-dm-selected {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-bottom: 0.75rem;
+}
+
+.create-group-dm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  padding: 0.25rem 0.5rem;
+  border-radius: 12px;
+  font-size: 0.8125rem;
+}
+
+.create-group-dm-chip button {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.create-group-dm-chip button:hover {
+  color: var(--text-primary);
+}
+
+.create-group-dm-search {
+  width: 100%;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.5rem 0.75rem;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  outline: none;
+  margin-bottom: 0.5rem;
+  box-sizing: border-box;
+}
+
+.create-group-dm-search:focus {
+  border-color: var(--accent);
+}
+
+.create-group-dm-results {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 240px;
+  margin-bottom: 0.75rem;
+}
+
+.create-group-dm-empty {
+  padding: 1rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+
+.create-group-dm-user {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.375rem 0.5rem;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.create-group-dm-user:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.create-group-dm-user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.create-group-dm-user-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.create-group-dm-user-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.create-group-dm-user-username {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.create-group-dm-name-field {
+  margin-bottom: 0.75rem;
+}
+
+.create-group-dm-name-field label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 0.375rem;
+}
+
+.create-group-dm-name-field input {
+  width: 100%;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.5rem 0.75rem;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.create-group-dm-name-field input:focus {
+  border-color: var(--accent);
+}
+
+.create-group-dm-error {
+  color: var(--danger, #ed4245);
+  font-size: 0.8125rem;
+  margin-bottom: 0.75rem;
+}
+
+.create-group-dm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.create-group-dm-cancel {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.create-group-dm-cancel:hover {
+  color: var(--text-primary);
+}
+
+.create-group-dm-submit {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 0.5rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.create-group-dm-submit:hover {
+  opacity: 0.9;
+}
+
+.create-group-dm-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

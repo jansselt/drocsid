@@ -1,0 +1,72 @@
+services:
+  # ── Data Stores ────────────────────────────────────────
+  postgres:
+    image: postgres:17-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: drocsid
+      POSTGRES_USER: drocsid
+      POSTGRES_PASSWORD: drocsid
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U drocsid"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    command: redis-server --appendonly yes
+
+  # ── Object Storage ────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      sleep 3;
+      mc alias set drocsid http://minio:9000 minioadmin minioadmin;
+      mc mb --ignore-existing drocsid/drocsid-uploads;
+      mc anonymous set download drocsid/drocsid-uploads;
+      exit 0;
+      "
+
+  # ── Voice/Video ────────────────────────────────────────
+  livekit:
+    image: livekit/livekit-server:latest
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    environment:
+      LIVEKIT_KEYS: "devkey: devsecret"
+    command: --dev --bind 0.0.0.0
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:

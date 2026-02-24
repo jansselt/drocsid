@@ -1,0 +1,2919 @@
+use chrono::{DateTime, Utc};
+use sqlx::PgPool;
+use uuid::Uuid;
+
+use crate::types::entities::{
+    Attachment, AuditAction, AuditLogEntry, Ban, Channel, ChannelLink, ChannelOverride, ChannelType,
+    DmMember, Invite, Message, MessageBookmark, Poll, PollOption, PollType, PollVote, Reaction,
+    ReadState, Relationship, RelationshipType, RegistrationCode, Role, ScheduledMessage,
+    SearchResult, Server, ServerMember, Session, SoundboardSound, ThreadMetadata, User,
+    UserCustomTheme, Webhook,
+};
+use crate::types::entities::PublicUser;
+
+// ── Instance ───────────────────────────────────────────
+
+pub async fn ensure_local_instance(pool: &PgPool, domain: &str) -> Result<Uuid, sqlx::Error> {
+    let row: (Uuid,) = sqlx::query_as(
+        r#"
+        INSERT INTO instances (domain, is_local)
+        VALUES ($1, true)
+        ON CONFLICT (domain) DO UPDATE SET domain = $1
+        RETURNING id
+        "#,
+    )
+    .bind(domain)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(row.0)
+}
+
+// ── Users ──────────────────────────────────────────────
+
+pub async fn create_user(
+    pool: &PgPool,
+    id: Uuid,
+    instance_id: Uuid,
+    username: &str,
+    email: &str,
+    password_hash: &str,
+) -> Result<User, sqlx::Error> {
+    sqlx::query_as::<_, User>(
+        r#"
+        INSERT INTO users (id, instance_id, username, email, password_hash)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id, instance_id, username, display_name, email, password_hash,
+                  avatar_url, bio, status, custom_status, timezone, theme_preference, is_admin, bot, created_at, updated_at
+        "#,
+    )
+    .bind(id)
+    .bind(instance_id)
+    .bind(username)
+    .bind(email)
+    .bind(password_hash)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_user_by_id(pool: &PgPool, id: Uuid) -> Result<Option<User>, sqlx::Error> {
+    sqlx::query_as::<_, User>(
+        r#"
+        SELECT id, instance_id, username, display_name, email, password_hash,
+               avatar_url, bio, status, custom_status, timezone, theme_preference, is_admin, bot, created_at, updated_at
+        FROM users WHERE id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn get_user_by_email(pool: &PgPool, email: &str) -> Result<Option<User>, sqlx::Error> {
+    sqlx::query_as::<_, User>(
+        r#"
+        SELECT id, instance_id, username, display_name, email, password_hash,
+               avatar_url, bio, status, custom_status, timezone, theme_preference, is_admin, bot, created_at, updated_at
+        FROM users WHERE email = $1
+        "#,
+    )
+    .bind(email)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn delete_user(pool: &PgPool, user_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM users WHERE id = $1")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn get_user_last_login(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Option<chrono::DateTime<chrono::Utc>>, sqlx::Error> {
+    let row: Option<(chrono::DateTime<chrono::Utc>,)> =
+        sqlx::query_as("SELECT MAX(created_at) FROM sessions WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(row.map(|r| r.0))
+}
+
+// ── Sessions ───────────────────────────────────────────
+
+pub async fn create_session(
+    pool: &PgPool,
+    id: Uuid,
+    user_id: Uuid,
+    token_hash: &str,
+    device_info: Option<&str>,
+    expires_at: DateTime<Utc>,
+) -> Result<Session, sqlx::Error> {
+    sqlx::query_as::<_, Session>(
+        r#"
+        INSERT INTO sessions (id, user_id, token_hash, device_info, expires_at)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id, user_id, token_hash, device_info, expires_at, created_at
+        "#,
+    )
+    .bind(id)
+    .bind(user_id)
+    .bind(token_hash)
+    .bind(device_info)
+    .bind(expires_at)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_session_by_token_hash(
+    pool: &PgPool,
+    token_hash: &str,
+) -> Result<Option<Session>, sqlx::Error> {
+    sqlx::query_as::<_, Session>(
+        r#"
+        SELECT id, user_id, token_hash, device_info, expires_at, created_at
+        FROM sessions
+        WHERE token_hash = $1 AND expires_at > now()
+        "#,
+    )
+    .bind(token_hash)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn delete_session(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM sessions WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+// ── Servers ────────────────────────────────────────────
+
+pub async fn create_server(
+    pool: &PgPool,
+    id: Uuid,
+    instance_id: Uuid,
+    name: &str,
+    description: Option<&str>,
+    owner_id: Uuid,
+) -> Result<Server, sqlx::Error> {
+    sqlx::query_as::<_, Server>(
+        r#"
+        INSERT INTO servers (id, instance_id, name, description, owner_id)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id, instance_id, name, description, icon_url, banner_url, banner_position,
+                  owner_id, default_channel_id, created_at, updated_at
+        "#,
+    )
+    .bind(id)
+    .bind(instance_id)
+    .bind(name)
+    .bind(description)
+    .bind(owner_id)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_server_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Server>, sqlx::Error> {
+    sqlx::query_as::<_, Server>(
+        r#"
+        SELECT id, instance_id, name, description, icon_url, banner_url, banner_position,
+               owner_id, default_channel_id, created_at, updated_at
+        FROM servers WHERE id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn get_user_servers(pool: &PgPool, user_id: Uuid) -> Result<Vec<Server>, sqlx::Error> {
+    sqlx::query_as::<_, Server>(
+        r#"
+        SELECT s.id, s.instance_id, s.name, s.description, s.icon_url, s.banner_url,
+               s.banner_position, s.owner_id, s.default_channel_id, s.created_at, s.updated_at
+        FROM servers s
+        INNER JOIN server_members sm ON s.id = sm.server_id
+        WHERE sm.user_id = $1
+        ORDER BY sm.joined_at
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn update_server_default_channel(
+    pool: &PgPool,
+    server_id: Uuid,
+    channel_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE servers SET default_channel_id = $1 WHERE id = $2")
+        .bind(channel_id)
+        .bind(server_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn delete_server(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE servers SET default_channel_id = NULL WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM servers WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+// ── Server Members ─────────────────────────────────────
+
+pub async fn add_server_member(
+    pool: &PgPool,
+    server_id: Uuid,
+    user_id: Uuid,
+) -> Result<ServerMember, sqlx::Error> {
+    sqlx::query_as::<_, ServerMember>(
+        r#"
+        INSERT INTO server_members (server_id, user_id)
+        VALUES ($1, $2)
+        RETURNING server_id, user_id, nickname, joined_at
+        "#,
+    )
+    .bind(server_id)
+    .bind(user_id)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_server_member(
+    pool: &PgPool,
+    server_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<ServerMember>, sqlx::Error> {
+    sqlx::query_as::<_, ServerMember>(
+        r#"
+        SELECT server_id, user_id, nickname, joined_at
+        FROM server_members
+        WHERE server_id = $1 AND user_id = $2
+        "#,
+    )
+    .bind(server_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn get_server_members(
+    pool: &PgPool,
+    server_id: Uuid,
+) -> Result<Vec<ServerMember>, sqlx::Error> {
+    sqlx::query_as::<_, ServerMember>(
+        r#"
+        SELECT server_id, user_id, nickname, joined_at
+        FROM server_members
+        WHERE server_id = $1
+        ORDER BY joined_at
+        "#,
+    )
+    .bind(server_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn remove_server_member(
+    pool: &PgPool,
+    server_id: Uuid,
+    user_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM server_members WHERE server_id = $1 AND user_id = $2")
+        .bind(server_id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+// ── Channels ───────────────────────────────────────────
+
+pub async fn create_channel(
+    pool: &PgPool,
+    id: Uuid,
+    instance_id: Uuid,
+    server_id: Option<Uuid>,
+    channel_type: ChannelType,
+    name: Option<&str>,
+    topic: Option<&str>,
+    parent_id: Option<Uuid>,
+    position: i32,
+) -> Result<Channel, sqlx::Error> {
+    sqlx::query_as::<_, Channel>(
+        r#"
+        INSERT INTO channels (id, instance_id, server_id, channel_type, name, topic, parent_id, position)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING id, instance_id, server_id, parent_id, channel_type, name, topic, position,
+                  created_at, updated_at, last_message_id
+        "#,
+    )
+    .bind(id)
+    .bind(instance_id)
+    .bind(server_id)
+    .bind(channel_type)
+    .bind(name)
+    .bind(topic)
+    .bind(parent_id)
+    .bind(position)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_server_channels(
+    pool: &PgPool,
+    server_id: Uuid,
+) -> Result<Vec<Channel>, sqlx::Error> {
+    sqlx::query_as::<_, Channel>(
+        r#"
+        SELECT id, instance_id, server_id, parent_id, channel_type, name, topic, position,
+               created_at, updated_at, last_message_id
+        FROM channels
+        WHERE server_id = $1
+        ORDER BY position
+        "#,
+    )
+    .bind(server_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn get_channel_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Channel>, sqlx::Error> {
+    sqlx::query_as::<_, Channel>(
+        r#"
+        SELECT id, instance_id, server_id, parent_id, channel_type, name, topic, position,
+               created_at, updated_at, last_message_id
+        FROM channels WHERE id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn update_channel(
+    pool: &PgPool,
+    id: Uuid,
+    name: Option<&str>,
+    topic: Option<&str>,
+) -> Result<Channel, sqlx::Error> {
+    sqlx::query_as::<_, Channel>(
+        r#"
+        UPDATE channels
+        SET name = COALESCE($2, name),
+            topic = COALESCE($3, topic),
+            updated_at = now()
+        WHERE id = $1
+        RETURNING id, instance_id, server_id, parent_id, channel_type, name, topic, position,
+                  created_at, updated_at, last_message_id
+        "#,
+    )
+    .bind(id)
+    .bind(name)
+    .bind(topic)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn delete_channel(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM channels WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+// ── Messages ───────────────────────────────────────────
+
+pub async fn create_message(
+    pool: &PgPool,
+    id: Uuid,
+    instance_id: Uuid,
+    channel_id: Uuid,
+    author_id: Uuid,
+    content: &str,
+    reply_to_id: Option<Uuid>,
+) -> Result<Message, sqlx::Error> {
+    sqlx::query_as::<_, Message>(
+        r#"
+        INSERT INTO messages (id, instance_id, channel_id, author_id, content, reply_to_id)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, instance_id, channel_id, author_id, content, reply_to_id,
+                  edited_at, pinned, created_at
+        "#,
+    )
+    .bind(id)
+    .bind(instance_id)
+    .bind(channel_id)
+    .bind(author_id)
+    .bind(content)
+    .bind(reply_to_id)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_messages(
+    pool: &PgPool,
+    channel_id: Uuid,
+    before: Option<Uuid>,
+    after: Option<Uuid>,
+    limit: i64,
+) -> Result<Vec<Message>, sqlx::Error> {
+    if let Some(before_id) = before {
+        sqlx::query_as::<_, Message>(
+            r#"
+            SELECT id, instance_id, channel_id, author_id, content, reply_to_id,
+                   edited_at, pinned, created_at
+            FROM messages
+            WHERE channel_id = $1 AND id < $2
+            ORDER BY id DESC
+            LIMIT $3
+            "#,
+        )
+        .bind(channel_id)
+        .bind(before_id)
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+    } else if let Some(after_id) = after {
+        sqlx::query_as::<_, Message>(
+            r#"
+            SELECT id, instance_id, channel_id, author_id, content, reply_to_id,
+                   edited_at, pinned, created_at
+            FROM messages
+            WHERE channel_id = $1 AND id > $2
+            ORDER BY id ASC
+            LIMIT $3
+            "#,
+        )
+        .bind(channel_id)
+        .bind(after_id)
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+    } else {
+        sqlx::query_as::<_, Message>(
+            r#"
+            SELECT id, instance_id, channel_id, author_id, content, reply_to_id,
+                   edited_at, pinned, created_at
+            FROM messages
+            WHERE channel_id = $1
+            ORDER BY id DESC
+            LIMIT $2
+            "#,
+        )
+        .bind(channel_id)
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+    }
+}
+
+// ── Roles ──────────────────────────────────────────────
+
+pub async fn create_role(
+    pool: &PgPool,
+    id: Uuid,
+    server_id: Uuid,
+    name: &str,
+    permissions: i64,
+    is_default: bool,
+    position: i32,
+) -> Result<Role, sqlx::Error> {
+    sqlx::query_as::<_, Role>(
+        r#"
+        INSERT INTO roles (id, server_id, name, permissions, is_default, position)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, server_id, name, color, hoist, position, permissions,
+                  mentionable, is_default, created_at
+        "#,
+    )
+    .bind(id)
+    .bind(server_id)
+    .bind(name)
+    .bind(permissions)
+    .bind(is_default)
+    .bind(position)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_role_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Role>, sqlx::Error> {
+    sqlx::query_as::<_, Role>(
+        r#"
+        SELECT id, server_id, name, color, hoist, position, permissions,
+               mentionable, is_default, created_at
+        FROM roles WHERE id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn get_server_roles(pool: &PgPool, server_id: Uuid) -> Result<Vec<Role>, sqlx::Error> {
+    sqlx::query_as::<_, Role>(
+        r#"
+        SELECT id, server_id, name, color, hoist, position, permissions,
+               mentionable, is_default, created_at
+        FROM roles
+        WHERE server_id = $1
+        ORDER BY position
+        "#,
+    )
+    .bind(server_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn update_role(
+    pool: &PgPool,
+    id: Uuid,
+    name: Option<&str>,
+    color: Option<i32>,
+    hoist: Option<bool>,
+    position: Option<i32>,
+    permissions: Option<i64>,
+    mentionable: Option<bool>,
+) -> Result<Role, sqlx::Error> {
+    sqlx::query_as::<_, Role>(
+        r#"
+        UPDATE roles SET
+            name = COALESCE($2, name),
+            color = COALESCE($3, color),
+            hoist = COALESCE($4, hoist),
+            position = COALESCE($5, position),
+            permissions = COALESCE($6, permissions),
+            mentionable = COALESCE($7, mentionable)
+        WHERE id = $1
+        RETURNING id, server_id, name, color, hoist, position, permissions,
+                  mentionable, is_default, created_at
+        "#,
+    )
+    .bind(id)
+    .bind(name)
+    .bind(color)
+    .bind(hoist)
+    .bind(position)
+    .bind(permissions)
+    .bind(mentionable)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn delete_role(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM roles WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn get_next_role_position(pool: &PgPool, server_id: Uuid) -> Result<i32, sqlx::Error> {
+    let row: (Option<i32>,) = sqlx::query_as(
+        "SELECT MAX(position) FROM roles WHERE server_id = $1",
+    )
+    .bind(server_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0.unwrap_or(0) + 1)
+}
+
+// ── Member Roles ──────────────────────────────────────
+
+pub async fn assign_member_role(
+    pool: &PgPool,
+    server_id: Uuid,
+    user_id: Uuid,
+    role_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO member_roles (server_id, user_id, role_id)
+        VALUES ($1, $2, $3)
+        ON CONFLICT DO NOTHING
+        "#,
+    )
+    .bind(server_id)
+    .bind(user_id)
+    .bind(role_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn remove_member_role(
+    pool: &PgPool,
+    server_id: Uuid,
+    user_id: Uuid,
+    role_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "DELETE FROM member_roles WHERE server_id = $1 AND user_id = $2 AND role_id = $3",
+    )
+    .bind(server_id)
+    .bind(user_id)
+    .bind(role_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_member_role_ids(
+    pool: &PgPool,
+    server_id: Uuid,
+    user_id: Uuid,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT role_id FROM member_roles WHERE server_id = $1 AND user_id = $2",
+    )
+    .bind(server_id)
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|r| r.0).collect())
+}
+
+pub async fn get_member_roles(
+    pool: &PgPool,
+    server_id: Uuid,
+    user_id: Uuid,
+) -> Result<Vec<Role>, sqlx::Error> {
+    sqlx::query_as::<_, Role>(
+        r#"
+        SELECT r.id, r.server_id, r.name, r.color, r.hoist, r.position, r.permissions,
+               r.mentionable, r.is_default, r.created_at
+        FROM roles r
+        INNER JOIN member_roles mr ON r.id = mr.role_id
+        WHERE mr.server_id = $1 AND mr.user_id = $2
+        ORDER BY r.position
+        "#,
+    )
+    .bind(server_id)
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+}
+
+// ── Channel Overrides ─────────────────────────────────
+
+pub async fn get_channel_overrides(
+    pool: &PgPool,
+    channel_id: Uuid,
+) -> Result<Vec<ChannelOverride>, sqlx::Error> {
+    sqlx::query_as::<_, ChannelOverride>(
+        r#"
+        SELECT id, channel_id, target_type, target_id, allow, deny
+        FROM channel_overrides
+        WHERE channel_id = $1
+        "#,
+    )
+    .bind(channel_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn set_channel_override(
+    pool: &PgPool,
+    id: Uuid,
+    channel_id: Uuid,
+    target_type: &str,
+    target_id: Uuid,
+    allow: i64,
+    deny: i64,
+) -> Result<ChannelOverride, sqlx::Error> {
+    sqlx::query_as::<_, ChannelOverride>(
+        r#"
+        INSERT INTO channel_overrides (id, channel_id, target_type, target_id, allow, deny)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (channel_id, target_type, target_id)
+        DO UPDATE SET allow = $5, deny = $6
+        RETURNING id, channel_id, target_type, target_id, allow, deny
+        "#,
+    )
+    .bind(id)
+    .bind(channel_id)
+    .bind(target_type)
+    .bind(target_id)
+    .bind(allow)
+    .bind(deny)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn delete_channel_override(
+    pool: &PgPool,
+    channel_id: Uuid,
+    target_type: &str,
+    target_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        DELETE FROM channel_overrides
+        WHERE channel_id = $1 AND target_type = $2 AND target_id = $3
+        "#,
+    )
+    .bind(channel_id)
+    .bind(target_type)
+    .bind(target_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_default_role(
+    pool: &PgPool,
+    server_id: Uuid,
+) -> Result<Option<Role>, sqlx::Error> {
+    sqlx::query_as::<_, Role>(
+        r#"
+        SELECT id, server_id, name, color, hoist, position, permissions,
+               mentionable, is_default, created_at
+        FROM roles
+        WHERE server_id = $1 AND is_default = true
+        "#,
+    )
+    .bind(server_id)
+    .fetch_optional(pool)
+    .await
+}
+
+// ── Message Edit/Delete ───────────────────────────────
+
+pub async fn update_message_content(
+    pool: &PgPool,
+    message_id: Uuid,
+    content: &str,
+) -> Result<Message, sqlx::Error> {
+    sqlx::query_as::<_, Message>(
+        r#"
+        UPDATE messages SET content = $2, edited_at = now()
+        WHERE id = $1
+        RETURNING id, instance_id, channel_id, author_id, content, reply_to_id,
+                  edited_at, pinned, created_at
+        "#,
+    )
+    .bind(message_id)
+    .bind(content)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn delete_message(pool: &PgPool, message_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM messages WHERE id = $1")
+        .bind(message_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn delete_channel_messages(pool: &PgPool, channel_id: Uuid) -> Result<u64, sqlx::Error> {
+    let result = sqlx::query("DELETE FROM messages WHERE channel_id = $1")
+        .bind(channel_id)
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected())
+}
+
+pub async fn get_message_by_id(
+    pool: &PgPool,
+    message_id: Uuid,
+) -> Result<Option<Message>, sqlx::Error> {
+    sqlx::query_as::<_, Message>(
+        r#"
+        SELECT id, instance_id, channel_id, author_id, content, reply_to_id,
+               edited_at, pinned, created_at
+        FROM messages WHERE id = $1
+        "#,
+    )
+    .bind(message_id)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn set_message_pinned(
+    pool: &PgPool,
+    message_id: Uuid,
+    pinned: bool,
+) -> Result<Message, sqlx::Error> {
+    sqlx::query_as::<_, Message>(
+        r#"
+        UPDATE messages SET pinned = $2
+        WHERE id = $1
+        RETURNING id, instance_id, channel_id, author_id, content, reply_to_id,
+                  edited_at, pinned, created_at
+        "#,
+    )
+    .bind(message_id)
+    .bind(pinned)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_pinned_messages(
+    pool: &PgPool,
+    channel_id: Uuid,
+) -> Result<Vec<Message>, sqlx::Error> {
+    sqlx::query_as::<_, Message>(
+        r#"
+        SELECT id, instance_id, channel_id, author_id, content, reply_to_id,
+               edited_at, pinned, created_at
+        FROM messages
+        WHERE channel_id = $1 AND pinned = true
+        ORDER BY created_at DESC
+        "#,
+    )
+    .bind(channel_id)
+    .fetch_all(pool)
+    .await
+}
+
+// ── Attachments ───────────────────────────────────────
+
+pub async fn create_attachment(
+    pool: &PgPool,
+    id: Uuid,
+    message_id: Uuid,
+    filename: &str,
+    content_type: &str,
+    size_bytes: i64,
+    url: &str,
+    width: Option<i32>,
+    height: Option<i32>,
+) -> Result<Attachment, sqlx::Error> {
+    sqlx::query_as::<_, Attachment>(
+        r#"
+        INSERT INTO attachments (id, message_id, filename, content_type, size_bytes, url, width, height)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING id, message_id, filename, content_type, size_bytes, url, width, height, created_at
+        "#,
+    )
+    .bind(id)
+    .bind(message_id)
+    .bind(filename)
+    .bind(content_type)
+    .bind(size_bytes)
+    .bind(url)
+    .bind(width)
+    .bind(height)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_message_attachments(
+    pool: &PgPool,
+    message_id: Uuid,
+) -> Result<Vec<Attachment>, sqlx::Error> {
+    sqlx::query_as::<_, Attachment>(
+        r#"
+        SELECT id, message_id, filename, content_type, size_bytes, url, width, height, created_at
+        FROM attachments
+        WHERE message_id = $1
+        ORDER BY created_at
+        "#,
+    )
+    .bind(message_id)
+    .fetch_all(pool)
+    .await
+}
+
+// ── Reactions ─────────────────────────────────────────
+
+pub async fn add_reaction(
+    pool: &PgPool,
+    message_id: Uuid,
+    user_id: Uuid,
+    emoji_name: &str,
+    emoji_id: Option<Uuid>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO reactions (message_id, user_id, emoji_name, emoji_id)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT DO NOTHING
+        "#,
+    )
+    .bind(message_id)
+    .bind(user_id)
+    .bind(emoji_name)
+    .bind(emoji_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn remove_reaction(
+    pool: &PgPool,
+    message_id: Uuid,
+    user_id: Uuid,
+    emoji_name: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "DELETE FROM reactions WHERE message_id = $1 AND user_id = $2 AND emoji_name = $3",
+    )
+    .bind(message_id)
+    .bind(user_id)
+    .bind(emoji_name)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_message_reactions(
+    pool: &PgPool,
+    message_id: Uuid,
+) -> Result<Vec<Reaction>, sqlx::Error> {
+    sqlx::query_as::<_, Reaction>(
+        r#"
+        SELECT message_id, user_id, emoji_name, emoji_id, created_at
+        FROM reactions
+        WHERE message_id = $1
+        ORDER BY created_at
+        "#,
+    )
+    .bind(message_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn get_reactions_for_messages(
+    pool: &PgPool,
+    message_ids: &[Uuid],
+) -> Result<Vec<Reaction>, sqlx::Error> {
+    if message_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    sqlx::query_as::<_, Reaction>(
+        r#"
+        SELECT message_id, user_id, emoji_name, emoji_id, created_at
+        FROM reactions
+        WHERE message_id = ANY($1)
+        ORDER BY created_at
+        "#,
+    )
+    .bind(message_ids)
+    .fetch_all(pool)
+    .await
+}
+
+// ── Relationships ────────────────────────────────────
+
+pub async fn create_relationship(
+    pool: &PgPool,
+    user_id: Uuid,
+    target_id: Uuid,
+    rel_type: RelationshipType,
+) -> Result<Relationship, sqlx::Error> {
+    sqlx::query_as::<_, Relationship>(
+        r#"
+        INSERT INTO relationships (user_id, target_id, rel_type)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (user_id, target_id) DO UPDATE SET rel_type = $3
+        RETURNING user_id, target_id, rel_type, created_at
+        "#,
+    )
+    .bind(user_id)
+    .bind(target_id)
+    .bind(rel_type)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_relationship(
+    pool: &PgPool,
+    user_id: Uuid,
+    target_id: Uuid,
+) -> Result<Option<Relationship>, sqlx::Error> {
+    sqlx::query_as::<_, Relationship>(
+        r#"
+        SELECT user_id, target_id, rel_type, created_at
+        FROM relationships
+        WHERE user_id = $1 AND target_id = $2
+        "#,
+    )
+    .bind(user_id)
+    .bind(target_id)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn delete_relationship(
+    pool: &PgPool,
+    user_id: Uuid,
+    target_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM relationships WHERE user_id = $1 AND target_id = $2")
+        .bind(user_id)
+        .bind(target_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn get_user_relationships(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Vec<Relationship>, sqlx::Error> {
+    sqlx::query_as::<_, Relationship>(
+        r#"
+        SELECT user_id, target_id, rel_type, created_at
+        FROM relationships
+        WHERE user_id = $1
+        ORDER BY created_at DESC
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn get_user_by_username(
+    pool: &PgPool,
+    username: &str,
+) -> Result<Option<User>, sqlx::Error> {
+    sqlx::query_as::<_, User>(
+        r#"
+        SELECT id, instance_id, username, display_name, email, password_hash,
+               avatar_url, bio, status, custom_status, timezone, theme_preference, is_admin, bot, created_at, updated_at
+        FROM users WHERE username = $1
+        "#,
+    )
+    .bind(username)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn search_users_by_username(
+    pool: &PgPool,
+    query: &str,
+    limit: i64,
+) -> Result<Vec<User>, sqlx::Error> {
+    let pattern = format!("{}%", query);
+    sqlx::query_as::<_, User>(
+        r#"
+        SELECT id, instance_id, username, display_name, email, password_hash,
+               avatar_url, bio, status, custom_status, timezone, theme_preference, is_admin, bot, created_at, updated_at
+        FROM users WHERE username ILIKE $1
+        ORDER BY username
+        LIMIT $2
+        "#,
+    )
+    .bind(&pattern)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+}
+
+// ── DM Channels ──────────────────────────────────────
+
+pub async fn add_dm_member(
+    pool: &PgPool,
+    channel_id: Uuid,
+    user_id: Uuid,
+) -> Result<DmMember, sqlx::Error> {
+    sqlx::query_as::<_, DmMember>(
+        r#"
+        INSERT INTO dm_members (channel_id, user_id)
+        VALUES ($1, $2)
+        ON CONFLICT (channel_id, user_id) DO UPDATE SET closed = FALSE
+        RETURNING channel_id, user_id
+        "#,
+    )
+    .bind(channel_id)
+    .bind(user_id)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_dm_channels(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Vec<Channel>, sqlx::Error> {
+    sqlx::query_as::<_, Channel>(
+        r#"
+        SELECT c.id, c.instance_id, c.server_id, c.parent_id, c.channel_type,
+               c.name, c.topic, c.position, c.created_at, c.updated_at, c.last_message_id
+        FROM channels c
+        INNER JOIN dm_members dm ON c.id = dm.channel_id
+        WHERE dm.user_id = $1 AND c.channel_type IN ('dm', 'groupdm') AND dm.closed = FALSE
+        ORDER BY c.updated_at DESC
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn get_dm_members(
+    pool: &PgPool,
+    channel_id: Uuid,
+) -> Result<Vec<User>, sqlx::Error> {
+    sqlx::query_as::<_, User>(
+        r#"
+        SELECT u.id, u.instance_id, u.username, u.display_name, u.email, u.password_hash,
+               u.avatar_url, u.bio, u.status, u.custom_status, u.timezone, u.theme_preference, u.is_admin, u.bot, u.created_at, u.updated_at
+        FROM users u
+        INNER JOIN dm_members dm ON u.id = dm.user_id
+        WHERE dm.channel_id = $1
+        "#,
+    )
+    .bind(channel_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn find_existing_dm(
+    pool: &PgPool,
+    user_a: Uuid,
+    user_b: Uuid,
+) -> Result<Option<Channel>, sqlx::Error> {
+    sqlx::query_as::<_, Channel>(
+        r#"
+        SELECT c.id, c.instance_id, c.server_id, c.parent_id, c.channel_type,
+               c.name, c.topic, c.position, c.created_at, c.updated_at, c.last_message_id
+        FROM channels c
+        WHERE c.channel_type = 'dm'
+          AND c.id IN (
+              SELECT dm1.channel_id FROM dm_members dm1
+              INNER JOIN dm_members dm2 ON dm1.channel_id = dm2.channel_id
+              WHERE dm1.user_id = $1 AND dm2.user_id = $2
+          )
+        LIMIT 1
+        "#,
+    )
+    .bind(user_a)
+    .bind(user_b)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn close_dm(pool: &PgPool, channel_id: Uuid, user_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE dm_members SET closed = TRUE WHERE channel_id = $1 AND user_id = $2")
+        .bind(channel_id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn reopen_dm_for_members(pool: &PgPool, channel_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE dm_members SET closed = FALSE WHERE channel_id = $1")
+        .bind(channel_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+// ── Threads ──────────────────────────────────────────
+
+pub async fn create_thread_metadata(
+    pool: &PgPool,
+    channel_id: Uuid,
+    parent_channel_id: Uuid,
+    starter_message_id: Option<Uuid>,
+) -> Result<ThreadMetadata, sqlx::Error> {
+    sqlx::query_as::<_, ThreadMetadata>(
+        r#"
+        INSERT INTO thread_metadata (channel_id, parent_channel_id, starter_message_id)
+        VALUES ($1, $2, $3)
+        RETURNING channel_id, parent_channel_id, starter_message_id, archived, locked, message_count, created_at
+        "#,
+    )
+    .bind(channel_id)
+    .bind(parent_channel_id)
+    .bind(starter_message_id)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_thread_metadata(
+    pool: &PgPool,
+    channel_id: Uuid,
+) -> Result<Option<ThreadMetadata>, sqlx::Error> {
+    sqlx::query_as::<_, ThreadMetadata>(
+        r#"
+        SELECT channel_id, parent_channel_id, starter_message_id, archived, locked, message_count, created_at
+        FROM thread_metadata WHERE channel_id = $1
+        "#,
+    )
+    .bind(channel_id)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn get_channel_threads(
+    pool: &PgPool,
+    parent_channel_id: Uuid,
+) -> Result<Vec<Channel>, sqlx::Error> {
+    sqlx::query_as::<_, Channel>(
+        r#"
+        SELECT c.id, c.instance_id, c.server_id, c.parent_id, c.channel_type,
+               c.name, c.topic, c.position, c.created_at, c.updated_at, c.last_message_id
+        FROM channels c
+        INNER JOIN thread_metadata tm ON c.id = tm.channel_id
+        WHERE tm.parent_channel_id = $1 AND tm.archived = false
+        ORDER BY c.created_at DESC
+        "#,
+    )
+    .bind(parent_channel_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn increment_thread_message_count(
+    pool: &PgPool,
+    channel_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE thread_metadata SET message_count = message_count + 1 WHERE channel_id = $1",
+    )
+    .bind(channel_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+// ── Search ───────────────────────────────────────────
+
+pub async fn search_messages(
+    pool: &PgPool,
+    query: &str,
+    channel_id: Option<Uuid>,
+    server_id: Option<Uuid>,
+    limit: i32,
+    offset: i32,
+) -> Result<Vec<SearchResult>, sqlx::Error> {
+    sqlx::query_as::<_, SearchResult>(
+        "SELECT * FROM search_messages($1, $2, $3, $4, $5)",
+    )
+    .bind(query)
+    .bind(channel_id)
+    .bind(server_id)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await
+}
+
+// ── Invites ─────────────────────────────────────────────
+
+pub async fn create_invite(
+    pool: &PgPool,
+    id: Uuid,
+    server_id: Uuid,
+    channel_id: Option<Uuid>,
+    creator_id: Uuid,
+    code: &str,
+    max_uses: Option<i32>,
+    expires_at: Option<DateTime<Utc>>,
+) -> Result<Invite, sqlx::Error> {
+    sqlx::query_as::<_, Invite>(
+        r#"
+        INSERT INTO invites (id, server_id, channel_id, creator_id, code, max_uses, expires_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id, server_id, channel_id, creator_id, code, max_uses, uses, expires_at, created_at
+        "#,
+    )
+    .bind(id)
+    .bind(server_id)
+    .bind(channel_id)
+    .bind(creator_id)
+    .bind(code)
+    .bind(max_uses)
+    .bind(expires_at)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_invite_by_code(pool: &PgPool, code: &str) -> Result<Option<Invite>, sqlx::Error> {
+    sqlx::query_as::<_, Invite>(
+        r#"
+        SELECT id, server_id, channel_id, creator_id, code, max_uses, uses, expires_at, created_at
+        FROM invites WHERE code = $1
+        "#,
+    )
+    .bind(code)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn get_server_invites(
+    pool: &PgPool,
+    server_id: Uuid,
+) -> Result<Vec<Invite>, sqlx::Error> {
+    sqlx::query_as::<_, Invite>(
+        r#"
+        SELECT id, server_id, channel_id, creator_id, code, max_uses, uses, expires_at, created_at
+        FROM invites WHERE server_id = $1
+        ORDER BY created_at DESC
+        "#,
+    )
+    .bind(server_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn increment_invite_uses(pool: &PgPool, code: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE invites SET uses = uses + 1 WHERE code = $1")
+        .bind(code)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn delete_invite(pool: &PgPool, code: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM invites WHERE code = $1")
+        .bind(code)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+// ── Bans ────────────────────────────────────────────────
+
+pub async fn create_ban(
+    pool: &PgPool,
+    server_id: Uuid,
+    user_id: Uuid,
+    moderator_id: Uuid,
+    reason: Option<&str>,
+) -> Result<Ban, sqlx::Error> {
+    sqlx::query_as::<_, Ban>(
+        r#"
+        INSERT INTO bans (server_id, user_id, moderator_id, reason)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (server_id, user_id) DO UPDATE SET reason = $4, moderator_id = $3
+        RETURNING server_id, user_id, moderator_id, reason, created_at
+        "#,
+    )
+    .bind(server_id)
+    .bind(user_id)
+    .bind(moderator_id)
+    .bind(reason)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_ban(
+    pool: &PgPool,
+    server_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<Ban>, sqlx::Error> {
+    sqlx::query_as::<_, Ban>(
+        r#"
+        SELECT server_id, user_id, moderator_id, reason, created_at
+        FROM bans WHERE server_id = $1 AND user_id = $2
+        "#,
+    )
+    .bind(server_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn get_server_bans(pool: &PgPool, server_id: Uuid) -> Result<Vec<Ban>, sqlx::Error> {
+    sqlx::query_as::<_, Ban>(
+        r#"
+        SELECT server_id, user_id, moderator_id, reason, created_at
+        FROM bans WHERE server_id = $1
+        ORDER BY created_at DESC
+        "#,
+    )
+    .bind(server_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn delete_ban(pool: &PgPool, server_id: Uuid, user_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM bans WHERE server_id = $1 AND user_id = $2")
+        .bind(server_id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+// ── Audit Log ───────────────────────────────────────────
+
+pub async fn create_audit_log(
+    pool: &PgPool,
+    server_id: Uuid,
+    user_id: Uuid,
+    action: AuditAction,
+    target_id: Option<Uuid>,
+    reason: Option<&str>,
+    changes: Option<serde_json::Value>,
+) -> Result<AuditLogEntry, sqlx::Error> {
+    sqlx::query_as::<_, AuditLogEntry>(
+        r#"
+        INSERT INTO audit_log (server_id, user_id, action, target_id, reason, changes)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, server_id, user_id, action, target_id, reason, changes, created_at
+        "#,
+    )
+    .bind(server_id)
+    .bind(user_id)
+    .bind(action)
+    .bind(target_id)
+    .bind(reason)
+    .bind(changes)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_audit_log(
+    pool: &PgPool,
+    server_id: Uuid,
+    action: Option<AuditAction>,
+    user_id: Option<Uuid>,
+    before: Option<Uuid>,
+    limit: i64,
+) -> Result<Vec<AuditLogEntry>, sqlx::Error> {
+    // Build query dynamically based on filters
+    let mut sql = String::from(
+        "SELECT id, server_id, user_id, action, target_id, reason, changes, created_at \
+         FROM audit_log WHERE server_id = $1",
+    );
+    let mut param_idx = 2u32;
+
+    if action.is_some() {
+        sql.push_str(&format!(" AND action = ${param_idx}"));
+        param_idx += 1;
+    }
+    if user_id.is_some() {
+        sql.push_str(&format!(" AND user_id = ${param_idx}"));
+        param_idx += 1;
+    }
+    if before.is_some() {
+        sql.push_str(&format!(
+            " AND created_at < (SELECT created_at FROM audit_log WHERE id = ${param_idx})"
+        ));
+        param_idx += 1;
+    }
+    sql.push_str(&format!(" ORDER BY created_at DESC LIMIT ${param_idx}"));
+
+    let mut query = sqlx::query_as::<_, AuditLogEntry>(&sql).bind(server_id);
+    if let Some(a) = action {
+        query = query.bind(a);
+    }
+    if let Some(uid) = user_id {
+        query = query.bind(uid);
+    }
+    if let Some(b) = before {
+        query = query.bind(b);
+    }
+    query = query.bind(limit);
+
+    query.fetch_all(pool).await
+}
+
+// ── Webhooks ────────────────────────────────────────────
+
+pub async fn create_webhook(
+    pool: &PgPool,
+    id: Uuid,
+    server_id: Uuid,
+    channel_id: Uuid,
+    creator_id: Uuid,
+    name: &str,
+    token: &str,
+) -> Result<Webhook, sqlx::Error> {
+    sqlx::query_as::<_, Webhook>(
+        r#"
+        INSERT INTO webhooks (id, server_id, channel_id, creator_id, name, token)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, server_id, channel_id, creator_id, name, avatar_url, token, created_at
+        "#,
+    )
+    .bind(id)
+    .bind(server_id)
+    .bind(channel_id)
+    .bind(creator_id)
+    .bind(name)
+    .bind(token)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_webhook_by_id(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<Option<Webhook>, sqlx::Error> {
+    sqlx::query_as::<_, Webhook>(
+        r#"
+        SELECT id, server_id, channel_id, creator_id, name, avatar_url, token, created_at
+        FROM webhooks WHERE id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn get_webhook_by_token(
+    pool: &PgPool,
+    token: &str,
+) -> Result<Option<Webhook>, sqlx::Error> {
+    sqlx::query_as::<_, Webhook>(
+        r#"
+        SELECT id, server_id, channel_id, creator_id, name, avatar_url, token, created_at
+        FROM webhooks WHERE token = $1
+        "#,
+    )
+    .bind(token)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn get_channel_webhooks(
+    pool: &PgPool,
+    channel_id: Uuid,
+) -> Result<Vec<Webhook>, sqlx::Error> {
+    sqlx::query_as::<_, Webhook>(
+        r#"
+        SELECT id, server_id, channel_id, creator_id, name, avatar_url, token, created_at
+        FROM webhooks WHERE channel_id = $1
+        ORDER BY created_at DESC
+        "#,
+    )
+    .bind(channel_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn get_server_webhooks(
+    pool: &PgPool,
+    server_id: Uuid,
+) -> Result<Vec<Webhook>, sqlx::Error> {
+    sqlx::query_as::<_, Webhook>(
+        r#"
+        SELECT id, server_id, channel_id, creator_id, name, avatar_url, token, created_at
+        FROM webhooks WHERE server_id = $1
+        ORDER BY created_at DESC
+        "#,
+    )
+    .bind(server_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn update_webhook(
+    pool: &PgPool,
+    id: Uuid,
+    name: Option<&str>,
+    channel_id: Option<Uuid>,
+) -> Result<Webhook, sqlx::Error> {
+    sqlx::query_as::<_, Webhook>(
+        r#"
+        UPDATE webhooks
+        SET name = COALESCE($2, name),
+            channel_id = COALESCE($3, channel_id)
+        WHERE id = $1
+        RETURNING id, server_id, channel_id, creator_id, name, avatar_url, token, created_at
+        "#,
+    )
+    .bind(id)
+    .bind(name)
+    .bind(channel_id)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn delete_webhook(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM webhooks WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+// ── User Status ─────────────────────────────────────────
+
+pub async fn update_user_status(
+    pool: &PgPool,
+    user_id: Uuid,
+    status: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET status = $2, updated_at = now() WHERE id = $1")
+        .bind(user_id)
+        .bind(status)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn update_user_custom_status(
+    pool: &PgPool,
+    user_id: Uuid,
+    custom_status: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET custom_status = $2, updated_at = now() WHERE id = $1")
+        .bind(user_id)
+        .bind(custom_status)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn update_user_profile(
+    pool: &PgPool,
+    user_id: Uuid,
+    display_name: Option<&str>,
+    bio: Option<&str>,
+    avatar_url: Option<&str>,
+    theme_preference: Option<&str>,
+    timezone: Option<&str>,
+) -> Result<User, sqlx::Error> {
+    sqlx::query_as::<_, User>(
+        r#"
+        UPDATE users SET
+            display_name = COALESCE($2, display_name),
+            bio = COALESCE($3, bio),
+            avatar_url = COALESCE($4, avatar_url),
+            theme_preference = COALESCE($5, theme_preference),
+            timezone = COALESCE($6, timezone),
+            updated_at = now()
+        WHERE id = $1
+        RETURNING id, instance_id, username, display_name, email, password_hash,
+                  avatar_url, bio, status, custom_status, timezone, theme_preference, is_admin, bot, created_at, updated_at
+        "#,
+    )
+    .bind(user_id)
+    .bind(display_name)
+    .bind(bio)
+    .bind(avatar_url)
+    .bind(theme_preference)
+    .bind(timezone)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn update_server(
+    pool: &PgPool,
+    server_id: Uuid,
+    name: Option<&str>,
+    description: Option<&str>,
+    icon_url: Option<&str>,
+    banner_url: Option<&str>,
+    banner_position: Option<i16>,
+) -> Result<Server, sqlx::Error> {
+    sqlx::query_as::<_, Server>(
+        r#"
+        UPDATE servers SET
+            name = COALESCE($2, name),
+            description = COALESCE($3, description),
+            icon_url = COALESCE($4, icon_url),
+            banner_url = COALESCE($5, banner_url),
+            banner_position = COALESCE($6, banner_position),
+            updated_at = now()
+        WHERE id = $1
+        RETURNING id, instance_id, name, description, icon_url, banner_url, banner_position,
+                  owner_id, default_channel_id, created_at, updated_at
+        "#,
+    )
+    .bind(server_id)
+    .bind(name)
+    .bind(description)
+    .bind(icon_url)
+    .bind(banner_url)
+    .bind(banner_position)
+    .fetch_one(pool)
+    .await
+}
+
+// ── Registration Codes ──────────────────────────────────
+
+pub async fn count_users(pool: &PgPool) -> Result<i64, sqlx::Error> {
+    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users")
+        .fetch_one(pool)
+        .await?;
+    Ok(row.0)
+}
+
+pub async fn set_user_admin(pool: &PgPool, user_id: Uuid, is_admin: bool) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET is_admin = $2 WHERE id = $1")
+        .bind(user_id)
+        .bind(is_admin)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn create_registration_code(
+    pool: &PgPool,
+    id: Uuid,
+    creator_id: Uuid,
+    code: &str,
+    max_uses: Option<i32>,
+    expires_at: Option<DateTime<Utc>>,
+) -> Result<RegistrationCode, sqlx::Error> {
+    sqlx::query_as::<_, RegistrationCode>(
+        r#"
+        INSERT INTO registration_codes (id, creator_id, code, max_uses, expires_at)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id, code, creator_id, max_uses, uses, expires_at, created_at
+        "#,
+    )
+    .bind(id)
+    .bind(creator_id)
+    .bind(code)
+    .bind(max_uses)
+    .bind(expires_at)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_registration_code_by_code(
+    pool: &PgPool,
+    code: &str,
+) -> Result<Option<RegistrationCode>, sqlx::Error> {
+    sqlx::query_as::<_, RegistrationCode>(
+        r#"
+        SELECT id, code, creator_id, max_uses, uses, expires_at, created_at
+        FROM registration_codes WHERE code = $1
+        "#,
+    )
+    .bind(code)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn get_all_registration_codes(pool: &PgPool) -> Result<Vec<RegistrationCode>, sqlx::Error> {
+    sqlx::query_as::<_, RegistrationCode>(
+        r#"
+        SELECT id, code, creator_id, max_uses, uses, expires_at, created_at
+        FROM registration_codes
+        ORDER BY created_at DESC
+        "#,
+    )
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn increment_registration_code_uses(pool: &PgPool, code: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE registration_codes SET uses = uses + 1 WHERE code = $1")
+        .bind(code)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn delete_registration_code(pool: &PgPool, code: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM registration_codes WHERE code = $1")
+        .bind(code)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+// ── Read States ──────────────────────────────────────────
+
+pub async fn get_user_read_states(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Vec<ReadState>, sqlx::Error> {
+    sqlx::query_as::<_, ReadState>(
+        r#"
+        SELECT channel_id, last_read_message_id, mention_count
+        FROM read_states
+        WHERE user_id = $1
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn ack_channel(
+    pool: &PgPool,
+    user_id: Uuid,
+    channel_id: Uuid,
+    message_id: Uuid,
+) -> Result<ReadState, sqlx::Error> {
+    sqlx::query_as::<_, ReadState>(
+        r#"
+        INSERT INTO read_states (user_id, channel_id, last_read_message_id, mention_count, updated_at)
+        VALUES ($1, $2, $3, 0, now())
+        ON CONFLICT (user_id, channel_id) DO UPDATE SET
+            last_read_message_id = GREATEST(read_states.last_read_message_id, $3),
+            mention_count = 0,
+            updated_at = now()
+        RETURNING channel_id, last_read_message_id, mention_count
+        "#,
+    )
+    .bind(user_id)
+    .bind(channel_id)
+    .bind(message_id)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn increment_mention_counts(
+    pool: &PgPool,
+    channel_id: Uuid,
+    user_ids: &[Uuid],
+) -> Result<(), sqlx::Error> {
+    if user_ids.is_empty() {
+        return Ok(());
+    }
+    sqlx::query(
+        r#"
+        INSERT INTO read_states (user_id, channel_id, mention_count, updated_at)
+        SELECT unnest($1::uuid[]), $2, 1, now()
+        ON CONFLICT (user_id, channel_id) DO UPDATE SET
+            mention_count = read_states.mention_count + 1,
+            updated_at = now()
+        "#,
+    )
+    .bind(user_ids)
+    .bind(channel_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn update_channel_last_message(
+    pool: &PgPool,
+    channel_id: Uuid,
+    message_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE channels SET last_message_id = $2 WHERE id = $1")
+        .bind(channel_id)
+        .bind(message_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+// ── Notification Preferences ──────────────────────────
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
+pub struct NotificationPreference {
+    pub target_id: Uuid,
+    pub target_type: String,
+    pub notification_level: String,
+    pub muted: bool,
+}
+
+pub async fn get_notification_preferences(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Vec<NotificationPreference>, sqlx::Error> {
+    sqlx::query_as::<_, NotificationPreference>(
+        "SELECT target_id, target_type, notification_level, muted FROM notification_preferences WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn upsert_notification_preference(
+    pool: &PgPool,
+    user_id: Uuid,
+    target_id: Uuid,
+    target_type: &str,
+    notification_level: &str,
+    muted: bool,
+) -> Result<NotificationPreference, sqlx::Error> {
+    sqlx::query_as::<_, NotificationPreference>(
+        r#"
+        INSERT INTO notification_preferences (user_id, target_id, target_type, notification_level, muted, updated_at)
+        VALUES ($1, $2, $3, $4, $5, now())
+        ON CONFLICT (user_id, target_id) DO UPDATE SET
+            notification_level = $4,
+            muted = $5,
+            updated_at = now()
+        RETURNING target_id, target_type, notification_level, muted
+        "#,
+    )
+    .bind(user_id)
+    .bind(target_id)
+    .bind(target_type)
+    .bind(notification_level)
+    .bind(muted)
+    .fetch_one(pool)
+    .await
+}
+
+// ── Password Reset Tokens ─────────────────────────────
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct PasswordResetToken {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub token_hash: String,
+    pub expires_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+}
+
+pub async fn create_password_reset_token(
+    pool: &PgPool,
+    id: Uuid,
+    user_id: Uuid,
+    token_hash: &str,
+    expires_at: DateTime<Utc>,
+) -> Result<PasswordResetToken, sqlx::Error> {
+    sqlx::query_as::<_, PasswordResetToken>(
+        r#"
+        INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id, user_id, token_hash, expires_at, created_at
+        "#,
+    )
+    .bind(id)
+    .bind(user_id)
+    .bind(token_hash)
+    .bind(expires_at)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_password_reset_token_by_hash(
+    pool: &PgPool,
+    token_hash: &str,
+) -> Result<Option<PasswordResetToken>, sqlx::Error> {
+    sqlx::query_as::<_, PasswordResetToken>(
+        r#"
+        SELECT id, user_id, token_hash, expires_at, created_at
+        FROM password_reset_tokens
+        WHERE token_hash = $1 AND expires_at > now()
+        "#,
+    )
+    .bind(token_hash)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn delete_password_reset_token(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM password_reset_tokens WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn delete_user_password_reset_tokens(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM password_reset_tokens WHERE user_id = $1")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn update_user_password_hash(
+    pool: &PgPool,
+    user_id: Uuid,
+    password_hash: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET password_hash = $2, updated_at = now() WHERE id = $1")
+        .bind(user_id)
+        .bind(password_hash)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+// ── Soundboard ──────────────────────────────────────────
+
+pub async fn create_soundboard_sound(
+    pool: &PgPool,
+    id: Uuid,
+    server_id: Uuid,
+    uploader_id: Uuid,
+    name: &str,
+    audio_url: &str,
+    duration_ms: i32,
+    emoji_name: Option<&str>,
+) -> Result<SoundboardSound, sqlx::Error> {
+    sqlx::query_as::<_, SoundboardSound>(
+        "INSERT INTO soundboard_sounds (id, server_id, uploader_id, name, audio_url, duration_ms, emoji_name)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING *",
+    )
+    .bind(id)
+    .bind(server_id)
+    .bind(uploader_id)
+    .bind(name)
+    .bind(audio_url)
+    .bind(duration_ms)
+    .bind(emoji_name)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_soundboard_sounds(
+    pool: &PgPool,
+    server_id: Uuid,
+) -> Result<Vec<SoundboardSound>, sqlx::Error> {
+    sqlx::query_as::<_, SoundboardSound>(
+        "SELECT * FROM soundboard_sounds WHERE server_id = $1 ORDER BY created_at",
+    )
+    .bind(server_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn get_soundboard_sound(
+    pool: &PgPool,
+    sound_id: Uuid,
+) -> Result<Option<SoundboardSound>, sqlx::Error> {
+    sqlx::query_as::<_, SoundboardSound>("SELECT * FROM soundboard_sounds WHERE id = $1")
+        .bind(sound_id)
+        .fetch_optional(pool)
+        .await
+}
+
+pub async fn delete_soundboard_sound(
+    pool: &PgPool,
+    sound_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM soundboard_sounds WHERE id = $1")
+        .bind(sound_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn count_server_sounds(
+    pool: &PgPool,
+    server_id: Uuid,
+) -> Result<i64, sqlx::Error> {
+    let row: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM soundboard_sounds WHERE server_id = $1")
+            .bind(server_id)
+            .fetch_one(pool)
+            .await?;
+    Ok(row.0)
+}
+
+pub async fn set_member_join_sound(
+    pool: &PgPool,
+    server_id: Uuid,
+    user_id: Uuid,
+    sound_id: Option<Uuid>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE server_members SET join_sound_id = $3 WHERE server_id = $1 AND user_id = $2",
+    )
+    .bind(server_id)
+    .bind(user_id)
+    .bind(sound_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_member_join_sound(
+    pool: &PgPool,
+    server_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<SoundboardSound>, sqlx::Error> {
+    sqlx::query_as::<_, SoundboardSound>(
+        "SELECT ss.* FROM soundboard_sounds ss
+         JOIN server_members sm ON sm.join_sound_id = ss.id
+         WHERE sm.server_id = $1 AND sm.user_id = $2",
+    )
+    .bind(server_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+}
+
+// ── Custom Themes ─────────────────────────────────────
+
+pub async fn create_custom_theme(
+    pool: &PgPool,
+    user_id: Uuid,
+    name: &str,
+    colors: &serde_json::Value,
+) -> Result<UserCustomTheme, sqlx::Error> {
+    sqlx::query_as::<_, UserCustomTheme>(
+        "INSERT INTO user_custom_themes (user_id, name, colors)
+         VALUES ($1, $2, $3)
+         RETURNING *",
+    )
+    .bind(user_id)
+    .bind(name)
+    .bind(colors)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_custom_themes_by_user(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Vec<UserCustomTheme>, sqlx::Error> {
+    sqlx::query_as::<_, UserCustomTheme>(
+        "SELECT * FROM user_custom_themes WHERE user_id = $1 ORDER BY created_at",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn get_custom_theme_by_id(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<Option<UserCustomTheme>, sqlx::Error> {
+    sqlx::query_as::<_, UserCustomTheme>(
+        "SELECT * FROM user_custom_themes WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn update_custom_theme(
+    pool: &PgPool,
+    id: Uuid,
+    name: Option<&str>,
+    colors: Option<&serde_json::Value>,
+) -> Result<UserCustomTheme, sqlx::Error> {
+    sqlx::query_as::<_, UserCustomTheme>(
+        "UPDATE user_custom_themes SET
+            name = COALESCE($2, name),
+            colors = COALESCE($3, colors),
+            updated_at = now()
+         WHERE id = $1
+         RETURNING *",
+    )
+    .bind(id)
+    .bind(name)
+    .bind(colors)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn delete_custom_theme(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM user_custom_themes WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn count_user_custom_themes(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<i64, sqlx::Error> {
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM user_custom_themes WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
+}
+
+// ── Message Bookmarks ─────────────────────────────────
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BookmarkWithMessage {
+    pub message_id: Uuid,
+    pub tags: Vec<String>,
+    pub note: Option<String>,
+    pub bookmarked_at: DateTime<Utc>,
+    #[serde(flatten)]
+    pub message: Message,
+    pub author: Option<PublicUser>,
+    pub channel_name: Option<String>,
+    pub server_id: Option<Uuid>,
+    pub server_name: Option<String>,
+}
+
+pub async fn get_bookmarks_for_user(
+    pool: &PgPool,
+    user_id: Uuid,
+    tag: Option<&str>,
+    search: Option<&str>,
+    before: Option<Uuid>,
+    limit: i64,
+) -> Result<Vec<BookmarkWithMessage>, sqlx::Error> {
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            mb.message_id, mb.tags, mb.note, mb.created_at AS bookmarked_at,
+            m.id, m.instance_id, m.channel_id, m.author_id, m.content,
+            m.reply_to_id, m.edited_at, m.pinned, m.created_at AS msg_created_at,
+            c.name AS channel_name, c.server_id,
+            s.name AS server_name,
+            u.id AS author_uid, u.username AS author_username,
+            u.display_name AS author_display_name, u.avatar_url AS author_avatar_url,
+            u.bio AS author_bio, u.status AS author_status,
+            u.custom_status AS author_custom_status, u.timezone AS author_timezone,
+            u.theme_preference AS author_theme_preference, u.bot AS author_bot
+        FROM message_bookmarks mb
+        JOIN messages m ON m.id = mb.message_id
+        JOIN channels c ON c.id = m.channel_id
+        LEFT JOIN servers s ON s.id = c.server_id
+        LEFT JOIN users u ON u.id = m.author_id
+        WHERE mb.user_id = $1
+          AND ($2::text IS NULL OR mb.tags @> ARRAY[$2::text])
+          AND ($3::text IS NULL OR m.content ILIKE '%' || $3 || '%')
+          AND ($4::uuid IS NULL OR mb.created_at < (
+              SELECT created_at FROM message_bookmarks
+              WHERE user_id = $1 AND message_id = $4
+          ))
+        ORDER BY mb.created_at DESC
+        LIMIT $5
+        "#,
+    )
+    .bind(user_id)
+    .bind(tag)
+    .bind(search)
+    .bind(before)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+
+    let mut results = Vec::with_capacity(rows.len());
+    for row in &rows {
+        use sqlx::Row;
+        let author_uid: Option<Uuid> = row.get("author_uid");
+        let author = author_uid.map(|id| PublicUser {
+            id,
+            username: row.get("author_username"),
+            display_name: row.get("author_display_name"),
+            avatar_url: row.get("author_avatar_url"),
+            bio: row.get("author_bio"),
+            status: row.get("author_status"),
+            custom_status: row.get("author_custom_status"),
+            timezone: row.get("author_timezone"),
+            theme_preference: row.get("author_theme_preference"),
+            bot: row.get("author_bot"),
+        });
+        results.push(BookmarkWithMessage {
+            message_id: row.get("message_id"),
+            tags: row.get("tags"),
+            note: row.get("note"),
+            bookmarked_at: row.get("bookmarked_at"),
+            message: Message {
+                id: row.get("id"),
+                instance_id: row.get("instance_id"),
+                channel_id: row.get("channel_id"),
+                author_id: row.get("author_id"),
+                content: row.get("content"),
+                reply_to_id: row.get("reply_to_id"),
+                edited_at: row.get("edited_at"),
+                pinned: row.get("pinned"),
+                created_at: row.get("msg_created_at"),
+            },
+            author,
+            channel_name: row.get("channel_name"),
+            server_id: row.get("server_id"),
+            server_name: row.get("server_name"),
+        });
+    }
+    Ok(results)
+}
+
+pub async fn upsert_bookmark(
+    pool: &PgPool,
+    user_id: Uuid,
+    message_id: Uuid,
+    tags: &[String],
+    note: Option<&str>,
+) -> Result<MessageBookmark, sqlx::Error> {
+    sqlx::query_as::<_, MessageBookmark>(
+        r#"
+        INSERT INTO message_bookmarks (user_id, message_id, tags, note)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (user_id, message_id) DO UPDATE SET
+            tags = $3,
+            note = $4
+        RETURNING *
+        "#,
+    )
+    .bind(user_id)
+    .bind(message_id)
+    .bind(tags)
+    .bind(note)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn update_bookmark(
+    pool: &PgPool,
+    user_id: Uuid,
+    message_id: Uuid,
+    tags: Option<&[String]>,
+    note: Option<&str>,
+) -> Result<MessageBookmark, sqlx::Error> {
+    sqlx::query_as::<_, MessageBookmark>(
+        r#"
+        UPDATE message_bookmarks SET
+            tags = COALESCE($3, tags),
+            note = COALESCE($4, note)
+        WHERE user_id = $1 AND message_id = $2
+        RETURNING *
+        "#,
+    )
+    .bind(user_id)
+    .bind(message_id)
+    .bind(tags)
+    .bind(note)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn delete_bookmark(
+    pool: &PgPool,
+    user_id: Uuid,
+    message_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "DELETE FROM message_bookmarks WHERE user_id = $1 AND message_id = $2",
+    )
+    .bind(user_id)
+    .bind(message_id)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+pub async fn get_user_bookmark_tags(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Vec<String>, sqlx::Error> {
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT DISTINCT unnest(tags) AS tag FROM message_bookmarks WHERE user_id = $1 ORDER BY tag",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|r| r.0).collect())
+}
+
+pub async fn get_bookmarked_message_ids(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT message_id FROM message_bookmarks WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|r| r.0).collect())
+}
+
+pub async fn count_user_bookmarks(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<i64, sqlx::Error> {
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM message_bookmarks WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
+}
+
+// ── Scheduled Messages ────────────────────────────────
+
+pub async fn create_scheduled_message(
+    pool: &PgPool,
+    id: Uuid,
+    channel_id: Uuid,
+    author_id: Uuid,
+    content: &str,
+    reply_to_id: Option<Uuid>,
+    send_at: DateTime<Utc>,
+) -> Result<ScheduledMessage, sqlx::Error> {
+    sqlx::query_as::<_, ScheduledMessage>(
+        r#"
+        INSERT INTO scheduled_messages (id, channel_id, author_id, content, reply_to_id, send_at)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING *
+        "#,
+    )
+    .bind(id)
+    .bind(channel_id)
+    .bind(author_id)
+    .bind(content)
+    .bind(reply_to_id)
+    .bind(send_at)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_scheduled_messages_for_user(
+    pool: &PgPool,
+    author_id: Uuid,
+) -> Result<Vec<ScheduledMessage>, sqlx::Error> {
+    sqlx::query_as::<_, ScheduledMessage>(
+        r#"
+        SELECT * FROM scheduled_messages
+        WHERE author_id = $1
+        ORDER BY send_at ASC
+        "#,
+    )
+    .bind(author_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn update_scheduled_message(
+    pool: &PgPool,
+    id: Uuid,
+    author_id: Uuid,
+    content: Option<&str>,
+    send_at: Option<DateTime<Utc>>,
+) -> Result<ScheduledMessage, sqlx::Error> {
+    sqlx::query_as::<_, ScheduledMessage>(
+        r#"
+        UPDATE scheduled_messages
+        SET content = COALESCE($3, content),
+            send_at = COALESCE($4, send_at)
+        WHERE id = $1 AND author_id = $2
+        RETURNING *
+        "#,
+    )
+    .bind(id)
+    .bind(author_id)
+    .bind(content)
+    .bind(send_at)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn delete_scheduled_message(
+    pool: &PgPool,
+    id: Uuid,
+    author_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "DELETE FROM scheduled_messages WHERE id = $1 AND author_id = $2",
+    )
+    .bind(id)
+    .bind(author_id)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+pub async fn get_due_scheduled_messages(
+    pool: &PgPool,
+) -> Result<Vec<ScheduledMessage>, sqlx::Error> {
+    sqlx::query_as::<_, ScheduledMessage>(
+        r#"
+        SELECT * FROM scheduled_messages
+        WHERE send_at <= now()
+        ORDER BY send_at ASC
+        LIMIT 100
+        "#,
+    )
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn delete_scheduled_message_by_id(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM scheduled_messages WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+// ── Channel Links ─────────────────────────────────────
+
+#[allow(clippy::too_many_arguments)]
+pub async fn create_channel_link(
+    pool: &PgPool,
+    id: Uuid,
+    channel_id: Uuid,
+    added_by: Uuid,
+    url: &str,
+    title: Option<&str>,
+    description: Option<&str>,
+    image: Option<&str>,
+    site_name: Option<&str>,
+    tags: &[String],
+    note: Option<&str>,
+) -> Result<ChannelLink, sqlx::Error> {
+    sqlx::query_as::<_, ChannelLink>(
+        r#"
+        INSERT INTO channel_links (id, channel_id, added_by, url, title, description, image, site_name, tags, note)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        RETURNING *
+        "#,
+    )
+    .bind(id)
+    .bind(channel_id)
+    .bind(added_by)
+    .bind(url)
+    .bind(title)
+    .bind(description)
+    .bind(image)
+    .bind(site_name)
+    .bind(tags)
+    .bind(note)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_channel_links(
+    pool: &PgPool,
+    channel_id: Uuid,
+    tag: Option<&str>,
+    search: Option<&str>,
+    limit: i64,
+) -> Result<Vec<ChannelLink>, sqlx::Error> {
+    sqlx::query_as::<_, ChannelLink>(
+        r#"
+        SELECT * FROM channel_links
+        WHERE channel_id = $1
+          AND ($2::text IS NULL OR tags @> ARRAY[$2::text])
+          AND ($3::text IS NULL OR (
+            url ILIKE '%' || $3 || '%'
+            OR title ILIKE '%' || $3 || '%'
+            OR description ILIKE '%' || $3 || '%'
+            OR note ILIKE '%' || $3 || '%'
+          ))
+        ORDER BY created_at DESC
+        LIMIT $4
+        "#,
+    )
+    .bind(channel_id)
+    .bind(tag)
+    .bind(search)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn get_channel_link_by_id(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<Option<ChannelLink>, sqlx::Error> {
+    sqlx::query_as::<_, ChannelLink>("SELECT * FROM channel_links WHERE id = $1")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+}
+
+pub async fn update_channel_link(
+    pool: &PgPool,
+    id: Uuid,
+    tags: Option<&[String]>,
+    note: Option<&str>,
+) -> Result<ChannelLink, sqlx::Error> {
+    sqlx::query_as::<_, ChannelLink>(
+        r#"
+        UPDATE channel_links
+        SET tags = COALESCE($2, tags),
+            note = COALESCE($3, note)
+        WHERE id = $1
+        RETURNING *
+        "#,
+    )
+    .bind(id)
+    .bind(tags)
+    .bind(note)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn delete_channel_link(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query("DELETE FROM channel_links WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+pub async fn get_channel_link_tags(
+    pool: &PgPool,
+    channel_id: Uuid,
+) -> Result<Vec<String>, sqlx::Error> {
+    let rows: Vec<(String,)> = sqlx::query_as(
+        r#"
+        SELECT DISTINCT unnest(tags) AS tag
+        FROM channel_links
+        WHERE channel_id = $1
+        ORDER BY tag
+        "#,
+    )
+    .bind(channel_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(t,)| t).collect())
+}
+
+pub async fn count_channel_links(
+    pool: &PgPool,
+    channel_id: Uuid,
+) -> Result<i64, sqlx::Error> {
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM channel_links WHERE channel_id = $1",
+    )
+    .bind(channel_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
+}
+
+// ── Polls ─────────────────────────────────────────────
+
+pub async fn create_poll(
+    pool: &PgPool,
+    id: Uuid,
+    message_id: Uuid,
+    channel_id: Uuid,
+    creator_id: Uuid,
+    question: &str,
+    poll_type: PollType,
+    anonymous: bool,
+    closes_at: Option<DateTime<Utc>>,
+) -> Result<Poll, sqlx::Error> {
+    sqlx::query_as::<_, Poll>(
+        r#"INSERT INTO polls (id, message_id, channel_id, creator_id, question, poll_type, anonymous, closes_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING *"#,
+    )
+    .bind(id)
+    .bind(message_id)
+    .bind(channel_id)
+    .bind(creator_id)
+    .bind(question)
+    .bind(poll_type)
+    .bind(anonymous)
+    .bind(closes_at)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn create_poll_option(
+    pool: &PgPool,
+    id: Uuid,
+    poll_id: Uuid,
+    label: &str,
+    position: i16,
+) -> Result<PollOption, sqlx::Error> {
+    sqlx::query_as::<_, PollOption>(
+        r#"INSERT INTO poll_options (id, poll_id, label, position)
+        VALUES ($1, $2, $3, $4)
+        RETURNING *"#,
+    )
+    .bind(id)
+    .bind(poll_id)
+    .bind(label)
+    .bind(position)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_poll_by_id(
+    pool: &PgPool,
+    poll_id: Uuid,
+) -> Result<Option<Poll>, sqlx::Error> {
+    sqlx::query_as::<_, Poll>("SELECT * FROM polls WHERE id = $1")
+        .bind(poll_id)
+        .fetch_optional(pool)
+        .await
+}
+
+pub async fn get_poll_by_message_id(
+    pool: &PgPool,
+    message_id: Uuid,
+) -> Result<Option<Poll>, sqlx::Error> {
+    sqlx::query_as::<_, Poll>("SELECT * FROM polls WHERE message_id = $1")
+        .bind(message_id)
+        .fetch_optional(pool)
+        .await
+}
+
+pub async fn get_poll_options(
+    pool: &PgPool,
+    poll_id: Uuid,
+) -> Result<Vec<PollOption>, sqlx::Error> {
+    sqlx::query_as::<_, PollOption>(
+        "SELECT * FROM poll_options WHERE poll_id = $1 ORDER BY position",
+    )
+    .bind(poll_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn get_poll_votes(
+    pool: &PgPool,
+    poll_id: Uuid,
+) -> Result<Vec<PollVote>, sqlx::Error> {
+    sqlx::query_as::<_, PollVote>("SELECT * FROM poll_votes WHERE poll_id = $1")
+        .bind(poll_id)
+        .fetch_all(pool)
+        .await
+}
+
+pub async fn get_user_poll_votes(
+    pool: &PgPool,
+    poll_id: Uuid,
+    user_id: Uuid,
+) -> Result<Vec<PollVote>, sqlx::Error> {
+    sqlx::query_as::<_, PollVote>(
+        "SELECT * FROM poll_votes WHERE poll_id = $1 AND user_id = $2",
+    )
+    .bind(poll_id)
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn delete_user_poll_votes(
+    pool: &PgPool,
+    poll_id: Uuid,
+    user_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM poll_votes WHERE poll_id = $1 AND user_id = $2")
+        .bind(poll_id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn insert_poll_vote(
+    pool: &PgPool,
+    id: Uuid,
+    poll_id: Uuid,
+    option_id: Uuid,
+    user_id: Uuid,
+    rank: Option<i16>,
+) -> Result<PollVote, sqlx::Error> {
+    sqlx::query_as::<_, PollVote>(
+        r#"INSERT INTO poll_votes (id, poll_id, option_id, user_id, rank)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING *"#,
+    )
+    .bind(id)
+    .bind(poll_id)
+    .bind(option_id)
+    .bind(user_id)
+    .bind(rank)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn close_poll(
+    pool: &PgPool,
+    poll_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE polls SET closed = true WHERE id = $1")
+        .bind(poll_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn get_expired_open_polls(pool: &PgPool) -> Result<Vec<Poll>, sqlx::Error> {
+    sqlx::query_as::<_, Poll>(
+        r#"SELECT * FROM polls
+        WHERE closed = false AND closes_at IS NOT NULL AND closes_at <= now()
+        ORDER BY closes_at ASC
+        LIMIT 100"#,
+    )
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn get_polls_for_messages(
+    pool: &PgPool,
+    message_ids: &[Uuid],
+) -> Result<Vec<Poll>, sqlx::Error> {
+    sqlx::query_as::<_, Poll>("SELECT * FROM polls WHERE message_id = ANY($1)")
+        .bind(message_ids)
+        .fetch_all(pool)
+        .await
+}
+
+pub async fn get_poll_options_for_polls(
+    pool: &PgPool,
+    poll_ids: &[Uuid],
+) -> Result<Vec<PollOption>, sqlx::Error> {
+    sqlx::query_as::<_, PollOption>(
+        "SELECT * FROM poll_options WHERE poll_id = ANY($1) ORDER BY poll_id, position",
+    )
+    .bind(poll_ids)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn get_poll_votes_for_polls(
+    pool: &PgPool,
+    poll_ids: &[Uuid],
+) -> Result<Vec<PollVote>, sqlx::Error> {
+    sqlx::query_as::<_, PollVote>("SELECT * FROM poll_votes WHERE poll_id = ANY($1)")
+        .bind(poll_ids)
+        .fetch_all(pool)
+        .await
+}
+
+// ── Push Subscriptions ───────────────────────────────
+
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize)]
+pub struct PushSubscription {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub endpoint: String,
+    pub p256dh_key: String,
+    pub auth_key: String,
+    pub user_agent: Option<String>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+pub async fn upsert_push_subscription(
+    pool: &PgPool,
+    user_id: Uuid,
+    endpoint: &str,
+    p256dh_key: &str,
+    auth_key: &str,
+    user_agent: Option<&str>,
+) -> Result<PushSubscription, sqlx::Error> {
+    sqlx::query_as::<_, PushSubscription>(
+        r#"
+        INSERT INTO push_subscriptions (user_id, endpoint, p256dh_key, auth_key, user_agent)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (endpoint) DO UPDATE SET
+            user_id = $1,
+            p256dh_key = $3,
+            auth_key = $4,
+            user_agent = $5,
+            created_at = now()
+        RETURNING *
+        "#,
+    )
+    .bind(user_id)
+    .bind(endpoint)
+    .bind(p256dh_key)
+    .bind(auth_key)
+    .bind(user_agent)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn delete_push_subscription(
+    pool: &PgPool,
+    user_id: Uuid,
+    endpoint: &str,
+) -> Result<bool, sqlx::Error> {
+    let result =
+        sqlx::query("DELETE FROM push_subscriptions WHERE user_id = $1 AND endpoint = $2")
+            .bind(user_id)
+            .bind(endpoint)
+            .execute(pool)
+            .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+pub async fn delete_push_subscription_by_endpoint(
+    pool: &PgPool,
+    endpoint: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM push_subscriptions WHERE endpoint = $1")
+        .bind(endpoint)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn get_push_subscriptions_for_users(
+    pool: &PgPool,
+    user_ids: &[Uuid],
+) -> Result<Vec<PushSubscription>, sqlx::Error> {
+    sqlx::query_as::<_, PushSubscription>(
+        "SELECT * FROM push_subscriptions WHERE user_id = ANY($1)",
+    )
+    .bind(user_ids)
+    .fetch_all(pool)
+    .await
+}

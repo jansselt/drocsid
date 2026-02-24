@@ -1,0 +1,344 @@
+.message-list-wrapper {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.message-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.message-list-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.message {
+  padding: 0.125rem 1rem;
+  position: relative;
+}
+
+.message.with-header {
+  margin-top: 1rem;
+  padding-top: 0.25rem;
+}
+
+.message:hover {
+  background: var(--bg-hover);
+}
+
+.message.editing {
+  background: rgba(99, 102, 241, 0.06);
+}
+
+.message.pinned {
+  border-left: 2px solid var(--accent);
+  padding-left: calc(0.5rem - 2px);
+}
+
+.message-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.message-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 0.875rem;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.message-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.message-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.message-author {
+  font-weight: 600;
+  font-size: 0.9375rem;
+  color: var(--text-primary);
+}
+
+.message-author.own {
+  color: var(--accent);
+}
+
+.message-timestamp {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+
+.message-content {
+  padding-left: 56px;
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+  line-height: 1.375;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.message.compact .message-content {
+  padding-left: 56px;
+}
+
+.message-edited {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  margin-left: 0.25rem;
+}
+
+.message-pin-badge {
+  display: inline-block;
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--accent);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-right: 0.375rem;
+  vertical-align: middle;
+}
+
+/* ── Action bar ─────────────────────────────────────── */
+
+.message-actions {
+  position: absolute;
+  top: -12px;
+  right: 1rem;
+  display: flex;
+  gap: 2px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px;
+  z-index: 1;
+}
+
+.message-action-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.message-action-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.message-action-btn.danger:hover {
+  color: var(--danger);
+}
+
+.message-action-btn.bookmarked {
+  color: var(--accent);
+}
+
+.message-action-btn svg {
+  vertical-align: middle;
+}
+
+/* ── Emoji picker ───────────────────────────────────── */
+
+.emoji-quick-picker {
+  position: absolute;
+  top: -14px;
+  right: 8rem;
+  display: flex;
+  gap: 2px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px;
+  z-index: 2;
+}
+
+.emoji-pick-btn {
+  background: none;
+  border: none;
+  font-size: 1.125rem;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.emoji-pick-btn:hover {
+  background: var(--bg-hover);
+}
+
+/* ── Edit mode ──────────────────────────────────────── */
+
+.message-edit-wrapper {
+  padding-left: 56px;
+}
+
+.message-edit-input {
+  width: 100%;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+  font-family: inherit;
+  padding: 0.5rem 0.75rem;
+  resize: none;
+  outline: none;
+  max-height: 200px;
+  line-height: 1.375;
+}
+
+.message-edit-actions {
+  padding: 0.25rem 0;
+}
+
+.message-edit-hint {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+
+/* ── Reactions ──────────────────────────────────────── */
+
+.message-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-left: 56px;
+  padding-top: 4px;
+}
+
+.reaction-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.reaction-chip:hover {
+  background: var(--bg-hover);
+  border-color: var(--text-muted);
+}
+
+.reaction-chip.me {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: var(--accent);
+}
+
+.reaction-emoji {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.reaction-count {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* ── Scroll to bottom button ───────────────────────── */
+
+.scroll-to-bottom-btn {
+  position: absolute;
+  bottom: 0.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--accent);
+  border: none;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  z-index: 5;
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+.scroll-to-bottom-btn:hover {
+  opacity: 0.85;
+  transform: translateX(-50%) scale(1.1);
+}
+
+/* ── Reply context (quote block above message) ───── */
+
+.reply-context {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding-left: 56px;
+  margin-bottom: 2px;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.reply-context::before {
+  content: '';
+  width: 2px;
+  height: 12px;
+  background: var(--text-muted);
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+
+.reply-context:hover {
+  color: var(--text-primary);
+}
+
+.reply-author {
+  font-weight: 600;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.reply-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Bookmark navigation highlight ─────────────────── */
+
+@keyframes highlight-flash-anim {
+  0% { background: var(--accent); opacity: 0.15; }
+  100% { background: transparent; opacity: 0; }
+}
+
+.message.highlight-flash {
+  animation: highlight-flash-anim 2s ease-out;
+}

@@ -1,0 +1,17 @@
+# Maintainer: Drocsid <noreply@drocsid.app>
+pkgname=drocsid
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="A self-hosted Discord alternative - desktop client"
+arch=('x86_64')
+url="https://github.com/jansselt/drocsid"
+license=('MIT')
+depends=('webkit2gtk-4.1' 'gtk3' 'libappindicator-gtk3')
+source=("drocsid" "drocsid.desktop" "drocsid.png")
+sha256sums=('SKIP' 'SKIP' 'SKIP')
+
+package() {
+    install -Dm755 "$srcdir/drocsid" "$pkgdir/usr/bin/drocsid"
+    install -Dm644 "$srcdir/drocsid.desktop" "$pkgdir/usr/share/applications/drocsid.desktop"
+    install -Dm644 "$srcdir/drocsid.png" "$pkgdir/usr/share/icons/hicolor/128x128/apps/drocsid.png"
+}

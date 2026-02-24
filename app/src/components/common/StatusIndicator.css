@@ -1,0 +1,57 @@
+.status-indicator {
+  display: inline-block;
+  border-radius: 50%;
+  flex-shrink: 0;
+  position: relative;
+  box-sizing: border-box;
+}
+
+.status-indicator-sm {
+  width: 8px;
+  height: 8px;
+}
+
+.status-indicator-md {
+  width: 10px;
+  height: 10px;
+}
+
+.status-indicator-lg {
+  width: 14px;
+  height: 14px;
+}
+
+/* DND: horizontal line through center */
+.status-dnd-line {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 60%;
+  height: 2px;
+  background: var(--bg-primary, #313338);
+  border-radius: 1px;
+}
+
+/* Idle: quarter-moon cutout */
+.status-idle-cutout {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 60%;
+  height: 60%;
+  background: var(--bg-primary, #313338);
+  border-radius: 50%;
+}
+
+/* Offline: hollow circle */
+.status-offline-cutout {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 50%;
+  height: 50%;
+  background: var(--bg-primary, #313338);
+  border-radius: 50%;
+}

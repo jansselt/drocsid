@@ -1,0 +1,6 @@
+.app-layout {
+  display: flex;
+  height: 100vh;
+  background: var(--bg-base);
+  color: var(--text-primary);
+}

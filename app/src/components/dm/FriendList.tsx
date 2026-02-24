@@ -1,0 +1,215 @@
+import { useState, useEffect, useRef } from 'react';
+import { useServerStore } from '../../stores/serverStore';
+import * as api from '../../api/client';
+import type { User } from '../../types';
+import './FriendList.css';
+
+type FriendTab = 'all' | 'pending' | 'blocked' | 'add';
+
+export function FriendList() {
+  const relationships = useServerStore((s) => s.relationships);
+  const acceptFriend = useServerStore((s) => s.acceptFriend);
+  const removeFriend = useServerStore((s) => s.removeFriend);
+  const sendFriendRequest = useServerStore((s) => s.sendFriendRequest);
+  const openDm = useServerStore((s) => s.openDm);
+
+  const [tab, setTab] = useState<FriendTab>('all');
+  const [addInput, setAddInput] = useState('');
+  const [addStatus, setAddStatus] = useState('');
+  const [searchResults, setSearchResults] = useState<User[]>([]);
+  const [searching, setSearching] = useState(false);
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  // Debounced user search
+  useEffect(() => {
+    if (tab !== 'add') return;
+    const q = addInput.trim();
+    if (q.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const results = await api.searchUsers(q);
+        setSearchResults(results);
+      } catch {
+        setSearchResults([]);
+      }
+      setSearching(false);
+    }, 300);
+
+    return () => clearTimeout(searchTimeout.current);
+  }, [addInput, tab]);
+
+  const friends = relationships.filter((r) => r.rel_type === 'friend');
+  const pending = relationships.filter(
+    (r) => r.rel_type === 'pending_incoming' || r.rel_type === 'pending_outgoing',
+  );
+  const pendingIncomingCount = relationships.filter((r) => r.rel_type === 'pending_incoming').length;
+  const blocked = relationships.filter((r) => r.rel_type === 'blocked');
+
+  const handleAdd = async (userId: string) => {
+    try {
+      await sendFriendRequest(userId);
+      setAddStatus('Friend request sent!');
+      setAddInput('');
+      setSearchResults([]);
+      setTimeout(() => setAddStatus(''), 3000);
+    } catch (e) {
+      setAddStatus((e as Error).message || 'Failed to send request');
+    }
+  };
+
+  return (
+    <div className="friend-list">
+      <div className="friend-tabs">
+        <button className={`friend-tab ${tab === 'all' ? 'active' : ''}`} onClick={() => setTab('all')}>
+          All
+        </button>
+        <button className={`friend-tab ${tab === 'pending' ? 'active' : ''}`} onClick={() => setTab('pending')}>
+          Pending
+          {pendingIncomingCount > 0 && (
+            <span className="friend-tab-badge">{pendingIncomingCount}</span>
+          )}
+        </button>
+        <button className={`friend-tab ${tab === 'blocked' ? 'active' : ''}`} onClick={() => setTab('blocked')}>
+          Blocked
+        </button>
+        <button className={`friend-tab add-friend-tab ${tab === 'add' ? 'active' : ''}`} onClick={() => setTab('add')}>
+          Add Friend
+        </button>
+      </div>
+
+      {tab === 'add' && (
+        <div className="add-friend-section">
+          <p className="add-friend-hint">Search for a user by username to add as a friend.</p>
+          <div className="add-friend-input-row">
+            <input
+              type="text"
+              placeholder="Enter a username..."
+              value={addInput}
+              onChange={(e) => setAddInput(e.target.value)}
+            />
+          </div>
+          {addStatus && <p className="add-friend-status">{addStatus}</p>}
+          {searching && <div className="friend-empty">Searching...</div>}
+          {!searching && searchResults.length > 0 && (
+            <div className="friend-section">
+              {searchResults.map((u) => (
+                <div key={u.id} className="friend-row">
+                  <div className="friend-avatar">
+                    {u.avatar_url ? <img src={u.avatar_url} alt="" /> : u.username.slice(0, 1).toUpperCase()}
+                  </div>
+                  <div className="friend-info">
+                    <span className="friend-name">{u.display_name || u.username}</span>
+                    <span className="friend-status">{u.username}</span>
+                  </div>
+                  <div className="friend-actions">
+                    <button className="friend-action-btn accept" title="Send Friend Request" onClick={() => handleAdd(u.id)}>
+                      Send Request
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {!searching && addInput.trim().length >= 2 && searchResults.length === 0 && (
+            <div className="friend-empty">No users found.</div>
+          )}
+        </div>
+      )}
+
+      {tab === 'all' && (
+        <div className="friend-section">
+          <div className="friend-section-header">Friends - {friends.length}</div>
+          {friends.length === 0 ? (
+            <div className="friend-empty">No friends yet. Add someone!</div>
+          ) : (
+            friends.map((rel) => (
+              <div key={rel.target_id} className="friend-row">
+                <div className="friend-avatar">
+                  {rel.user.avatar_url ? <img src={rel.user.avatar_url} alt="" /> : rel.user.username.slice(0, 1).toUpperCase()}
+                </div>
+                <div className="friend-info">
+                  <span className="friend-name">{rel.user.display_name || rel.user.username}</span>
+                  <span className="friend-status">{rel.user.status}</span>
+                </div>
+                <div className="friend-actions">
+                  <button className="friend-action-btn" title="Message" onClick={() => openDm(rel.target_id)}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
+                    </svg>
+                  </button>
+                  <button className="friend-action-btn danger" title="Remove" onClick={() => removeFriend(rel.target_id)}>
+                    &#x2715;
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {tab === 'pending' && (
+        <div className="friend-section">
+          <div className="friend-section-header">Pending - {pending.length}</div>
+          {pending.length === 0 ? (
+            <div className="friend-empty">No pending requests.</div>
+          ) : (
+            pending.map((rel) => (
+              <div key={rel.target_id} className="friend-row">
+                <div className="friend-avatar">
+                  {rel.user.avatar_url ? <img src={rel.user.avatar_url} alt="" /> : rel.user.username.slice(0, 1).toUpperCase()}
+                </div>
+                <div className="friend-info">
+                  <span className="friend-name">{rel.user.display_name || rel.user.username}</span>
+                  <span className="friend-status">
+                    {rel.rel_type === 'pending_incoming' ? 'Incoming request' : 'Outgoing request'}
+                  </span>
+                </div>
+                <div className="friend-actions">
+                  {rel.rel_type === 'pending_incoming' && (
+                    <button className="friend-action-btn accept" title="Accept" onClick={() => acceptFriend(rel.target_id)}>
+                      &#x2713;
+                    </button>
+                  )}
+                  <button className="friend-action-btn danger" title="Decline" onClick={() => removeFriend(rel.target_id)}>
+                    &#x2715;
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {tab === 'blocked' && (
+        <div className="friend-section">
+          <div className="friend-section-header">Blocked - {blocked.length}</div>
+          {blocked.length === 0 ? (
+            <div className="friend-empty">No blocked users.</div>
+          ) : (
+            blocked.map((rel) => (
+              <div key={rel.target_id} className="friend-row">
+                <div className="friend-avatar">
+                  {rel.user.avatar_url ? <img src={rel.user.avatar_url} alt="" /> : rel.user.username.slice(0, 1).toUpperCase()}
+                </div>
+                <div className="friend-info">
+                  <span className="friend-name">{rel.user.display_name || rel.user.username}</span>
+                </div>
+                <div className="friend-actions">
+                  <button className="friend-action-btn" title="Unblock" onClick={() => removeFriend(rel.target_id)}>
+                    Unblock
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
