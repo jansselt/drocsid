@@ -624,7 +624,9 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
           title={isAudioSharing ? 'Stop Sharing Audio' : 'Share Audio'}
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+            <circle cx="12" cy="12" r="3" />
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z" />
+            <path d="M7.05 7.05a7 7 0 000 9.9l1.41-1.41a5 5 0 010-7.08L7.05 7.05zm9.9 0l-1.41 1.41a5 5 0 010 7.08l1.41 1.41a7 7 0 000-9.9z" />
           </svg>
         </button>
         <button
