@@ -1,6 +1,16 @@
 # Drocsid
 
+> **This project was built with AI assistance (Claude, Anthropic).** You are free to use, study, and modify this software for any noncommercial purpose. **No one may sell, commercialize, or profit from this software or any derivative of it.** See [LICENSE](LICENSE) for full terms.
+
 A self-hosted Discord alternative built with Rust and React. Designed for communities that want full control over their communication platform.
+
+## Why This Exists
+
+Discord's new age verification system was the last straw for us. We have privacy concerns with handing over government IDs and biometric data just to chat with friends. So we built our own.
+
+This project was built primarily with AI assistance by people with day jobs. We're not a company, we're not trying to build a product — we just wanted to move our community off Discord as quickly as possible.
+
+We'll keep updating things as we can, but this is a side project and always will be. If you want to submit ideas as issues, we're happy to look at them and implement what makes sense. If someone out there wants to take this and build something better — please do. We'll probably be your first adopters. The only goal here is to make leaving Discord easier for everyone.
 
 ## Features
 
@@ -450,4 +460,4 @@ The `-v` flag removes the persistent volumes (database, redis, file storage).
 
 ## License
 
-MIT
+[PolyForm Noncommercial 1.0.0](LICENSE) — free to use, modify, and share for any noncommercial purpose. Commercial use is not permitted.
