@@ -1,0 +1,119 @@
+.update-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  background: var(--bg-secondary, #2b2d31);
+  border: 1px solid var(--border-color, #3f4147);
+  border-radius: 8px;
+  padding: 16px 20px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 480px;
+  animation: update-toast-slide-in 0.3s ease-out;
+}
+
+@keyframes update-toast-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.update-toast-message {
+  color: var(--text-primary, #f2f3f5);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.update-toast-version {
+  color: var(--text-muted, #949ba4);
+  font-size: 12px;
+}
+
+.update-toast-progress {
+  color: var(--text-muted, #949ba4);
+  font-size: 12px;
+}
+
+.update-toast-cmd-wrap {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border-color, #3f4147);
+}
+
+.update-toast-cmd {
+  flex: 1;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.4;
+  font-family: 'Consolas', 'Monaco', monospace;
+  color: var(--text-primary, #f2f3f5);
+  background: var(--bg-tertiary, #1e1f22);
+  word-break: break-all;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.update-toast-copy {
+  padding: 8px 12px;
+  background: var(--bg-tertiary, #1e1f22);
+  border: none;
+  border-left: 1px solid var(--border-color, #3f4147);
+  color: var(--text-muted, #949ba4);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.update-toast-copy:hover {
+  color: var(--text-primary, #f2f3f5);
+}
+
+.update-toast-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.update-toast-actions button {
+  padding: 6px 16px;
+  border-radius: 4px;
+  border: none;
+  font-size: 13px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.update-toast-update {
+  background: var(--accent-color, #7c3aed);
+  color: #fff;
+}
+
+.update-toast-update:hover {
+  opacity: 0.9;
+}
+
+.update-toast-update:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.update-toast-later {
+  background: transparent;
+  color: var(--text-muted, #949ba4);
+}
+
+.update-toast-later:hover {
+  color: var(--text-primary, #f2f3f5);
+}

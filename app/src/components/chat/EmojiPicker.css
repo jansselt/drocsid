@@ -1,0 +1,117 @@
+.emoji-picker {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  width: 340px;
+  max-height: 360px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+  margin-bottom: 4px;
+}
+
+.emoji-picker-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.emoji-search {
+  flex: 1;
+  padding: 6px 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  font-family: inherit;
+  outline: none;
+}
+
+.emoji-search::placeholder {
+  color: var(--text-muted);
+}
+
+.emoji-picker-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.emoji-picker-close:hover {
+  color: var(--text-primary);
+}
+
+.emoji-categories {
+  display: flex;
+  gap: 2px;
+  padding: 0.375rem 0.5rem;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+}
+
+.emoji-cat-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.emoji-cat-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.emoji-cat-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  padding: 0.5rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.emoji-grid-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  font-size: 1.375rem;
+  border-radius: 4px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.emoji-grid-btn:hover {
+  background: var(--bg-hover);
+}
+
+.emoji-no-results {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  padding: 1rem 0;
+}

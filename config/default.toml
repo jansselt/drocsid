@@ -1,0 +1,36 @@
+[server]
+host = "0.0.0.0"
+port = 8080
+
+[database]
+url = "postgres://drocsid:drocsid@localhost:5432/drocsid"
+max_connections = 20
+
+[redis]
+url = "redis://localhost:6379"
+
+[auth]
+jwt_secret = "change-me-in-production"
+access_token_ttl_secs = 900
+refresh_token_ttl_secs = 2592000
+
+[instance]
+domain = "localhost:8080"
+name = "Drocsid Dev"
+
+[livekit]
+url = "ws://localhost:7880"
+public_url = "ws://localhost:7880"
+api_key = "devkey"
+api_secret = "devsecret"
+
+# Optional: GIF search (get a free key at https://developers.giphy.com/)
+[gif]
+provider = "giphy"
+api_key = "your-giphy-api-key"
+rating = "pg-13"
+
+# Optional: Email for password reset (https://resend.com/)
+[email]
+resend_api_key = "re_your_api_key_here"
+from_address = "Drocsid <noreply@yourdomain.com>"

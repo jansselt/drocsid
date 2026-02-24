@@ -1,0 +1,27 @@
+[Unit]
+Description=Drocsid Server
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=drocsid
+Group=drocsid
+WorkingDirectory=/opt/drocsid
+ExecStart=/opt/drocsid/drocsid-server
+EnvironmentFile=/opt/drocsid/.env
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/drocsid
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

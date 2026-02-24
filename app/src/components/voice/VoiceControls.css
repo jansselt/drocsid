@@ -1,0 +1,65 @@
+.voice-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: var(--bg-darkest, #1a1a1d);
+  border-top: 1px solid var(--border);
+}
+
+.voice-controls-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.voice-controls-status {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--success, #3ba55c);
+}
+
+.voice-controls-channel {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-controls-buttons {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.voice-control-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.voice-control-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.voice-control-btn.active {
+  color: var(--danger, #ed4245);
+}
+
+.voice-control-btn.disconnect {
+  color: var(--text-secondary);
+}
+
+.voice-control-btn.disconnect:hover {
+  background: var(--danger, #ed4245);
+  color: #fff;
+}

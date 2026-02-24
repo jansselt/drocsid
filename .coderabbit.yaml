@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+tone_instructions: "Be direct and concise. Skip obvious observations. Focus on bugs, security issues, and logic errors."
+early_access: false
+
+reviews:
+  profile: "assertive"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  auto_review:
+    enabled: true
+    drafts: false
+
+  path_filters:
+    - "!**/*.lock"
+    - "!**/Cargo.lock"
+    - "!**/package-lock.json"
+    - "!**/.beads/**"
+    - "!**/dist/**"
+    - "!**/target/**"
+
+  path_instructions:
+    - path: "server/**/*.rs"
+      instructions: |
+        This is a Rust/Axum backend with PostgreSQL (SQLx) and Redis.
+        Watch for: SQL injection via raw queries, missing auth checks on handlers,
+        unwrap() calls that should use proper error handling, and async deadlocks.
+    - path: "app/src/**/*.{ts,tsx}"
+      instructions: |
+        React 19 + TypeScript frontend using Zustand for state management.
+        Watch for: XSS via dangerouslySetInnerHTML, missing dependency arrays in hooks,
+        stale closures, and memory leaks from uncleared subscriptions/intervals.
+    - path: "app/src-tauri/**/*.rs"
+      instructions: |
+        Tauri 2 desktop app with LiveKit voice integration and cpal audio.
+        The audio pipeline uses rtrb ring buffers between cpal callbacks and LiveKit.
+        Watch for: thread safety issues, blocking on async runtime in audio callbacks,
+        and platform-specific code (Linux/Windows cfg gates).
+    - path: ".github/workflows/**"
+      instructions: |
+        CI/CD workflows. Linux builds on self-hosted runner, Windows on github-hosted.
+        Watch for: missing secret references, shell injection in run steps,
+        and artifact path mismatches.
+    - path: "app/src-tauri/tauri.conf.json"
+      instructions: |
+        Tauri configuration. Version is managed by release-please (do not hardcode).
+        Contains updater pubkey and endpoints - verify these aren't accidentally changed.
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  learnings: "local"

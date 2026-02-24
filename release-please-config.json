@@ -1,0 +1,20 @@
+{
+  "packages": {
+    ".": {
+      "release-type": "node",
+      "component": "drocsid",
+      "extra-files": [
+        "app/package.json",
+        "app/src-tauri/tauri.conf.json",
+        "app/src-tauri/Cargo.toml",
+        "server/Cargo.toml"
+      ]
+    }
+  },
+  "changelog-sections": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug Fixes" },
+    { "type": "perf", "section": "Performance" },
+    { "type": "refactor", "section": "Refactoring" }
+  ]
+}

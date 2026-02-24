@@ -1,0 +1,285 @@
+/* ── Poll Card ─────────────────────────────────────── */
+
+.poll-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-top: 0.375rem;
+  width: 100%;
+  user-select: none;
+}
+
+.poll-card.closed {
+  opacity: 0.85;
+}
+
+/* ── Header ───────────────────────────────────────── */
+
+.poll-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+  gap: 0.5rem;
+}
+
+.poll-type-badge {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  padding: 0.125rem 0.375rem;
+  border-radius: 3px;
+}
+
+.poll-deadline {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* ── Options ──────────────────────────────────────── */
+
+.poll-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.poll-option {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.625rem;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.poll-option:hover:not(.disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.poll-option.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.poll-option.my-vote {
+  border-color: var(--accent);
+}
+
+.poll-option.disabled {
+  cursor: default;
+}
+
+.poll-option.winner {
+  border-color: #4ade80;
+  background: color-mix(in srgb, #4ade80 8%, transparent);
+}
+
+/* ── Animated result bar ──────────────────────────── */
+
+.poll-option-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-radius: 5px;
+  transition: width 0.5s ease;
+  pointer-events: none;
+}
+
+.poll-option.winner .poll-option-bar {
+  background: color-mix(in srgb, #4ade80 18%, transparent);
+}
+
+/* ── Option label row ─────────────────────────────── */
+
+.poll-option-label {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  z-index: 1;
+}
+
+.poll-check {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.poll-option-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin-left: 0.5rem;
+}
+
+/* ── Submit button ────────────────────────────────── */
+
+.poll-submit-btn {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.poll-submit-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.poll-submit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Ranked voting UI ─────────────────────────────── */
+
+.poll-ranked-voting {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.poll-ranked-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 0.25rem;
+}
+
+.poll-rank-num {
+  font-weight: 700;
+  color: var(--accent);
+  margin-right: 0.125rem;
+}
+
+.poll-rank-arrows {
+  display: inline-flex;
+  gap: 0.125rem;
+  margin-left: 0.5rem;
+}
+
+.poll-arrow-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-muted);
+  font-size: 0.625rem;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.poll-arrow-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.poll-arrow-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* ── Ranked results ───────────────────────────────── */
+
+.poll-ranked-results {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.poll-ranked-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.25rem;
+}
+
+.poll-ranked-item {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  padding: 0.125rem 0;
+}
+
+.poll-ranked-item.winner {
+  color: #4ade80;
+  font-weight: 600;
+}
+
+.poll-ranked-elim {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.poll-ranked-winner {
+  font-size: 0.75rem;
+  color: #4ade80;
+  font-weight: 600;
+}
+
+/* ── Footer ───────────────────────────────────────── */
+
+.poll-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.5rem;
+  padding-top: 0.375rem;
+  border-top: 1px solid var(--border);
+}
+
+.poll-total {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.poll-actions {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.poll-action-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  padding: 0.1875rem 0.5rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.poll-action-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+.poll-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.poll-close-btn:hover:not(:disabled) {
+  color: var(--danger, #f44);
+  border-color: var(--danger, #f44);
+}
