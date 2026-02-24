@@ -518,6 +518,7 @@ export interface VoiceState {
   channel_id: string;
   self_mute: boolean;
   self_deaf: boolean;
+  audio_sharing: boolean;
 }
 
 export interface VoiceStateUpdateEvent {
@@ -526,6 +527,7 @@ export interface VoiceStateUpdateEvent {
   user_id: string;
   self_mute: boolean;
   self_deaf: boolean;
+  audio_sharing: boolean;
 }
 
 // ── Invites ─────────────────────────────────────────────

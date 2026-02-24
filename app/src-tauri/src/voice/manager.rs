@@ -40,6 +40,24 @@ pub struct VoiceManager {
     mic_swap_tx: mpsc::Sender<rtrb::Consumer<i16>>,
     /// Channel to send a replacement output ring-buffer producer to the mixer task.
     output_swap_tx: mpsc::Sender<rtrb::Producer<i16>>,
+    /// Active audio share state (if sharing app audio)
+    #[cfg(target_os = "linux")]
+    audio_share: Option<AudioShareState>,
+}
+
+/// State for an active audio share session.
+#[cfg(target_os = "linux")]
+struct AudioShareState {
+    /// PulseAudio module ID for the null-sink (for cleanup via pactl unload-module)
+    null_sink_module_id: u32,
+    /// The cpal input stream capturing the null-sink's monitor
+    _capture_stream: cpal::Stream,
+    /// Signal to stop the audio share forwarder task
+    shutdown_tx: mpsc::Sender<()>,
+    /// Whether this is system-wide mode (auto-links new apps)
+    system_mode: bool,
+    /// The null-sink name (for the periodic monitor to find it)
+    sink_name: String,
 }
 
 // -- Tauri event payloads --
@@ -199,11 +217,20 @@ impl VoiceManager {
             user_volumes,
             mic_swap_tx,
             output_swap_tx,
+            #[cfg(target_os = "linux")]
+            audio_share: None,
         })
     }
 
-    pub async fn disconnect(self) {
+    pub async fn disconnect(mut self) {
         log::info!("VoiceManager::disconnect");
+        // Stop audio sharing if active
+        #[cfg(target_os = "linux")]
+        {
+            if self.audio_share.is_some() {
+                let _ = self.stop_audio_share().await;
+            }
+        }
         let _ = self.shutdown_tx.send(()).await;
         let _ = self.room.close().await;
         log::info!("VoiceManager::disconnect: done, streams dropped");
@@ -262,7 +289,242 @@ impl VoiceManager {
         Ok(())
     }
 
+    // -- Audio sharing (Linux/PipeWire) --
+
+    /// Start sharing application audio via a PipeWire null-sink monitor.
+    /// `target_node_ids`: PipeWire node IDs to capture. If `system_mode` is true,
+    /// the periodic monitor will auto-link newly-appearing non-drocsid apps.
+    #[cfg(target_os = "linux")]
+    pub async fn start_audio_share(
+        &mut self,
+        app_handle: tauri::AppHandle,
+        target_node_ids: Vec<u64>,
+        system_mode: bool,
+    ) -> Result<(), String> {
+        // Stop existing audio share if any
+        if self.audio_share.is_some() {
+            self.stop_audio_share().await?;
+        }
+
+        let sink_name = format!(
+            "drocsid_audioshare_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis()
+        );
+        log::info!("start_audio_share: creating null-sink {sink_name} for {} targets (system_mode={system_mode})",
+            target_node_ids.len());
+
+        // 1. Create null-sink
+        let module_id = crate::audio::create_null_sink(&sink_name)?;
+        log::info!("start_audio_share: null-sink module_id={module_id}");
+
+        // 2. Wait for PipeWire to register it
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+
+        // 3. Find null-sink in PipeWire and link target apps to it
+        let objects = crate::audio::pw_dump_all()?;
+        let null_sink_node_id = crate::audio::find_node_by_name(&objects, &sink_name)
+            .ok_or_else(|| "Null-sink node not found in PipeWire after creation".to_string())?;
+
+        for &target_id in &target_node_ids {
+            match crate::audio::link_app_to_null_sink(&objects, target_id, null_sink_node_id) {
+                Ok(n) => log::info!("start_audio_share: linked node {target_id} -> null-sink ({n} links)"),
+                Err(e) => log::warn!("start_audio_share: failed to link node {target_id}: {e}"),
+            }
+        }
+
+        // 4. Create second NativeAudioSource for the share track (stereo)
+        let share_source = NativeAudioSource::new(
+            Default::default(),
+            SAMPLE_RATE,
+            2, // stereo
+            200,
+        );
+
+        // 5. Publish as ScreenShareAudio track
+        let share_track = LocalAudioTrack::create_audio_track(
+            "audio-share",
+            RtcAudioSource::Native(share_source.clone()),
+        );
+        self.room
+            .local_participant()
+            .publish_track(
+                LocalTrack::Audio(share_track),
+                TrackPublishOptions {
+                    source: TrackSource::ScreenshareAudio,
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|e| format!("Publish audio share track failed: {e}"))?;
+        log::info!("start_audio_share: published ScreenShareAudio track");
+
+        // 6. Open cpal stereo input on the null-sink monitor
+        let monitor_name = format!("{sink_name}.monitor");
+        let stereo_ring_size = (SAMPLE_RATE as usize) * 2 / 5; // 200ms stereo
+        let (producer, consumer) = rtrb::RingBuffer::new(stereo_ring_size);
+        let capture_stream = audio_io::build_stereo_input_stream(Some(&monitor_name), producer)?;
+
+        // 7. Spawn audio share forwarder task
+        let (share_shutdown_tx, share_shutdown_rx) = mpsc::channel::<()>(1);
+        Self::spawn_audio_share_forwarder(consumer, share_source, share_shutdown_rx);
+
+        // 8. Spawn periodic PipeWire monitor for auto-linking (system mode) or cleanup (per-app)
+        let monitor_sink_name = sink_name.clone();
+        let monitor_target_ids = target_node_ids.clone();
+        let monitor_shutdown = share_shutdown_tx.clone();
+        let app_for_monitor = self.room.local_participant().identity().to_string();
+        let monitor_app_handle = app_handle;
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
+            loop {
+                interval.tick().await;
+                if monitor_shutdown.is_closed() {
+                    break;
+                }
+
+                let objects = match crate::audio::pw_dump_all() {
+                    Ok(o) => o,
+                    Err(_) => continue,
+                };
+
+                if system_mode {
+                    // Auto-link new non-drocsid apps to the null-sink
+                    let our_pid = std::process::id();
+                    let child_pids = crate::audio::get_descendant_pids(our_pid);
+
+                    let null_sink_node_id = match crate::audio::find_node_by_name(&objects, &monitor_sink_name) {
+                        Some(id) => id,
+                        None => continue, // null-sink gone, probably stopping
+                    };
+
+                    for obj in &objects {
+                        if obj.get("type").and_then(|t| t.as_str()) != Some("PipeWire:Interface:Node") {
+                            continue;
+                        }
+                        let props = match obj.pointer("/info/props") {
+                            Some(p) => p,
+                            None => continue,
+                        };
+                        if props.get("media.class").and_then(|v| v.as_str()) != Some("Stream/Output/Audio") {
+                            continue;
+                        }
+                        if let Some(pid) = crate::audio::get_pid_from_props(props) {
+                            if pid == our_pid || child_pids.contains(&pid) {
+                                continue;
+                            }
+                        }
+                        if let Some(node_id) = obj.get("id").and_then(|v| v.as_u64()) {
+                            // Check if already linked to our null-sink
+                            let sink_input_ports = crate::audio::find_node_ports(&objects, null_sink_node_id, "input");
+                            let app_output_ports = crate::audio::find_node_ports(&objects, node_id, "output");
+                            // Simple check: if the app has output ports and the null-sink has input ports, try linking
+                            // pw-link will no-op if link already exists
+                            if !app_output_ports.is_empty() && !sink_input_ports.is_empty() {
+                                let _ = crate::audio::link_app_to_null_sink(&objects, node_id, null_sink_node_id);
+                            }
+                        }
+                    }
+                } else {
+                    // Per-app mode: check if target node(s) still exist
+                    let all_gone = monitor_target_ids.iter().all(|&target_id| {
+                        !objects.iter().any(|obj| {
+                            obj.get("id").and_then(|v| v.as_u64()) == Some(target_id)
+                                && obj.get("type").and_then(|t| t.as_str())
+                                    == Some("PipeWire:Interface:Node")
+                        })
+                    });
+                    if all_gone {
+                        log::info!("audio_share_monitor: all target nodes gone, emitting event");
+                        let _ = monitor_app_handle.emit("voice:audio-share-ended", ());
+                        break;
+                    }
+                }
+            }
+            log::info!("audio_share_monitor: exiting (identity={})", app_for_monitor);
+        });
+
+        self.audio_share = Some(AudioShareState {
+            null_sink_module_id: module_id,
+            _capture_stream: capture_stream,
+            shutdown_tx: share_shutdown_tx,
+            system_mode,
+            sink_name,
+        });
+
+        log::info!("start_audio_share: complete");
+        Ok(())
+    }
+
+    /// Stop sharing application audio. Cleans up null-sink, unpublishes track.
+    #[cfg(target_os = "linux")]
+    pub async fn stop_audio_share(&mut self) -> Result<(), String> {
+        if let Some(state) = self.audio_share.take() {
+            log::info!("stop_audio_share: cleaning up null-sink module_id={}", state.null_sink_module_id);
+
+            // 1. Signal forwarder + monitor to stop
+            let _ = state.shutdown_tx.send(()).await;
+
+            // 2. Unpublish the audio share track
+            for pub_ in self.room.local_participant().track_publications().values() {
+                if pub_.source() == TrackSource::ScreenshareAudio {
+                    let sid = pub_.sid();
+                    let _ = self.room.local_participant().unpublish_track(&sid).await;
+                }
+            }
+
+            // 3. Destroy null-sink (PipeWire auto-removes all its links)
+            crate::audio::destroy_null_sink(state.null_sink_module_id);
+
+            // 4. cpal capture_stream is dropped here
+            log::info!("stop_audio_share: cleanup complete");
+        }
+        Ok(())
+    }
+
     // -- Internal tasks --
+
+    /// Forwarder task for audio share: reads stereo samples from ring buffer and pushes to LiveKit.
+    #[cfg(target_os = "linux")]
+    fn spawn_audio_share_forwarder(
+        mut consumer: rtrb::Consumer<i16>,
+        audio_source: NativeAudioSource,
+        mut shutdown_rx: mpsc::Receiver<()>,
+    ) {
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_millis(10));
+            let mut buf = Vec::with_capacity(960); // 10ms at 48kHz stereo
+
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        buf.clear();
+                        while let Ok(sample) = consumer.pop() {
+                            buf.push(sample);
+                        }
+                        if buf.is_empty() {
+                            continue;
+                        }
+
+                        let samples_per_channel = (buf.len() / 2) as u32;
+                        let frame = AudioFrame {
+                            data: Cow::Borrowed(&buf),
+                            sample_rate: SAMPLE_RATE,
+                            num_channels: 2,
+                            samples_per_channel,
+                        };
+                        let _ = audio_source.capture_frame(&frame).await;
+                    }
+                    _ = shutdown_rx.recv() => {
+                        log::info!("audio_share_forwarder: shutdown received");
+                        break;
+                    },
+                }
+            }
+        });
+    }
 
     fn spawn_mic_forwarder(
         app: tauri::AppHandle,

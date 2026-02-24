@@ -297,6 +297,7 @@ pub struct VoiceStateUpdateEvent {
     pub user_id: Uuid,
     pub self_mute: bool,
     pub self_deaf: bool,
+    pub audio_sharing: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

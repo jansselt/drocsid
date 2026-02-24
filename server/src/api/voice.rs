@@ -174,8 +174,9 @@ async fn voice_update_state(
 
     let self_mute = body.self_mute.unwrap_or(current.self_mute);
     let self_deaf = body.self_deaf.unwrap_or(current.self_deaf);
+    let audio_sharing = body.audio_sharing.unwrap_or(current.audio_sharing);
 
-    state.gateway.voice_update(user.user_id, self_mute, self_deaf);
+    state.gateway.voice_update(user.user_id, self_mute, self_deaf, audio_sharing);
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
@@ -221,6 +222,7 @@ async fn voice_get_states(
             channel_id: vs.channel_id,
             self_mute: vs.self_mute,
             self_deaf: vs.self_deaf,
+            audio_sharing: vs.audio_sharing,
         })
         .collect();
 
@@ -233,4 +235,5 @@ struct VoiceStateResponse {
     channel_id: Uuid,
     self_mute: bool,
     self_deaf: bool,
+    audio_sharing: bool,
 }

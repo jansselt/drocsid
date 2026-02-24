@@ -8,7 +8,7 @@ use std::process::Command;
 // ---------------------------------------------------------------------------
 
 /// Run pw-dump and return the full list of PipeWire objects.
-fn pw_dump_all() -> Result<Vec<serde_json::Value>, String> {
+pub(crate) fn pw_dump_all() -> Result<Vec<serde_json::Value>, String> {
     let output = Command::new("pw-dump")
         .output()
         .map_err(|e| format!("Failed to run pw-dump: {e}"))?;
@@ -25,7 +25,7 @@ fn pw_dump_all() -> Result<Vec<serde_json::Value>, String> {
 }
 
 /// Extract application.process.id from pw-dump props, handling both integer and string types.
-fn get_pid_from_props(props: &serde_json::Value) -> Option<u32> {
+pub(crate) fn get_pid_from_props(props: &serde_json::Value) -> Option<u32> {
     let v = props.get("application.process.id")?;
     if let Some(n) = v.as_u64() {
         return Some(n as u32);
@@ -33,7 +33,7 @@ fn get_pid_from_props(props: &serde_json::Value) -> Option<u32> {
     v.as_str()?.parse::<u32>().ok()
 }
 
-struct PwPort {
+pub(crate) struct PwPort {
     id: u64,
     channel: String,
 }
@@ -65,7 +65,7 @@ fn find_our_stream_nodes(
 }
 
 /// Find a PipeWire node ID by its node.name property.
-fn find_node_by_name(objects: &[serde_json::Value], name: &str) -> Option<u64> {
+pub(crate) fn find_node_by_name(objects: &[serde_json::Value], name: &str) -> Option<u64> {
     objects.iter().find_map(|obj| {
         if obj.get("type")?.as_str()? != "PipeWire:Interface:Node" {
             return None;
@@ -79,7 +79,7 @@ fn find_node_by_name(objects: &[serde_json::Value], name: &str) -> Option<u64> {
 }
 
 /// Find ports belonging to a given node, filtered by direction ("input" or "output").
-fn find_node_ports(
+pub(crate) fn find_node_ports(
     objects: &[serde_json::Value],
     node_id: u64,
     direction: &str,
@@ -364,8 +364,134 @@ pub async fn label_audio_streams() -> Result<u32, String> {
     Ok(labeled)
 }
 
+// ---------------------------------------------------------------------------
+// Audio sharing: app enumeration + null-sink lifecycle
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize, Clone, Debug)]
+pub struct AudioApplication {
+    pub node_id: u64,
+    pub name: String,
+    pub binary: String,
+    pub stream_name: String,
+}
+
+/// Enumerate PipeWire audio applications (Stream/Output/Audio nodes), excluding our own process tree.
+#[tauri::command]
+pub async fn list_audio_applications() -> Result<Vec<AudioApplication>, String> {
+    let objects = pw_dump_all()?;
+    let our_pid = std::process::id();
+    let child_pids = get_descendant_pids(our_pid);
+
+    let mut apps: Vec<AudioApplication> = Vec::new();
+
+    for obj in &objects {
+        if obj.get("type").and_then(|t| t.as_str()) != Some("PipeWire:Interface:Node") {
+            continue;
+        }
+        let props = match obj.pointer("/info/props") {
+            Some(p) => p,
+            None => continue,
+        };
+        if props.get("media.class").and_then(|v| v.as_str()) != Some("Stream/Output/Audio") {
+            continue;
+        }
+
+        // Skip our own process tree
+        if let Some(pid) = get_pid_from_props(props) {
+            if pid == our_pid || child_pids.contains(&pid) {
+                continue;
+            }
+        }
+
+        let node_id = match obj.get("id").and_then(|v| v.as_u64()) {
+            Some(id) => id,
+            None => continue,
+        };
+
+        apps.push(AudioApplication {
+            node_id,
+            name: props
+                .get("application.name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown")
+                .to_string(),
+            binary: props
+                .get("application.process.binary")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            stream_name: props
+                .get("media.name")
+                .or_else(|| props.get("node.name"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("Audio")
+                .to_string(),
+        });
+    }
+
+    Ok(apps)
+}
+
+/// Create a PipeWire null-sink via pactl. Returns the module ID for cleanup.
+pub fn create_null_sink(sink_name: &str) -> Result<u32, String> {
+    let output = Command::new("pactl")
+        .args([
+            "load-module",
+            "module-null-sink",
+            &format!("sink_name={sink_name}"),
+            &format!("sink_properties=media.class=Audio/Sink,node.name={sink_name}"),
+        ])
+        .output()
+        .map_err(|e| format!("pactl load-module failed: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Failed to create null-sink: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse::<u32>()
+        .map_err(|e| format!("Bad module ID from pactl: {e}"))
+}
+
+/// Destroy a null-sink by unloading its PulseAudio module. This also removes all links.
+pub fn destroy_null_sink(module_id: u32) {
+    let _ = Command::new("pactl")
+        .args(["unload-module", &module_id.to_string()])
+        .status();
+}
+
+/// Link a target app's output ports to a null-sink's input ports.
+/// Returns the number of links created.
+pub fn link_app_to_null_sink(
+    objects: &[serde_json::Value],
+    target_node_id: u64,
+    null_sink_node_id: u64,
+) -> Result<usize, String> {
+    let target_output_ports = find_node_ports(objects, target_node_id, "output");
+    let sink_input_ports = find_node_ports(objects, null_sink_node_id, "input");
+
+    if target_output_ports.is_empty() {
+        return Err("Target app has no output ports".into());
+    }
+    if sink_input_ports.is_empty() {
+        return Err("Null-sink has no input ports".into());
+    }
+
+    let pairs = match_ports(&target_output_ports, &sink_input_ports);
+    for &(out_port, in_port) in &pairs {
+        pw_create_link(out_port, in_port)?;
+    }
+
+    Ok(pairs.len())
+}
+
 /// Walk /proc to find all descendant PIDs of `parent`.
-fn get_descendant_pids(parent: u32) -> Vec<u32> {
+pub(crate) fn get_descendant_pids(parent: u32) -> Vec<u32> {
     let mut result = Vec::new();
     let mut queue = vec![parent];
 

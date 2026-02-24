@@ -4,6 +4,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useServerStore } from '../../stores/serverStore';
 import { invalidateDeviceCache } from '../../utils/audioDevices';
 import { SoundboardPanel } from './SoundboardPanel';
+import { AudioSharePicker } from './AudioSharePicker';
 import './VoicePanel.css';
 
 interface NativeVoicePanelProps {
@@ -48,7 +49,11 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
   const [connectionState, setConnectionState] = useState<string>('connecting');
   const [participants, setParticipants] = useState<Map<string, ParticipantInfo>>(new Map());
   const [localIdentity, setLocalIdentity] = useState<string | null>(null);
+  const voiceAudioSharing = useServerStore((s) => s.voiceAudioSharing);
+  const voiceSetAudioSharing = useServerStore((s) => s.voiceSetAudioSharing);
+
   const [showSoundboard, setShowSoundboard] = useState(false);
+  const [showAudioSharePicker, setShowAudioSharePicker] = useState(false);
   const localIdentityRef = useRef<string | null>(null);
 
   // Per-user volume
@@ -224,6 +229,14 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
         })
       );
 
+      // Audio share ended (target app closed or PipeWire error)
+      unlisteners.push(
+        await listen<void>('voice:audio-share-ended', () => {
+          invoke('voice_stop_audio_share').catch(() => {});
+          voiceSetAudioSharing(false);
+        })
+      );
+
       // Local identity from Rust (for self-speaking indicator)
       unlisteners.push(
         await listen<string>('voice:local-identity', (event) => {
@@ -275,7 +288,7 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
       holdTimersRef.current.clear();
       setSpeakingUsers(new Set());
     };
-  }, [updateSpeakingStore, setSpeakingUsers, voiceLeave]);
+  }, [updateSpeakingStore, setSpeakingUsers, voiceLeave, voiceSetAudioSharing]);
 
   // Sync mute state to Rust
   useEffect(() => {
@@ -380,6 +393,33 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
       }
     }
   }, [participants]);
+
+  const handleStartAudioShare = async (targetNodeIds: number[], systemMode: boolean) => {
+    setShowAudioSharePicker(false);
+    try {
+      await invoke('voice_start_audio_share', { targetNodeIds, systemMode });
+      voiceSetAudioSharing(true);
+    } catch (e) {
+      console.error('[NativeVoicePanel] voice_start_audio_share failed:', e);
+    }
+  };
+
+  const handleStopAudioShare = async () => {
+    try {
+      await invoke('voice_stop_audio_share');
+    } catch (e) {
+      console.error('[NativeVoicePanel] voice_stop_audio_share failed:', e);
+    }
+    voiceSetAudioSharing(false);
+  };
+
+  const handleToggleAudioShare = () => {
+    if (voiceAudioSharing) {
+      handleStopAudioShare();
+    } else {
+      setShowAudioSharePicker(true);
+    }
+  };
 
   // Build participant list (include self)
   const allParticipants = Array.from(participants.values());
@@ -499,6 +539,15 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
           </svg>
         </button>
         <button
+          className={`voice-panel-btn ${voiceAudioSharing ? 'active-on' : ''}`}
+          onClick={handleToggleAudioShare}
+          title={voiceAudioSharing ? 'Stop Sharing Audio' : 'Share Audio'}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+          </svg>
+        </button>
+        <button
           className={`voice-panel-btn ${showSoundboard ? 'active-on' : ''}`}
           onClick={() => setShowSoundboard(!showSoundboard)}
           title="Soundboard"
@@ -521,6 +570,12 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
         <SoundboardPanel
           serverId={activeServerId}
           onClose={() => setShowSoundboard(false)}
+        />
+      )}
+      {showAudioSharePicker && (
+        <AudioSharePicker
+          onStart={handleStartAudioShare}
+          onClose={() => setShowAudioSharePicker(false)}
         />
       )}
     </div>

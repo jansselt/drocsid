@@ -251,6 +251,12 @@ pub fn run() {
             audio::get_default_audio_sink,
             #[cfg(target_os = "linux")]
             audio::label_audio_streams,
+            #[cfg(target_os = "linux")]
+            audio::list_audio_applications,
+            #[cfg(target_os = "linux")]
+            voice::voice_start_audio_share,
+            #[cfg(target_os = "linux")]
+            voice::voice_stop_audio_share,
             voice::voice_connect,
             voice::voice_disconnect,
             voice::voice_set_mute,

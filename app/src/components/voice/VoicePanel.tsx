@@ -104,6 +104,8 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
   const room = useRoomContext();
 
   const [showSoundboard, setShowSoundboard] = useState(false);
+  const [isAudioSharing, setIsAudioSharing] = useState(false);
+  const voiceSetAudioSharing = useServerStore((s) => s.voiceSetAudioSharing);
 
   // Per-user volume control
   const [volumeMenu, setVolumeMenu] = useState<{ identity: string; x: number; y: number } | null>(null);
@@ -421,6 +423,51 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
     }
   };
 
+  const handleToggleAudioShare = async () => {
+    if (!localParticipant) return;
+
+    if (isAudioSharing) {
+      // Stop: unpublish screen share audio track
+      for (const [, pub] of localParticipant.trackPublications) {
+        if (pub.source === Track.Source.ScreenShareAudio && pub.track) {
+          pub.track.mediaStreamTrack?.stop();
+          await localParticipant.unpublishTrack(pub.track);
+        }
+      }
+      setIsAudioSharing(false);
+      voiceSetAudioSharing(false);
+    } else {
+      // Start: capture display audio via getDisplayMedia
+      try {
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          audio: true,
+          video: true, // required by most browsers to get audio
+        });
+        // Discard video track — we only want audio
+        stream.getVideoTracks().forEach((t) => t.stop());
+
+        const audioTrack = stream.getAudioTracks()[0];
+        if (!audioTrack) throw new Error('No audio track captured');
+
+        await localParticipant.publishTrack(audioTrack, {
+          source: Track.Source.ScreenShareAudio,
+          name: 'audio-share',
+        });
+
+        // Auto-cleanup when user stops sharing via browser UI
+        audioTrack.addEventListener('ended', () => {
+          setIsAudioSharing(false);
+          voiceSetAudioSharing(false);
+        });
+
+        setIsAudioSharing(true);
+        voiceSetAudioSharing(true);
+      } catch (e) {
+        console.warn('[VoicePanel] Audio sharing failed:', e);
+      }
+    }
+  };
+
   return (
     <div className={`voice-panel ${compact ? 'compact' : ''}`}>
       <RoomAudioRenderer />
@@ -569,6 +616,15 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
             <path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.11-.9-2-2-2H4c-1.11 0-2 .89-2 2v10c0 1.1.89 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z" />
+          </svg>
+        </button>
+        <button
+          className={`voice-panel-btn ${isAudioSharing ? 'active-on' : ''}`}
+          onClick={handleToggleAudioShare}
+          title={isAudioSharing ? 'Stop Sharing Audio' : 'Share Audio'}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
           </svg>
         </button>
         <button

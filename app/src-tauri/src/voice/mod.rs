@@ -179,6 +179,39 @@ pub fn voice_list_output_devices() -> Result<Vec<AudioDevice>, String> {
     Ok(devices)
 }
 
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub async fn voice_start_audio_share(
+    app: tauri::AppHandle,
+    state: State<'_, VoiceState>,
+    target_node_ids: Vec<u64>,
+    system_mode: Option<bool>,
+) -> Result<(), String> {
+    log::info!(
+        "voice_start_audio_share: targets={target_node_ids:?}, system={}",
+        system_mode.unwrap_or(false)
+    );
+    let mut guard = state.0.lock().await;
+    if let Some(mgr) = guard.as_mut() {
+        mgr.start_audio_share(app, target_node_ids, system_mode.unwrap_or(false))
+            .await
+    } else {
+        Err("Not in a voice channel".into())
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub async fn voice_stop_audio_share(state: State<'_, VoiceState>) -> Result<(), String> {
+    log::info!("voice_stop_audio_share called");
+    let mut guard = state.0.lock().await;
+    if let Some(mgr) = guard.as_mut() {
+        mgr.stop_audio_share().await
+    } else {
+        Ok(())
+    }
+}
+
 #[tauri::command]
 pub async fn voice_mic_test_start(
     app: tauri::AppHandle,

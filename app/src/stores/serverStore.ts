@@ -118,6 +118,7 @@ interface ServerState {
   voiceUrl: string | null;
   voiceSelfMute: boolean;
   voiceSelfDeaf: boolean;
+  voiceAudioSharing: boolean;
   voiceStates: Map<string, VoiceState[]>; // channel_id -> voice states
   speakingUsers: Set<string>; // user_ids currently speaking (from LiveKit)
 
@@ -189,6 +190,7 @@ interface ServerState {
   voiceLeave: () => Promise<void>;
   voiceToggleMute: () => Promise<void>;
   voiceToggleDeaf: () => Promise<void>;
+  voiceSetAudioSharing: (sharing: boolean) => Promise<void>;
   loadVoiceStates: (channelId: string) => Promise<void>;
   setSpeakingUsers: (userIds: Set<string>) => void;
 
@@ -339,6 +341,7 @@ export const useServerStore = create<ServerState>((set, get) => ({
   voiceUrl: null,
   voiceSelfMute: false,
   voiceSelfDeaf: false,
+  voiceAudioSharing: false,
   voiceStates: new Map(),
   speakingUsers: new Set(),
   soundboardSounds: new Map(),
@@ -1059,6 +1062,7 @@ export const useServerStore = create<ServerState>((set, get) => ({
       voiceUrl: null,
       voiceSelfMute: false,
       voiceSelfDeaf: false,
+      voiceAudioSharing: false,
     });
   },
 
@@ -1078,6 +1082,13 @@ export const useServerStore = create<ServerState>((set, get) => ({
     const newMute = newDeaf ? true : get().voiceSelfMute;
     set({ voiceSelfDeaf: newDeaf, voiceSelfMute: newMute });
     await api.voiceUpdateState(channelId, newMute, newDeaf).catch(() => {});
+  },
+
+  voiceSetAudioSharing: async (sharing) => {
+    const channelId = get().voiceChannelId;
+    if (!channelId) return;
+    set({ voiceAudioSharing: sharing });
+    await api.voiceUpdateState(channelId, undefined, undefined, sharing).catch(() => {});
   },
 
   setSpeakingUsers: (userIds) => set({ speakingUsers: userIds }),
@@ -1720,6 +1731,7 @@ export const useServerStore = create<ServerState>((set, get) => ({
                 channel_id: ev.channel_id,
                 self_mute: ev.self_mute,
                 self_deaf: ev.self_deaf,
+                audio_sharing: ev.audio_sharing,
               };
               if (idx >= 0) {
                 const updated = [...channelStates];

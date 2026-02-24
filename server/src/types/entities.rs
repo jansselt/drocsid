@@ -718,6 +718,7 @@ pub struct VoiceJoinRequest {
 pub struct VoiceStateUpdate {
     pub self_mute: Option<bool>,
     pub self_deaf: Option<bool>,
+    pub audio_sharing: Option<bool>,
 }
 
 // ── Invites ─────────────────────────────────────────────

@@ -542,10 +542,11 @@ export async function voiceUpdateState(
   channelId: string,
   selfMute?: boolean,
   selfDeaf?: boolean,
+  audioSharing?: boolean,
 ): Promise<void> {
   return request(`/channels/${channelId}/voice/state`, {
     method: 'PATCH',
-    body: JSON.stringify({ self_mute: selfMute, self_deaf: selfDeaf }),
+    body: JSON.stringify({ self_mute: selfMute, self_deaf: selfDeaf, audio_sharing: audioSharing }),
   });
 }
 

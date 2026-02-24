@@ -526,6 +526,59 @@ pub fn build_output_stream(
     })
 }
 
+/// Build a cpal input stream that pushes stereo (interleaved L/R) PCM samples into an rtrb ring buffer.
+/// Used for capturing audio share sources where we want to preserve stereo.
+#[cfg(target_os = "linux")]
+pub fn build_stereo_input_stream(
+    device_id: Option<&str>,
+    mut producer: Producer<i16>,
+) -> Result<cpal::Stream, String> {
+    log::info!("build_stereo_input_stream: device_id={device_id:?}");
+    with_input_device(device_id, |device| {
+        let (config, native_ch) = negotiate_input_config(&device)?;
+        log::info!(
+            "build_stereo_input_stream: negotiated ch={} rate={} (preserving stereo)",
+            config.channels, config.sample_rate
+        );
+
+        let stream = device
+            .build_input_stream(
+                &config,
+                move |data: &[i16], _: &cpal::InputCallbackInfo| {
+                    let ch = native_ch as usize;
+                    if ch >= 2 {
+                        // Pass through stereo (first 2 channels)
+                        for frame in data.chunks(ch) {
+                            let _ = producer.push(frame[0]); // L
+                            let _ = producer.push(if frame.len() > 1 { frame[1] } else { frame[0] }); // R
+                        }
+                    } else {
+                        // Mono source: duplicate to both channels
+                        for &sample in data {
+                            let _ = producer.push(sample);
+                            let _ = producer.push(sample);
+                        }
+                    }
+                },
+                |err| log::error!("cpal stereo input stream error: {err}"),
+                None,
+            )
+            .map_err(|e| {
+                log::error!("build_stereo_input_stream: build failed: {e}");
+                format!("Failed to build stereo input stream: {e}")
+            })?;
+
+        stream
+            .play()
+            .map_err(|e| {
+                log::error!("build_stereo_input_stream: play failed: {e}");
+                format!("Failed to start stereo input stream: {e}")
+            })?;
+        log::info!("build_stereo_input_stream: stream playing");
+        Ok(stream)
+    })
+}
+
 // ===========================================================================
 // Mic level test (cross-platform)
 // ===========================================================================

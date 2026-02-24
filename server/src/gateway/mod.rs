@@ -19,6 +19,7 @@ pub struct VoiceState {
     pub server_id: Uuid,
     pub self_mute: bool,
     pub self_deaf: bool,
+    pub audio_sharing: bool,
 }
 
 /// In-memory presence for a connected user
@@ -230,6 +231,7 @@ impl GatewayState {
             server_id,
             self_mute,
             self_deaf,
+            audio_sharing: false,
         });
         self.voice_channels
             .entry(channel_id)
@@ -243,6 +245,7 @@ impl GatewayState {
             user_id,
             self_mute,
             self_deaf,
+            audio_sharing: false,
         };
         self.broadcast_to_server(server_id, "VOICE_STATE_UPDATE", &event, None);
 
@@ -267,6 +270,7 @@ impl GatewayState {
                 user_id,
                 self_mute: false,
                 self_deaf: false,
+                audio_sharing: false,
             };
             self.broadcast_to_server(state.server_id, "VOICE_STATE_UPDATE", &event, None);
 
@@ -276,11 +280,12 @@ impl GatewayState {
         }
     }
 
-    /// Update mute/deaf state for a user in voice
-    pub fn voice_update(&self, user_id: Uuid, self_mute: bool, self_deaf: bool) -> bool {
+    /// Update mute/deaf/audio-sharing state for a user in voice
+    pub fn voice_update(&self, user_id: Uuid, self_mute: bool, self_deaf: bool, audio_sharing: bool) -> bool {
         if let Some(mut state) = self.voice_states.get_mut(&user_id) {
             state.self_mute = self_mute;
             state.self_deaf = self_deaf;
+            state.audio_sharing = audio_sharing;
 
             let event = VoiceStateUpdateEvent {
                 server_id: state.server_id,
@@ -288,6 +293,7 @@ impl GatewayState {
                 user_id,
                 self_mute,
                 self_deaf,
+                audio_sharing,
             };
             self.broadcast_to_server(state.server_id, "VOICE_STATE_UPDATE", &event, None);
             true
