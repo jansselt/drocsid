@@ -6,11 +6,13 @@ A self-hosted Discord alternative built with Rust and React. Designed for commun
 
 ## Why This Exists
 
-Discord's new age verification system was the last straw for us. We have privacy concerns with handing over government IDs and biometric data just to chat with friends. So we built our own.
+Discord's new age verification system was the last straw for us. As adults, we have privacy concerns with handing over government IDs and biometric data just to chat with friends. This project is not intended to circumvent any legal requirements — it's simply an alternative for people who want more control over their data. So we built our own.
 
 This project was built primarily with AI assistance by people with day jobs. We're not a company, we're not trying to build a product — we just wanted to move our community off Discord as quickly as possible.
 
 We'll keep updating things as we can, but this is a side project and always will be. If you want to submit ideas as issues, we're happy to look at them and implement what makes sense. If someone out there wants to take this and build something better — please do. We'll probably be your first adopters. The only goal here is to make leaving Discord easier for everyone.
+
+> **Use at your own risk.** This is a work in progress built by hobbyists, not security professionals. It has not been audited, pen-tested, or hardened for production use. There will be bugs. There will be missing features. Do not use this for anything where security or uptime actually matters. If you self-host this, you are solely responsible for your instance, your users' data, and compliance with any applicable laws (GDPR, etc.). We make no guarantees about data security, availability, or fitness for any purpose — see the [LICENSE](LICENSE) for the full disclaimer.
 
 ## Features
 
