@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.3](https://github.com/jansselt/drocsid/compare/drocsid-v0.8.2...drocsid-v0.8.3) (2026-02-24)
+
+
+### Bug Fixes
+
+* reset repository with clean git history ([4f4c024](https://github.com/jansselt/drocsid/commit/4f4c02465123f97af5033de980efe091f8b2d7cf))
+
 ## [0.8.2](https://github.com/jansselt/drocsid/compare/drocsid-v0.8.1...drocsid-v0.8.2) (2026-02-23)
 
 
