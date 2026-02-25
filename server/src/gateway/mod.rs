@@ -16,10 +16,12 @@ const HEARTBEAT_INTERVAL_MS: u64 = 41250;
 pub struct VoiceState {
     pub user_id: Uuid,
     pub channel_id: Uuid,
-    pub server_id: Uuid,
+    pub server_id: Option<Uuid>,
     pub self_mute: bool,
     pub self_deaf: bool,
     pub audio_sharing: bool,
+    /// For DM voice calls (server_id=None): the member user IDs to dispatch events to
+    pub dm_member_ids: Option<Vec<Uuid>>,
 }
 
 /// In-memory presence for a connected user
@@ -213,13 +215,15 @@ impl GatewayState {
     // ── Voice State ──────────────────────────────────────
 
     /// Join a voice channel. Returns the previous channel_id if the user was already in one.
+    /// For DM voice calls, pass `server_id: None` and `dm_member_ids: Some(vec![...])`.
     pub fn voice_join(
         &self,
         user_id: Uuid,
         channel_id: Uuid,
-        server_id: Uuid,
+        server_id: Option<Uuid>,
         self_mute: bool,
         self_deaf: bool,
+        dm_member_ids: Option<Vec<Uuid>>,
     ) -> Option<Uuid> {
         // Remove from previous voice channel if any
         let prev_channel = self.voice_leave(user_id);
@@ -232,13 +236,14 @@ impl GatewayState {
             self_mute,
             self_deaf,
             audio_sharing: false,
+            dm_member_ids: dm_member_ids.clone(),
         });
         self.voice_channels
             .entry(channel_id)
             .or_default()
             .insert(user_id);
 
-        // Broadcast join to server
+        // Broadcast join
         let event = VoiceStateUpdateEvent {
             server_id,
             channel_id: Some(channel_id),
@@ -247,7 +252,13 @@ impl GatewayState {
             self_deaf,
             audio_sharing: false,
         };
-        self.broadcast_to_server(server_id, "VOICE_STATE_UPDATE", &event, None);
+        if let Some(sid) = server_id {
+            self.broadcast_to_server(sid, "VOICE_STATE_UPDATE", &event, None);
+        } else if let Some(ref members) = dm_member_ids {
+            for &member_id in members {
+                self.dispatch_to_user(member_id, "VOICE_STATE_UPDATE", &event);
+            }
+        }
 
         prev_channel
     }
@@ -263,7 +274,7 @@ impl GatewayState {
                 }
             }
 
-            // Broadcast leave to server
+            // Broadcast leave
             let event = VoiceStateUpdateEvent {
                 server_id: state.server_id,
                 channel_id: None,
@@ -272,7 +283,13 @@ impl GatewayState {
                 self_deaf: false,
                 audio_sharing: false,
             };
-            self.broadcast_to_server(state.server_id, "VOICE_STATE_UPDATE", &event, None);
+            if let Some(sid) = state.server_id {
+                self.broadcast_to_server(sid, "VOICE_STATE_UPDATE", &event, None);
+            } else if let Some(ref members) = state.dm_member_ids {
+                for &member_id in members {
+                    self.dispatch_to_user(member_id, "VOICE_STATE_UPDATE", &event);
+                }
+            }
 
             Some(state.channel_id)
         } else {
@@ -295,7 +312,13 @@ impl GatewayState {
                 self_deaf,
                 audio_sharing,
             };
-            self.broadcast_to_server(state.server_id, "VOICE_STATE_UPDATE", &event, None);
+            if let Some(sid) = state.server_id {
+                self.broadcast_to_server(sid, "VOICE_STATE_UPDATE", &event, None);
+            } else if let Some(ref members) = state.dm_member_ids {
+                for &member_id in members {
+                    self.dispatch_to_user(member_id, "VOICE_STATE_UPDATE", &event);
+                }
+            }
             true
         } else {
             false

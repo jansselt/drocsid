@@ -229,7 +229,7 @@ async fn play_sound(
         .voice_state(user.user_id)
         .ok_or(ApiError::InvalidInput("Not in a voice channel".into()))?;
 
-    if voice_state.server_id != server_id {
+    if voice_state.server_id != Some(server_id) {
         return Err(ApiError::InvalidInput(
             "Not in a voice channel in this server".into(),
         ));

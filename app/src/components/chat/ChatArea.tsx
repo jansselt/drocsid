@@ -146,15 +146,36 @@ export function ChatArea() {
             </svg>
           </button>
           {isDm && (
-            <button
-              className="chat-header-action"
-              title="Add Members"
-              onClick={() => setShowAddMembers(true)}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-              </svg>
-            </button>
+            <>
+              <button
+                className={`chat-header-action ${voiceChannelId === activeChannelId ? 'active' : ''}`}
+                title={voiceChannelId === activeChannelId ? 'Leave Call' : 'Start Voice Call'}
+                onClick={() => {
+                  if (voiceChannelId === activeChannelId) {
+                    useServerStore.getState().voiceLeave();
+                  } else {
+                    useServerStore.getState().voiceJoin(activeChannelId);
+                  }
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  {voiceChannelId === activeChannelId ? (
+                    <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1.2-9.1c0-.66.54-1.2 1.2-1.2.66 0 1.2.54 1.2 1.2l-.01 6.2c0 .66-.53 1.2-1.19 1.2-.66 0-1.2-.54-1.2-1.2V4.9zm6.5 6.1c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7zM2.1 3.51L.69 4.93 8.76 13H9c1.66 0 3-1.34 3-3v-.76l7.31 7.31 1.41-1.42L2.1 3.51z" />
+                  ) : (
+                    <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z" />
+                  )}
+                </svg>
+              </button>
+              <button
+                className="chat-header-action"
+                title="Add Members"
+                onClick={() => setShowAddMembers(true)}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                </svg>
+              </button>
+            </>
           )}
           {!isDm && (
             <>

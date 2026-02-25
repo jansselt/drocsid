@@ -522,7 +522,7 @@ export interface VoiceState {
 }
 
 export interface VoiceStateUpdateEvent {
-  server_id: string;
+  server_id: string | null;
   channel_id: string | null;
   user_id: string;
   self_mute: boolean;

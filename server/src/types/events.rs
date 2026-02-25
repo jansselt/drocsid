@@ -292,7 +292,7 @@ pub struct ThreadCreateEvent {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct VoiceStateUpdateEvent {
-    pub server_id: Uuid,
+    pub server_id: Option<Uuid>,
     pub channel_id: Option<Uuid>,
     pub user_id: Uuid,
     pub self_mute: bool,
