@@ -12,6 +12,11 @@ use livekit::webrtc::audio_frame::AudioFrame;
 use livekit::webrtc::audio_source::native::NativeAudioSource;
 use livekit::webrtc::audio_source::RtcAudioSource;
 use livekit::webrtc::audio_stream::native::NativeAudioStream;
+use livekit::webrtc::video_frame::{I420Buffer, VideoFrame, VideoRotation};
+use livekit::webrtc::video_source::native::NativeVideoSource;
+use livekit::webrtc::video_source::RtcVideoSource;
+use livekit::webrtc::video_source::VideoResolution;
+use livekit::webrtc::video_stream::native::NativeVideoStream as NativeVideoStreamReader;
 use rtrb::Producer;
 use serde::Serialize;
 use tauri::Emitter;
@@ -40,6 +45,10 @@ pub struct VoiceManager {
     mic_swap_tx: mpsc::Sender<rtrb::Consumer<i16>>,
     /// Channel to send a replacement output ring-buffer producer to the mixer task.
     output_swap_tx: mpsc::Sender<rtrb::Producer<i16>>,
+    /// Active camera video source (if camera is publishing)
+    camera_source: Option<NativeVideoSource>,
+    /// Active screenshare video source (if screen is sharing)
+    screenshare_source: Option<NativeVideoSource>,
     /// Active audio share state (if sharing app audio)
     #[cfg(target_os = "linux")]
     audio_share: Option<AudioShareState>,
@@ -82,6 +91,22 @@ struct ConnectionStatePayload {
 struct TrackMutePayload {
     identity: String,
     muted: bool,
+}
+
+#[derive(Serialize, Clone)]
+struct RemoteVideoFramePayload {
+    identity: String,
+    source: String,
+    data: String,
+    width: u32,
+    height: u32,
+}
+
+#[derive(Serialize, Clone)]
+struct RemoteVideoTrackPayload {
+    identity: String,
+    source: String,
+    active: bool,
 }
 
 impl VoiceManager {
@@ -186,16 +211,21 @@ impl VoiceManager {
             mic_swap_rx,
         );
 
-        // 8. Spawn room event handler + audio mixer
+        // 8. Spawn room event handler + audio/video mixers
         let remote_streams: Arc<Mutex<HashMap<String, NativeAudioStream>>> =
             Arc::new(Mutex::new(HashMap::new()));
+        let remote_video_streams: Arc<Mutex<HashMap<String, NativeVideoStreamReader>>> =
+            Arc::new(Mutex::new(HashMap::new()));
 
-        log::info!("  step 8: spawning event handler + audio mixer");
+        log::info!("  step 8: spawning event handler + audio mixer + video forwarder");
         Self::spawn_event_handler(
-            app,
+            app.clone(),
             event_rx,
             remote_streams.clone(),
+            remote_video_streams.clone(),
         );
+
+        Self::spawn_video_forwarder(app, remote_video_streams);
 
         Self::spawn_audio_mixer(
             remote_streams,
@@ -217,6 +247,8 @@ impl VoiceManager {
             user_volumes,
             mic_swap_tx,
             output_swap_tx,
+            camera_source: None,
+            screenshare_source: None,
             #[cfg(target_os = "linux")]
             audio_share: None,
         })
@@ -224,6 +256,9 @@ impl VoiceManager {
 
     pub async fn disconnect(mut self) {
         log::info!("VoiceManager::disconnect");
+        // Stop camera/screenshare if active
+        let _ = self.stop_camera().await;
+        let _ = self.stop_screenshare().await;
         // Stop audio sharing if active
         #[cfg(target_os = "linux")]
         {
@@ -286,6 +321,180 @@ impl VoiceManager {
         // Replace stream — old one drops here, stopping its cpal callback
         self.output_stream = new_stream;
         log::info!("VoiceManager::set_output_device: swap complete");
+        Ok(())
+    }
+
+    // -- Camera & screen share --
+
+    /// Start publishing camera video. Creates a NativeVideoSource and publishes it.
+    pub async fn start_camera(&mut self) -> Result<(), String> {
+        if self.camera_source.is_some() {
+            return Ok(());
+        }
+
+        let resolution = VideoResolution {
+            width: 640,
+            height: 480,
+        };
+        let source = NativeVideoSource::new(resolution, false);
+
+        let local_track = LocalVideoTrack::create_video_track(
+            "camera",
+            RtcVideoSource::Native(source.clone()),
+        );
+
+        self.room
+            .local_participant()
+            .publish_track(
+                LocalTrack::Video(local_track),
+                TrackPublishOptions {
+                    source: TrackSource::Camera,
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|e| format!("Publish camera track failed: {e}"))?;
+
+        self.camera_source = Some(source);
+        log::info!("start_camera: published camera track");
+        Ok(())
+    }
+
+    /// Stop publishing camera video.
+    pub async fn stop_camera(&mut self) -> Result<(), String> {
+        if self.camera_source.take().is_none() {
+            return Ok(());
+        }
+
+        for pub_ in self.room.local_participant().track_publications().values() {
+            if pub_.source() == TrackSource::Camera {
+                let sid = pub_.sid();
+                let _ = self.room.local_participant().unpublish_track(&sid).await;
+            }
+        }
+
+        log::info!("stop_camera: unpublished camera track");
+        Ok(())
+    }
+
+    /// Start publishing screen share video. Creates a NativeVideoSource (screencast mode).
+    pub async fn start_screenshare(&mut self) -> Result<(), String> {
+        if self.screenshare_source.is_some() {
+            return Ok(());
+        }
+
+        let resolution = VideoResolution {
+            width: 1280,
+            height: 720,
+        };
+        let source = NativeVideoSource::new(resolution, true);
+
+        let local_track = LocalVideoTrack::create_video_track(
+            "screen",
+            RtcVideoSource::Native(source.clone()),
+        );
+
+        self.room
+            .local_participant()
+            .publish_track(
+                LocalTrack::Video(local_track),
+                TrackPublishOptions {
+                    source: TrackSource::Screenshare,
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|e| format!("Publish screenshare track failed: {e}"))?;
+
+        self.screenshare_source = Some(source);
+        log::info!("start_screenshare: published screenshare track");
+        Ok(())
+    }
+
+    /// Stop publishing screen share video.
+    pub async fn stop_screenshare(&mut self) -> Result<(), String> {
+        if self.screenshare_source.take().is_none() {
+            return Ok(());
+        }
+
+        for pub_ in self.room.local_participant().track_publications().values() {
+            if pub_.source() == TrackSource::Screenshare {
+                let sid = pub_.sid();
+                let _ = self.room.local_participant().unpublish_track(&sid).await;
+            }
+        }
+
+        log::info!("stop_screenshare: unpublished screenshare track");
+        Ok(())
+    }
+
+    /// Push a video frame (base64-encoded JPEG) to the specified source (camera or screenshare).
+    pub fn push_video_frame(&self, data: &str, source: &str) -> Result<(), String> {
+        use base64::Engine as _;
+
+        let video_source = match source {
+            "camera" => self.camera_source.as_ref(),
+            "screenshare" => self.screenshare_source.as_ref(),
+            _ => return Err(format!("Unknown video source: {source}")),
+        };
+
+        let video_source =
+            video_source.ok_or_else(|| format!("No active {source} source"))?;
+
+        // Decode base64 → JPEG bytes
+        let jpeg_bytes = base64::engine::general_purpose::STANDARD
+            .decode(data)
+            .map_err(|e| format!("Base64 decode failed: {e}"))?;
+
+        // Decode JPEG → RGBA
+        let img = image::load_from_memory_with_format(
+            &jpeg_bytes,
+            image::ImageFormat::Jpeg,
+        )
+        .map_err(|e| format!("JPEG decode failed: {e}"))?;
+        let rgba = img.to_rgba8();
+        let width = rgba.width();
+        let height = rgba.height();
+
+        // Convert RGBA → I420
+        let mut i420 = I420Buffer::new(width, height);
+        let (stride_y, stride_u, stride_v) = i420.strides();
+        let (data_y, data_u, data_v) = i420.data_mut();
+
+        let pixels = rgba.as_raw();
+        for y in 0..height as usize {
+            for x in 0..width as usize {
+                let idx = (y * width as usize + x) * 4;
+                let r = pixels[idx] as f32;
+                let g = pixels[idx + 1] as f32;
+                let b = pixels[idx + 2] as f32;
+
+                // Y plane
+                data_y[y * stride_y as usize + x] =
+                    (0.299 * r + 0.587 * g + 0.114 * b).clamp(0.0, 255.0) as u8;
+
+                // U and V planes (subsampled 2x2)
+                if y % 2 == 0 && x % 2 == 0 {
+                    let uv_x = x / 2;
+                    let uv_y = y / 2;
+                    data_u[uv_y * stride_u as usize + uv_x] =
+                        (-0.169 * r - 0.331 * g + 0.500 * b + 128.0)
+                            .clamp(0.0, 255.0) as u8;
+                    data_v[uv_y * stride_v as usize + uv_x] =
+                        (0.500 * r - 0.418 * g - 0.082 * b + 128.0)
+                            .clamp(0.0, 255.0) as u8;
+                }
+            }
+        }
+
+        let frame = VideoFrame {
+            rotation: VideoRotation::VideoRotation0,
+            buffer: i420,
+            timestamp_us: 0,
+        };
+
+        video_source.capture_frame(&frame);
+
         Ok(())
     }
 
@@ -661,43 +870,91 @@ impl VoiceManager {
         app: tauri::AppHandle,
         mut event_rx: mpsc::UnboundedReceiver<RoomEvent>,
         remote_streams: Arc<Mutex<HashMap<String, NativeAudioStream>>>,
+        remote_video_streams: Arc<Mutex<HashMap<String, NativeVideoStreamReader>>>,
     ) {
         tokio::spawn(async move {
             while let Some(event) = event_rx.recv().await {
                 match event {
                     RoomEvent::TrackSubscribed {
                         track,
+                        publication,
                         participant,
-                        ..
                     } => {
-                        if let RemoteTrack::Audio(audio_track) = track {
-                            let identity = participant.identity().to_string();
-                            log::info!("event: TrackSubscribed (audio) from {identity}");
-                            let stream = NativeAudioStream::new(
-                                audio_track.rtc_track(),
-                                SAMPLE_RATE as i32,
-                                NUM_CHANNELS as i32,
-                            );
-                            remote_streams
-                                .lock()
-                                .await
-                                .insert(identity, stream);
-                            let count = remote_streams.lock().await.len();
-                            log::info!("event: remote_streams count now = {count}");
+                        let identity = participant.identity().to_string();
+                        match track {
+                            RemoteTrack::Audio(audio_track) => {
+                                log::info!("event: TrackSubscribed (audio) from {identity}");
+                                let stream = NativeAudioStream::new(
+                                    audio_track.rtc_track(),
+                                    SAMPLE_RATE as i32,
+                                    NUM_CHANNELS as i32,
+                                );
+                                remote_streams
+                                    .lock()
+                                    .await
+                                    .insert(identity, stream);
+                                let count = remote_streams.lock().await.len();
+                                log::info!("event: remote_streams count now = {count}");
+                            }
+                            RemoteTrack::Video(video_track) => {
+                                let source_type = match publication.source() {
+                                    TrackSource::Camera => "camera",
+                                    TrackSource::Screenshare => "screenshare",
+                                    _ => "unknown",
+                                };
+                                log::info!("event: TrackSubscribed (video/{source_type}) from {identity}");
+                                let stream = NativeVideoStreamReader::new(video_track.rtc_track());
+                                let key = format!("{identity}:{source_type}");
+                                remote_video_streams.lock().await.insert(key, stream);
+
+                                let _ = app.emit(
+                                    "voice:remote-video-track",
+                                    RemoteVideoTrackPayload {
+                                        identity: identity.clone(),
+                                        source: source_type.to_string(),
+                                        active: true,
+                                    },
+                                );
+                            }
                         }
                     }
                     RoomEvent::TrackUnsubscribed {
                         track,
+                        publication,
                         participant,
-                        ..
                     } => {
-                        if matches!(track, RemoteTrack::Audio(_)) {
-                            let identity = participant.identity().to_string();
-                            log::info!("event: TrackUnsubscribed (audio) from {identity}");
-                            if let Some(mut stream) =
-                                remote_streams.lock().await.remove(&identity)
-                            {
-                                stream.close();
+                        let identity = participant.identity().to_string();
+                        match &track {
+                            RemoteTrack::Audio(_) => {
+                                log::info!("event: TrackUnsubscribed (audio) from {identity}");
+                                if let Some(mut stream) =
+                                    remote_streams.lock().await.remove(&identity)
+                                {
+                                    stream.close();
+                                }
+                            }
+                            RemoteTrack::Video(_) => {
+                                let source_type = match publication.source() {
+                                    TrackSource::Camera => "camera",
+                                    TrackSource::Screenshare => "screenshare",
+                                    _ => "unknown",
+                                };
+                                log::info!("event: TrackUnsubscribed (video/{source_type}) from {identity}");
+                                let key = format!("{identity}:{source_type}");
+                                if let Some(mut stream) =
+                                    remote_video_streams.lock().await.remove(&key)
+                                {
+                                    stream.close();
+                                }
+
+                                let _ = app.emit(
+                                    "voice:remote-video-track",
+                                    RemoteVideoTrackPayload {
+                                        identity: identity.clone(),
+                                        source: source_type.to_string(),
+                                        active: false,
+                                    },
+                                );
                             }
                         }
                     }
@@ -872,6 +1129,118 @@ impl VoiceManager {
                     }
                     diag_samples_written += mix_buf.len() as u64;
                 }
+            }
+        });
+    }
+
+    /// Periodically poll remote video streams, encode frames as JPEG, and emit to frontend.
+    fn spawn_video_forwarder(
+        app: tauri::AppHandle,
+        remote_video_streams: Arc<Mutex<HashMap<String, NativeVideoStreamReader>>>,
+    ) {
+        tokio::spawn(async move {
+            // ~15fps
+            let mut interval =
+                tokio::time::interval(std::time::Duration::from_millis(66));
+
+            loop {
+                interval.tick().await;
+
+                let mut streams = remote_video_streams.lock().await;
+                if streams.is_empty() {
+                    drop(streams);
+                    continue;
+                }
+
+                for (key, stream) in streams.iter_mut() {
+                    // Drain to latest frame
+                    let mut latest = None;
+                    while let Some(frame) = stream.next().now_or_never().flatten() {
+                        latest = Some(frame);
+                    }
+
+                    let frame = match latest {
+                        Some(f) => f,
+                        None => continue,
+                    };
+
+                    // Parse "identity:source" key
+                    let (identity, source_type) = match key.split_once(':') {
+                        Some(pair) => pair,
+                        None => continue,
+                    };
+
+                    // Convert video frame → I420 → JPEG → base64
+                    let width = frame.buffer.width();
+                    let height = frame.buffer.height();
+                    let i420 = frame.buffer.to_i420();
+                    let (stride_y, stride_u, stride_v) = i420.strides();
+                    let (data_y, data_u, data_v) = i420.data();
+
+                    // I420 → RGB
+                    let mut rgb = vec![0u8; (width * height * 3) as usize];
+                    for y_pos in 0..height as usize {
+                        for x_pos in 0..width as usize {
+                            let y_val =
+                                data_y[y_pos * stride_y as usize + x_pos] as f32;
+                            let u_val = data_u
+                                [(y_pos / 2) * stride_u as usize + (x_pos / 2)]
+                                as f32
+                                - 128.0;
+                            let v_val = data_v
+                                [(y_pos / 2) * stride_v as usize + (x_pos / 2)]
+                                as f32
+                                - 128.0;
+
+                            let r =
+                                (y_val + 1.402 * v_val).clamp(0.0, 255.0) as u8;
+                            let g = (y_val - 0.344 * u_val - 0.714 * v_val)
+                                .clamp(0.0, 255.0)
+                                as u8;
+                            let b =
+                                (y_val + 1.772 * u_val).clamp(0.0, 255.0) as u8;
+
+                            let idx = (y_pos * width as usize + x_pos) * 3;
+                            rgb[idx] = r;
+                            rgb[idx + 1] = g;
+                            rgb[idx + 2] = b;
+                        }
+                    }
+
+                    // RGB → JPEG
+                    let Some(img) =
+                        image::RgbImage::from_raw(width, height, rgb)
+                    else {
+                        continue;
+                    };
+                    let mut jpeg_buf = Vec::new();
+                    let encoder =
+                        image::codecs::jpeg::JpegEncoder::new_with_quality(
+                            &mut jpeg_buf,
+                            60,
+                        );
+                    if img.write_with_encoder(encoder).is_err() {
+                        continue;
+                    }
+
+                    // Base64 encode
+                    use base64::Engine as _;
+                    let b64 = base64::engine::general_purpose::STANDARD
+                        .encode(&jpeg_buf);
+
+                    let _ = app.emit(
+                        "voice:remote-video-frame",
+                        RemoteVideoFramePayload {
+                            identity: identity.to_string(),
+                            source: source_type.to_string(),
+                            data: b64,
+                            width,
+                            height,
+                        },
+                    );
+                }
+
+                drop(streams);
             }
         });
     }

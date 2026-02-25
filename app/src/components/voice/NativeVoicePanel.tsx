@@ -20,6 +20,11 @@ interface ParticipantInfo {
   muted: boolean;
 }
 
+interface RemoteVideoTrack {
+  identity: string;
+  source: string;
+}
+
 const VOLUMES_KEY = 'drocsid_user_volumes';
 
 function loadSavedVolumes(): Record<string, number> {
@@ -55,6 +60,23 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
   const [showSoundboard, setShowSoundboard] = useState(false);
   const [showAudioSharePicker, setShowAudioSharePicker] = useState(false);
   const localIdentityRef = useRef<string | null>(null);
+
+  // Camera & screen share state
+  const [cameraActive, setCameraActive] = useState(false);
+  const [screenShareActive, setScreenShareActive] = useState(false);
+  const [remoteVideoTracks, setRemoteVideoTracks] = useState<Map<string, RemoteVideoTrack>>(new Map());
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const cameraIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const cameraVideoElRef = useRef<HTMLVideoElement | null>(null);
+  const cameraCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
+  const screenIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const screenVideoElRef = useRef<HTMLVideoElement | null>(null);
+  const screenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  // Refs for remote video <img> elements (bypass React re-renders for 15fps perf)
+  const remoteImgRefs = useRef<Map<string, HTMLImageElement>>(new Map());
+  // Visible <video> element ref for local camera preview
+  const localPreviewRef = useRef<HTMLVideoElement>(null);
 
   // Per-user volume
   const [volumeMenu, setVolumeMenu] = useState<{ identity: string; x: number; y: number } | null>(null);
@@ -132,6 +154,23 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
       if (connected) {
         // Already connected — disconnect immediately
         intentionalDisconnectRef.current = true;
+        // Stop any active video capture loops
+        if (cameraIntervalRef.current) {
+          clearInterval(cameraIntervalRef.current);
+          cameraIntervalRef.current = null;
+        }
+        if (cameraStreamRef.current) {
+          cameraStreamRef.current.getTracks().forEach((t) => t.stop());
+          cameraStreamRef.current = null;
+        }
+        if (screenIntervalRef.current) {
+          clearInterval(screenIntervalRef.current);
+          screenIntervalRef.current = null;
+        }
+        if (screenStreamRef.current) {
+          screenStreamRef.current.getTracks().forEach((t) => t.stop());
+          screenStreamRef.current = null;
+        }
         invoke('voice_disconnect').catch(() => {});
         // Invalidate cached device list so next settings open re-enumerates
         // (safe since cpal streams are being torn down)
@@ -195,10 +234,24 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
 
       unlisteners.push(
         await listen<{ identity: string }>('voice:participant-left', (event) => {
+          const identity = event.payload.identity;
           setParticipants((prev) => {
             const next = new Map(prev);
-            next.delete(event.payload.identity);
+            next.delete(identity);
             return next;
+          });
+          // Clean up any remote video tracks for this participant
+          setRemoteVideoTracks((prev) => {
+            const next = new Map(prev);
+            let changed = false;
+            for (const [key, track] of prev) {
+              if (track.identity === identity) {
+                next.delete(key);
+                remoteImgRefs.current.delete(key);
+                changed = true;
+              }
+            }
+            return changed ? next : prev;
           });
         })
       );
@@ -234,6 +287,36 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
         await listen<void>('voice:audio-share-ended', () => {
           invoke('voice_stop_audio_share').catch(() => {});
           voiceSetAudioSharing(false);
+        })
+      );
+
+      // Remote video track add/remove
+      unlisteners.push(
+        await listen<{ identity: string; source: string; active: boolean }>('voice:remote-video-track', (event) => {
+          const { identity, source, active } = event.payload;
+          const key = `${identity}:${source}`;
+          setRemoteVideoTracks((prev) => {
+            const next = new Map(prev);
+            if (active) {
+              next.set(key, { identity, source });
+            } else {
+              next.delete(key);
+              remoteImgRefs.current.delete(key);
+            }
+            return next;
+          });
+        })
+      );
+
+      // Remote video frames (update <img> elements directly via refs)
+      unlisteners.push(
+        await listen<{ identity: string; source: string; data: string }>('voice:remote-video-frame', (event) => {
+          const { identity, source, data } = event.payload;
+          const key = `${identity}:${source}`;
+          const img = remoteImgRefs.current.get(key);
+          if (img) {
+            img.src = `data:image/jpeg;base64,${data}`;
+          }
         })
       );
 
@@ -394,6 +477,134 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
     }
   }, [participants]);
 
+  // -- Camera capture --
+  const stopCameraCapture = useCallback(() => {
+    if (cameraIntervalRef.current) {
+      clearInterval(cameraIntervalRef.current);
+      cameraIntervalRef.current = null;
+    }
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach((t) => t.stop());
+      cameraStreamRef.current = null;
+    }
+    if (localPreviewRef.current) {
+      localPreviewRef.current.srcObject = null;
+    }
+    cameraVideoElRef.current = null;
+    cameraCanvasRef.current = null;
+  }, []);
+
+  const handleToggleCamera = useCallback(async () => {
+    if (cameraActive) {
+      stopCameraCapture();
+      await invoke('voice_stop_camera').catch(() => {});
+      setCameraActive(false);
+    } else {
+      try {
+        await invoke('voice_start_camera');
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: 640, height: 480, frameRate: 15 },
+        });
+        cameraStreamRef.current = stream;
+
+        // Local preview
+        if (localPreviewRef.current) {
+          localPreviewRef.current.srcObject = stream;
+        }
+
+        // Hidden video + canvas for frame extraction
+        const video = document.createElement('video');
+        video.srcObject = stream;
+        video.muted = true;
+        await video.play();
+        cameraVideoElRef.current = video;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 640;
+        canvas.height = 480;
+        cameraCanvasRef.current = canvas;
+        const ctx = canvas.getContext('2d')!;
+
+        cameraIntervalRef.current = setInterval(() => {
+          ctx.drawImage(video, 0, 0, 640, 480);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+          const base64 = dataUrl.split(',')[1];
+          if (base64) {
+            invoke('voice_push_video_frame', { data: base64, source: 'camera' }).catch(() => {});
+          }
+        }, 66); // ~15fps
+
+        setCameraActive(true);
+      } catch (e) {
+        console.error('[NativeVoicePanel] camera start failed:', e);
+        await invoke('voice_stop_camera').catch(() => {});
+      }
+    }
+  }, [cameraActive, stopCameraCapture]);
+
+  // -- Screen share capture --
+  const stopScreenCapture = useCallback(() => {
+    if (screenIntervalRef.current) {
+      clearInterval(screenIntervalRef.current);
+      screenIntervalRef.current = null;
+    }
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach((t) => t.stop());
+      screenStreamRef.current = null;
+    }
+    screenVideoElRef.current = null;
+    screenCanvasRef.current = null;
+  }, []);
+
+  const handleToggleScreenShare = useCallback(async () => {
+    if (screenShareActive) {
+      stopScreenCapture();
+      await invoke('voice_stop_screenshare').catch(() => {});
+      setScreenShareActive(false);
+    } else {
+      try {
+        await invoke('voice_start_screenshare');
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 10 } },
+        });
+        screenStreamRef.current = stream;
+
+        // Auto-stop when user clicks browser's "Stop sharing"
+        stream.getVideoTracks()[0].addEventListener('ended', () => {
+          stopScreenCapture();
+          invoke('voice_stop_screenshare').catch(() => {});
+          setScreenShareActive(false);
+        });
+
+        const video = document.createElement('video');
+        video.srcObject = stream;
+        video.muted = true;
+        await video.play();
+        screenVideoElRef.current = video;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 1280;
+        canvas.height = 720;
+        screenCanvasRef.current = canvas;
+        const ctx = canvas.getContext('2d')!;
+
+        screenIntervalRef.current = setInterval(() => {
+          ctx.drawImage(video, 0, 0, 1280, 720);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+          const base64 = dataUrl.split(',')[1];
+          if (base64) {
+            invoke('voice_push_video_frame', { data: base64, source: 'screenshare' }).catch(() => {});
+          }
+        }, 100); // ~10fps
+
+        setScreenShareActive(true);
+      } catch (e) {
+        console.error('[NativeVoicePanel] screen share failed:', e);
+        await invoke('voice_stop_screenshare').catch(() => {});
+      }
+    }
+  }, [screenShareActive, stopScreenCapture]);
+
   const handleStartAudioShare = async (targetNodeIds: number[], systemMode: boolean) => {
     setShowAudioSharePicker(false);
     try {
@@ -472,6 +683,46 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
         })}
       </div>
 
+      {/* Video grid (local preview + remote videos) */}
+      {(cameraActive || screenShareActive || remoteVideoTracks.size > 0) && (
+        <div className="voice-video-grid">
+          {/* Local camera preview */}
+          {cameraActive && (
+            <div className="voice-video-tile">
+              <video
+                ref={localPreviewRef}
+                autoPlay
+                muted
+                playsInline
+                style={{ width: '100%', height: '100%', objectFit: 'contain', transform: 'scaleX(-1)' }}
+              />
+              <span className="voice-video-label">You (Camera)</span>
+            </div>
+          )}
+          {/* Remote video tiles */}
+          {Array.from(remoteVideoTracks.entries()).map(([key, track]) => {
+            const user = users.get(track.identity);
+            const displayName = user?.username || track.identity;
+            const isScreenShare = track.source === 'screenshare';
+            return (
+              <div key={key} className={`voice-video-tile ${isScreenShare ? 'screen-share' : ''}`}>
+                <img
+                  ref={(el) => {
+                    if (el) remoteImgRefs.current.set(key, el);
+                    else remoteImgRefs.current.delete(key);
+                  }}
+                  alt={`${displayName} ${track.source}`}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                />
+                <span className="voice-video-label">
+                  {displayName} ({isScreenShare ? 'Screen' : 'Camera'})
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Per-user volume menu */}
       {volumeMenu && (() => {
         const user = users.get(volumeMenu.identity);
@@ -536,6 +787,24 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
             ) : (
               <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
             )}
+          </svg>
+        </button>
+        <button
+          className={`voice-panel-btn ${cameraActive ? 'active-on' : ''}`}
+          onClick={handleToggleCamera}
+          title="Toggle Camera"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z" />
+          </svg>
+        </button>
+        <button
+          className={`voice-panel-btn ${screenShareActive ? 'active-on' : ''}`}
+          onClick={handleToggleScreenShare}
+          title="Screen Share"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.11-.9-2-2-2H4c-1.11 0-2 .89-2 2v10c0 1.1.89 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z" />
           </svg>
         </button>
         <button

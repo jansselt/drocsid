@@ -213,6 +213,64 @@ pub async fn voice_stop_audio_share(state: State<'_, VoiceState>) -> Result<(), 
 }
 
 #[tauri::command]
+pub async fn voice_start_camera(state: State<'_, VoiceState>) -> Result<(), String> {
+    log::info!("voice_start_camera called");
+    let mut guard = state.0.lock().await;
+    if let Some(mgr) = guard.as_mut() {
+        mgr.start_camera().await
+    } else {
+        Err("Not in a voice channel".into())
+    }
+}
+
+#[tauri::command]
+pub async fn voice_stop_camera(state: State<'_, VoiceState>) -> Result<(), String> {
+    log::info!("voice_stop_camera called");
+    let mut guard = state.0.lock().await;
+    if let Some(mgr) = guard.as_mut() {
+        mgr.stop_camera().await
+    } else {
+        Ok(())
+    }
+}
+
+#[tauri::command]
+pub async fn voice_start_screenshare(state: State<'_, VoiceState>) -> Result<(), String> {
+    log::info!("voice_start_screenshare called");
+    let mut guard = state.0.lock().await;
+    if let Some(mgr) = guard.as_mut() {
+        mgr.start_screenshare().await
+    } else {
+        Err("Not in a voice channel".into())
+    }
+}
+
+#[tauri::command]
+pub async fn voice_stop_screenshare(state: State<'_, VoiceState>) -> Result<(), String> {
+    log::info!("voice_stop_screenshare called");
+    let mut guard = state.0.lock().await;
+    if let Some(mgr) = guard.as_mut() {
+        mgr.stop_screenshare().await
+    } else {
+        Ok(())
+    }
+}
+
+#[tauri::command]
+pub async fn voice_push_video_frame(
+    state: State<'_, VoiceState>,
+    data: String,
+    source: String,
+) -> Result<(), String> {
+    let guard = state.0.lock().await;
+    if let Some(mgr) = guard.as_ref() {
+        mgr.push_video_frame(&data, &source)
+    } else {
+        Err("Not in a voice channel".into())
+    }
+}
+
+#[tauri::command]
 pub async fn voice_mic_test_start(
     app: tauri::AppHandle,
     state: State<'_, MicTestState>,
