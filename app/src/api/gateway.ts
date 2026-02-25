@@ -1,5 +1,5 @@
 import { GatewayOpcode, type GatewayPayload, type ReadyPayload } from '../types';
-import { getAccessToken } from './client';
+import { getAccessToken, ensureValidToken } from './client';
 
 import { getWsUrl } from './instance';
 
@@ -27,6 +27,7 @@ export class GatewayConnection {
       this.reconnectTimer = null;
     }
     this.ws = new WebSocket(`${getWsUrl()}/gateway`);
+    console.log('[Gateway] connecting');
 
     this.ws.onopen = () => {
       this.reconnectAttempts = 0;
@@ -105,8 +106,10 @@ export class GatewayConnection {
         if (this.reconnectTimer) {
           clearTimeout(this.reconnectTimer);
         }
-        this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = setTimeout(async () => {
           this.reconnectTimer = null;
+          // Token may have been rejected — refresh before retrying
+          await ensureValidToken();
           this.connect();
         }, 1000 + Math.random() * 4000);
         break;
@@ -174,8 +177,10 @@ export class GatewayConnection {
     }
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
     this.reconnectAttempts++;
-    this.reconnectTimer = setTimeout(() => {
+    this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null;
+      // Ensure token is valid before reconnecting (refresh if expired)
+      await ensureValidToken();
       this.connect();
     }, delay);
   }

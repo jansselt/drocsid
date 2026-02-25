@@ -12,29 +12,87 @@ import { getApiUrl } from './instance';
 
 let accessToken: string | null = null;
 let refreshToken: string | null = null;
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+// Margin before expiry to trigger proactive refresh (5 minutes)
+const REFRESH_MARGIN_MS = 5 * 60 * 1000;
+
+/** Decode JWT payload without verification (just to read expiry) */
+function getTokenExpiry(token: string): number | null {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.exp ? payload.exp * 1000 : null; // convert to ms
+  } catch {
+    return null;
+  }
+}
+
+function scheduleProactiveRefresh() {
+  if (refreshTimer) {
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
+  }
+  if (!accessToken || !refreshToken) return;
+
+  const expiry = getTokenExpiry(accessToken);
+  if (!expiry) return;
+
+  const delay = expiry - Date.now() - REFRESH_MARGIN_MS;
+  if (delay <= 0) {
+    // Already near expiry — refresh immediately
+    refreshAccessToken().catch(() => {});
+    return;
+  }
+
+  refreshTimer = setTimeout(() => {
+    refreshTimer = null;
+    refreshAccessToken().catch(() => {});
+  }, delay);
+}
 
 export function setTokens(access: string, refresh: string) {
   accessToken = access;
   refreshToken = refresh;
   localStorage.setItem('access_token', access);
   localStorage.setItem('refresh_token', refresh);
+  scheduleProactiveRefresh();
 }
 
 export function loadTokens(): boolean {
   accessToken = localStorage.getItem('access_token');
   refreshToken = localStorage.getItem('refresh_token');
+  if (accessToken) scheduleProactiveRefresh();
   return !!accessToken;
 }
 
 export function clearTokens() {
   accessToken = null;
   refreshToken = null;
+  if (refreshTimer) {
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
+  }
   localStorage.removeItem('access_token');
   localStorage.removeItem('refresh_token');
 }
 
 export function getAccessToken(): string | null {
   return accessToken;
+}
+
+/** Check if the current access token is expired or about to expire */
+export function isTokenExpired(): boolean {
+  if (!accessToken) return true;
+  const expiry = getTokenExpiry(accessToken);
+  if (!expiry) return true;
+  return Date.now() >= expiry - 30_000; // 30s grace
+}
+
+/** Try to ensure we have a valid access token. Returns true if token is valid. */
+export async function ensureValidToken(): Promise<boolean> {
+  if (!accessToken) return false;
+  if (!isTokenExpired()) return true;
+  return refreshAccessToken();
 }
 
 async function request<T>(
