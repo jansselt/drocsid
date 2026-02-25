@@ -1,5 +1,7 @@
 mod audio_io;
 mod manager;
+#[cfg(target_os = "linux")]
+mod screen_capture;
 pub(crate) mod suppressor;
 
 use std::sync::Arc;
@@ -234,6 +236,28 @@ pub async fn voice_stop_camera(state: State<'_, VoiceState>) -> Result<(), Strin
     }
 }
 
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub async fn voice_start_screenshare(
+    app: tauri::AppHandle,
+    state: State<'_, VoiceState>,
+) -> Result<(), String> {
+    log::info!("voice_start_screenshare called (native)");
+
+    // Phase 1: Open XDG portal picker (no mutex held — this blocks on user interaction)
+    let (pw_fd, node_id, portal) = screen_capture::request_screencast().await?;
+
+    // Phase 2: Publish track + start capture (needs mutex)
+    let mut guard = state.0.lock().await;
+    if let Some(mgr) = guard.as_mut() {
+        mgr.start_screenshare_native(pw_fd, node_id, portal, app)
+            .await
+    } else {
+        Err("Not in a voice channel".into())
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
 #[tauri::command]
 pub async fn voice_start_screenshare(state: State<'_, VoiceState>) -> Result<(), String> {
     log::info!("voice_start_screenshare called");

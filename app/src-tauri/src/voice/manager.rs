@@ -23,6 +23,8 @@ use tauri::Emitter;
 use tokio::sync::{mpsc, Mutex};
 
 use super::audio_io;
+#[cfg(target_os = "linux")]
+use super::screen_capture;
 use super::suppressor;
 
 const SAMPLE_RATE: u32 = 48000;
@@ -49,6 +51,9 @@ pub struct VoiceManager {
     camera_source: Option<NativeVideoSource>,
     /// Active screenshare video source (if screen is sharing)
     screenshare_source: Option<NativeVideoSource>,
+    /// Native screen capture state (Linux: GStreamer subprocess)
+    #[cfg(target_os = "linux")]
+    screenshare_capture: Option<screen_capture::ScreenCaptureState>,
     /// Active audio share state (if sharing app audio)
     #[cfg(target_os = "linux")]
     audio_share: Option<AudioShareState>,
@@ -250,6 +255,8 @@ impl VoiceManager {
             camera_source: None,
             screenshare_source: None,
             #[cfg(target_os = "linux")]
+            screenshare_capture: None,
+            #[cfg(target_os = "linux")]
             audio_share: None,
         })
     }
@@ -377,7 +384,55 @@ impl VoiceManager {
         Ok(())
     }
 
-    /// Start publishing screen share video. Creates a NativeVideoSource (screencast mode).
+    /// Start publishing screen share with native capture (Linux).
+    /// The PipeWire fd and node_id come from the XDG portal (opened before locking VoiceState).
+    #[cfg(target_os = "linux")]
+    pub async fn start_screenshare_native(
+        &mut self,
+        pw_fd: std::os::fd::OwnedFd,
+        node_id: u32,
+        portal: screen_capture::PortalSessionHandle,
+        app_handle: tauri::AppHandle,
+    ) -> Result<(), String> {
+        if self.screenshare_source.is_some() {
+            return Ok(());
+        }
+
+        let resolution = VideoResolution {
+            width: 1280,
+            height: 720,
+        };
+        let source = NativeVideoSource::new(resolution, true);
+
+        let local_track = LocalVideoTrack::create_video_track(
+            "screen",
+            RtcVideoSource::Native(source.clone()),
+        );
+
+        self.room
+            .local_participant()
+            .publish_track(
+                LocalTrack::Video(local_track),
+                TrackPublishOptions {
+                    source: TrackSource::Screenshare,
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|e| format!("Publish screenshare track failed: {e}"))?;
+
+        // Start the GStreamer capture subprocess
+        let capture =
+            screen_capture::start_capture(pw_fd, node_id, source.clone(), app_handle, portal)?;
+
+        self.screenshare_source = Some(source);
+        self.screenshare_capture = Some(capture);
+        log::info!("start_screenshare_native: published + capturing");
+        Ok(())
+    }
+
+    /// Start publishing screen share video (non-Linux: JS pushes frames via push_video_frame).
+    #[cfg(not(target_os = "linux"))]
     pub async fn start_screenshare(&mut self) -> Result<(), String> {
         if self.screenshare_source.is_some() {
             return Ok(());
@@ -413,6 +468,12 @@ impl VoiceManager {
 
     /// Stop publishing screen share video.
     pub async fn stop_screenshare(&mut self) -> Result<(), String> {
+        // Stop native capture subprocess if running (Linux)
+        #[cfg(target_os = "linux")]
+        if let Some(capture) = self.screenshare_capture.take() {
+            capture.stop();
+        }
+
         if self.screenshare_source.take().is_none() {
             return Ok(());
         }

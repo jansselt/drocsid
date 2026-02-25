@@ -69,12 +69,10 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
   const cameraIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cameraVideoElRef = useRef<HTMLVideoElement | null>(null);
   const cameraCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const screenStreamRef = useRef<MediaStream | null>(null);
-  const screenIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const screenVideoElRef = useRef<HTMLVideoElement | null>(null);
-  const screenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   // Refs for remote video <img> elements (bypass React re-renders for 15fps perf)
   const remoteImgRefs = useRef<Map<string, HTMLImageElement>>(new Map());
+  // Ref for local screen share preview <img> (bypass React re-renders)
+  const localScreenPreviewRef = useRef<HTMLImageElement>(null);
   // Visible <video> element ref for local camera preview
   const localPreviewRef = useRef<HTMLVideoElement>(null);
 
@@ -162,14 +160,6 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
         if (cameraStreamRef.current) {
           cameraStreamRef.current.getTracks().forEach((t) => t.stop());
           cameraStreamRef.current = null;
-        }
-        if (screenIntervalRef.current) {
-          clearInterval(screenIntervalRef.current);
-          screenIntervalRef.current = null;
-        }
-        if (screenStreamRef.current) {
-          screenStreamRef.current.getTracks().forEach((t) => t.stop());
-          screenStreamRef.current = null;
         }
         invoke('voice_disconnect').catch(() => {});
         // Invalidate cached device list so next settings open re-enumerates
@@ -484,7 +474,26 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
     }
   }, [cameraActive]);
 
+  // Listen for native screenshare-ended event (GStreamer pipeline stopped unexpectedly)
+  // and local screen preview frames
+  useEffect(() => {
+    const unlisteners: UnlistenFn[] = [];
+    listen<void>('voice:screenshare-ended', () => {
+      invoke('voice_stop_screenshare').catch(() => {});
+      setScreenShareActive(false);
+    }).then((fn) => { unlisteners.push(fn); });
+    listen<string>('voice:local-screen-preview', (event) => {
+      const img = localScreenPreviewRef.current;
+      if (img) {
+        img.src = `data:image/jpeg;base64,${event.payload}`;
+      }
+    }).then((fn) => { unlisteners.push(fn); });
+    return () => { unlisteners.forEach((fn) => fn()); };
+  }, []);
+
   // -- Camera capture --
+  const cameraBusyRef = useRef(false);
+
   const stopCameraCapture = useCallback(() => {
     if (cameraIntervalRef.current) {
       clearInterval(cameraIntervalRef.current);
@@ -507,12 +516,27 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
       await invoke('voice_stop_camera').catch(() => {});
       setCameraActive(false);
     } else {
+      // Guard against double-click / StrictMode double-invocation
+      if (cameraBusyRef.current) return;
+      cameraBusyRef.current = true;
       try {
-        await invoke('voice_start_camera');
+        // Get the camera stream FIRST (before publishing in Rust)
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { width: 640, height: 480, frameRate: 15 },
         });
+
+        // Now publish the track in Rust
+        await invoke('voice_start_camera');
+
         cameraStreamRef.current = stream;
+
+        // If webkit2gtk kills the camera (e.g. when getDisplayMedia is invoked),
+        // auto-stop the camera capture cleanly.
+        stream.getVideoTracks()[0]?.addEventListener('ended', () => {
+          stopCameraCapture();
+          invoke('voice_stop_camera').catch(() => {});
+          setCameraActive(false);
+        });
 
         // Hidden video + canvas for frame extraction
         const video = document.createElement('video');
@@ -539,73 +563,37 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
         setCameraActive(true);
       } catch (e) {
         console.error('[NativeVoicePanel] camera start failed:', e);
-        await invoke('voice_stop_camera').catch(() => {});
+        // Only clean up Rust side if we actually published
+        if (cameraStreamRef.current) {
+          await invoke('voice_stop_camera').catch(() => {});
+        }
+      } finally {
+        cameraBusyRef.current = false;
       }
     }
   }, [cameraActive, stopCameraCapture]);
 
-  // -- Screen share capture --
-  const stopScreenCapture = useCallback(() => {
-    if (screenIntervalRef.current) {
-      clearInterval(screenIntervalRef.current);
-      screenIntervalRef.current = null;
-    }
-    if (screenStreamRef.current) {
-      screenStreamRef.current.getTracks().forEach((t) => t.stop());
-      screenStreamRef.current = null;
-    }
-    screenVideoElRef.current = null;
-    screenCanvasRef.current = null;
-  }, []);
+  // -- Screen share (handled natively in Rust via XDG portal + GStreamer) --
+  const screenShareBusyRef = useRef(false);
 
   const handleToggleScreenShare = useCallback(async () => {
     if (screenShareActive) {
-      stopScreenCapture();
       await invoke('voice_stop_screenshare').catch(() => {});
       setScreenShareActive(false);
     } else {
+      if (screenShareBusyRef.current) return;
+      screenShareBusyRef.current = true;
       try {
+        // Rust opens the XDG portal picker, starts GStreamer capture, publishes track
         await invoke('voice_start_screenshare');
-        const stream = await navigator.mediaDevices.getDisplayMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 10 } },
-        });
-        screenStreamRef.current = stream;
-
-        // Auto-stop when user clicks browser's "Stop sharing"
-        stream.getVideoTracks()[0].addEventListener('ended', () => {
-          stopScreenCapture();
-          invoke('voice_stop_screenshare').catch(() => {});
-          setScreenShareActive(false);
-        });
-
-        const video = document.createElement('video');
-        video.srcObject = stream;
-        video.muted = true;
-        await video.play();
-        screenVideoElRef.current = video;
-
-        const canvas = document.createElement('canvas');
-        canvas.width = 1280;
-        canvas.height = 720;
-        screenCanvasRef.current = canvas;
-        const ctx = canvas.getContext('2d')!;
-
-        screenIntervalRef.current = setInterval(() => {
-          ctx.drawImage(video, 0, 0, 1280, 720);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
-          const base64 = dataUrl.split(',')[1];
-          if (base64) {
-            invoke('voice_push_video_frame', { data: base64, source: 'screenshare' }).catch(() => {});
-          }
-        }, 100); // ~10fps
-
         setScreenShareActive(true);
       } catch (e) {
         console.error('[NativeVoicePanel] screen share failed:', e);
-        await invoke('voice_stop_screenshare').catch(() => {});
+      } finally {
+        screenShareBusyRef.current = false;
       }
     }
-  }, [screenShareActive, stopScreenCapture]);
+  }, [screenShareActive]);
 
   const handleStartAudioShare = async (targetNodeIds: number[], systemMode: boolean) => {
     setShowAudioSharePicker(false);
@@ -699,6 +687,17 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
                 style={{ width: '100%', height: '100%', objectFit: 'contain', transform: 'scaleX(-1)' }}
               />
               <span className="voice-video-label">You (Camera)</span>
+            </div>
+          )}
+          {/* Screen share local preview (frames from Rust capture loop) */}
+          {screenShareActive && (
+            <div className="voice-video-tile screen-share">
+              <img
+                ref={localScreenPreviewRef}
+                alt="Screen share preview"
+                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+              />
+              <span className="voice-video-label">You (Screen)</span>
             </div>
           )}
           {/* Remote video tiles */}
