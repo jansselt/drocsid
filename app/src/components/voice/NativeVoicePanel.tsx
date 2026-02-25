@@ -544,6 +544,8 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
     };
 
     return () => {
+      // Tell popout to close before we tear down the channel
+      bc.postMessage({ type: 'voiceEnded' });
       popoutBcRef.current = null;
       bc.close();
     };
