@@ -1,0 +1,65 @@
+.voice-popout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg-base);
+  overflow: hidden;
+}
+
+.voice-popout-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.5rem;
+  padding: 0.5rem;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.voice-popout-grid .voice-video-tile {
+  position: relative;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.voice-popout-grid .voice-video-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.voice-popout-grid .voice-video-tile.screen-share {
+  grid-column: 1 / -1;
+}
+
+.voice-popout-grid .voice-video-label {
+  position: absolute;
+  bottom: 0.5rem;
+  left: 0.5rem;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  padding: 0.125rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+
+.voice-popout-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.voice-popout-controls {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border-top: 1px solid var(--border);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+}

@@ -279,3 +279,21 @@
 .voice-panel-btn.disconnect:hover {
   background: #c03537;
 }
+
+/* ── Pop-out Indicator ────────────────────────────── */
+
+.voice-popout-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.voice-popout-indicator:hover {
+  color: var(--text-primary);
+}

@@ -5,6 +5,7 @@ import { useServerStore } from '../../stores/serverStore';
 import { invalidateDeviceCache } from '../../utils/audioDevices';
 import { SoundboardPanel } from './SoundboardPanel';
 import { AudioSharePicker } from './AudioSharePicker';
+import { POPOUT_BC_CHANNEL } from './VoicePopout';
 import './VoicePanel.css';
 
 interface NativeVoicePanelProps {
@@ -61,6 +62,10 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
   const [showSoundboard, setShowSoundboard] = useState(false);
   const [showAudioSharePicker, setShowAudioSharePicker] = useState(false);
   const localIdentityRef = useRef<string | null>(null);
+
+  // Pop-out window state
+  const [popoutOpen, setPopoutOpen] = useState(false);
+  const popoutBcRef = useRef<BroadcastChannel | null>(null);
 
   // Camera & screen share state
   const [cameraActive, setCameraActive] = useState(false);
@@ -469,11 +474,94 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
   }, [participants]);
 
   // Sync video-active state to store (drives full-height layout in ChatArea)
+  // When popout is open, report no video active so main window collapses
   useEffect(() => {
     const hasVideo = cameraActive || screenShareActive || remoteVideoTracks.size > 0;
-    voiceSetVideoActive(hasVideo);
+    voiceSetVideoActive(popoutOpen ? false : hasVideo);
     return () => voiceSetVideoActive(false);
-  }, [cameraActive, screenShareActive, remoteVideoTracks.size, voiceSetVideoActive]);
+  }, [cameraActive, screenShareActive, remoteVideoTracks.size, voiceSetVideoActive, popoutOpen]);
+
+  // BroadcastChannel for pop-out window communication
+  useEffect(() => {
+    const bc = new BroadcastChannel(POPOUT_BC_CHANNEL);
+    popoutBcRef.current = bc;
+
+    const sendTheme = () => {
+      const root = document.documentElement;
+      const computed = getComputedStyle(root);
+      const colors: Record<string, string> = {};
+      const props = [
+        '--bg-darkest', '--bg-base', '--bg-primary', '--bg-secondary', '--bg-tertiary',
+        '--bg-hover', '--bg-active', '--text-primary', '--text-secondary', '--text-muted',
+        '--border', '--accent', '--accent-hover', '--danger', '--font-body', '--text-glow',
+      ];
+      for (const prop of props) {
+        const val = root.style.getPropertyValue(prop) || computed.getPropertyValue(prop);
+        if (val) colors[prop] = val.trim();
+      }
+      bc.postMessage({ type: 'theme', colors });
+    };
+
+    const sendState = () => {
+      bc.postMessage({
+        type: 'state',
+        muted: useServerStore.getState().voiceSelfMute,
+        deaf: useServerStore.getState().voiceSelfDeaf,
+        cameraActive,
+        screenShareActive,
+      });
+    };
+
+    bc.onmessage = (event) => {
+      const msg = event.data;
+      switch (msg.type) {
+        case 'popoutReady':
+          // Popout just loaded — send theme and current state
+          sendTheme();
+          sendState();
+          break;
+        case 'popoutClosed':
+        case 'popIn':
+          setPopoutOpen(false);
+          invoke('close_voice_popout').catch(() => {});
+          break;
+        case 'toggleMute':
+          voiceToggleMute();
+          break;
+        case 'toggleDeaf':
+          voiceToggleDeaf();
+          break;
+        case 'disconnect':
+          voiceLeave();
+          break;
+      }
+    };
+
+    return () => {
+      popoutBcRef.current = null;
+      bc.close();
+    };
+  }, [cameraActive, screenShareActive, voiceToggleMute, voiceToggleDeaf, voiceLeave]);
+
+  // Send state updates to popout whenever mute/deaf/video changes
+  useEffect(() => {
+    if (!popoutOpen || !popoutBcRef.current) return;
+    popoutBcRef.current.postMessage({
+      type: 'state',
+      muted: voiceSelfMute,
+      deaf: voiceSelfDeaf,
+      cameraActive,
+      screenShareActive,
+    });
+  }, [popoutOpen, voiceSelfMute, voiceSelfDeaf, cameraActive, screenShareActive]);
+
+  // Close popout when voice disconnects
+  useEffect(() => {
+    if (connectionState === 'disconnected' && popoutOpen) {
+      popoutBcRef.current?.postMessage({ type: 'voiceEnded' });
+      setPopoutOpen(false);
+    }
+  }, [connectionState, popoutOpen]);
 
   // Connect local camera stream to preview element when it mounts
   useEffect(() => {
@@ -565,6 +653,8 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
           const base64 = dataUrl.split(',')[1];
           if (base64) {
             invoke('voice_push_video_frame', { data: base64, source: 'camera' }).catch(() => {});
+            // Forward to pop-out window if open
+            popoutBcRef.current?.postMessage({ type: 'localCameraFrame', data: base64 });
           }
         }, 66); // ~15fps
 
@@ -630,8 +720,25 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
     }
   };
 
+  const handlePopout = useCallback(async () => {
+    if (popoutOpen) {
+      // Already open — close it (pop back in)
+      popoutBcRef.current?.postMessage({ type: 'voiceEnded' });
+      setPopoutOpen(false);
+      invoke('close_voice_popout').catch(() => {});
+    } else {
+      try {
+        await invoke('create_voice_popout');
+        setPopoutOpen(true);
+      } catch (e) {
+        console.error('[NativeVoicePanel] Failed to create popout:', e);
+      }
+    }
+  }, [popoutOpen]);
+
   // Build participant list (include self)
   const allParticipants = Array.from(participants.values());
+  const hasVideo = cameraActive || screenShareActive || remoteVideoTracks.size > 0;
 
   return (
     <div className={`voice-panel ${compact ? 'compact' : ''}`}>
@@ -683,8 +790,8 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
       </div>
       )}
 
-      {/* Video grid (local preview + remote videos) */}
-      {(cameraActive || screenShareActive || remoteVideoTracks.size > 0) && (
+      {/* Video grid (local preview + remote videos) — hidden when popped out */}
+      {hasVideo && !popoutOpen && (
         <div className="voice-video-grid">
           {/* Local camera preview */}
           {cameraActive && (
@@ -731,6 +838,14 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
               </div>
             );
           })}
+        </div>
+      )}
+      {popoutOpen && (
+        <div className="voice-popout-indicator" onClick={handlePopout}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19 19H5V5h7V3H5c-1.1 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z" />
+          </svg>
+          <span>Video in pop-out window</span>
         </div>
       )}
 
@@ -829,6 +944,17 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
             <path d="M7.05 7.05a7 7 0 000 9.9l1.41-1.41a5 5 0 010-7.08L7.05 7.05zm9.9 0l-1.41 1.41a5 5 0 010 7.08l1.41 1.41a7 7 0 000-9.9z" />
           </svg>
         </button>
+        {hasVideo && (
+          <button
+            className={`voice-panel-btn ${popoutOpen ? 'active-on' : ''}`}
+            onClick={handlePopout}
+            title={popoutOpen ? 'Pop In' : 'Pop Out Video'}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 19H5V5h7V3H5c-1.1 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z" />
+            </svg>
+          </button>
+        )}
         <button
           className={`voice-panel-btn ${showSoundboard ? 'active-on' : ''}`}
           onClick={() => setShowSoundboard(!showSoundboard)}

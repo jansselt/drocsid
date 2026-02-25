@@ -209,6 +209,45 @@ fn update_tray_badge(app: tauri::AppHandle, count: u32) {
     }
 }
 
+struct AppPort(u16);
+
+#[tauri::command]
+fn create_voice_popout(app: tauri::AppHandle) -> Result<(), String> {
+    // Close existing popout if any
+    if let Some(existing) = app.get_webview_window("voice-popout") {
+        let _ = existing.close();
+    }
+
+    #[cfg(dev)]
+    let url = WebviewUrl::App(std::path::PathBuf::from("/?popout=voice"));
+
+    #[cfg(not(dev))]
+    let url = {
+        let port = app.state::<AppPort>().0;
+        let u: tauri::Url = format!("http://localhost:{}/?popout=voice", port)
+            .parse()
+            .map_err(|e: url::ParseError| e.to_string())?;
+        WebviewUrl::External(u)
+    };
+
+    WebviewWindowBuilder::new(&app, "voice-popout", url)
+        .title("Drocsid - Voice")
+        .inner_size(640.0, 480.0)
+        .resizable(true)
+        .always_on_top(true)
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn close_voice_popout(app: tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("voice-popout") {
+        let _ = win.close();
+    }
+}
+
 #[derive(serde::Serialize)]
 struct UpdateMethod {
     auto_update: bool,
@@ -331,6 +370,8 @@ pub fn run() {
             get_update_method,
             update_tray_badge,
             read_dropped_file,
+            create_voice_popout,
+            close_voice_popout,
         ])
         .setup(move |app| {
             // Initialize file + terminal logging
@@ -388,6 +429,7 @@ pub fn run() {
             // Register voice managed state (native LiveKit + cpal)
             app.manage(voice::VoiceState::new());
             app.manage(voice::MicTestState::new());
+            app.manage(AppPort(port));
 
             // Create the main window.  In dev mode, use the Vite dev server;
             // in production, use the localhost plugin's HTTP server so we get
@@ -407,6 +449,7 @@ pub fn run() {
                     tauri::ipc::CapabilityBuilder::new("localhost-ipc")
                         .remote(localhost_url.to_string())
                         .window("main")
+                        .window("voice-popout")
                         .permission("core:default")
                         .permission("core:tray:default")
                         .permission("notification:default")
@@ -472,8 +515,11 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let _ = window.hide();
-                api.prevent_close();
+                // Only minimize-to-tray for the main window; let popout windows close normally
+                if window.label() == "main" {
+                    let _ = window.hide();
+                    api.prevent_close();
+                }
             }
         })
         .run(tauri::generate_context!())
