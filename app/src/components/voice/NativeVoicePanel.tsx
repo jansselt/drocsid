@@ -521,7 +521,13 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
           sendState();
           break;
         case 'popoutClosed':
+          // Window is already closing (beforeunload fired) — just update state
+          console.log('[NativeVoicePanel] popoutClosed received');
+          setPopoutOpen(false);
+          break;
         case 'popIn':
+          // User clicked "pop in" — close the window from our side
+          console.log('[NativeVoicePanel] popIn received');
           setPopoutOpen(false);
           invoke('close_voice_popout').catch(() => {});
           break;
@@ -723,12 +729,15 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
   const handlePopout = useCallback(async () => {
     if (popoutOpen) {
       // Already open — close it (pop back in)
+      console.log('[NativeVoicePanel] closing popout (pop back in)');
       popoutBcRef.current?.postMessage({ type: 'voiceEnded' });
       setPopoutOpen(false);
       invoke('close_voice_popout').catch(() => {});
     } else {
       try {
+        console.log('[NativeVoicePanel] creating popout window');
         await invoke('create_voice_popout');
+        console.log('[NativeVoicePanel] popout created, setPopoutOpen(true)');
         setPopoutOpen(true);
       } catch (e) {
         console.error('[NativeVoicePanel] Failed to create popout:', e);

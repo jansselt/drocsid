@@ -8,13 +8,13 @@ const VoicePopout = lazy(() => import('./components/voice/VoicePopout.tsx').then
 const isPopout = new URLSearchParams(window.location.search).get('popout') === 'voice';
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    {isPopout ? (
-      <Suspense fallback={null}>
-        <VoicePopout />
-      </Suspense>
-    ) : (
+  isPopout ? (
+    <Suspense fallback={null}>
+      <VoicePopout />
+    </Suspense>
+  ) : (
+    <StrictMode>
       <App />
-    )}
-  </StrictMode>,
+    </StrictMode>
+  ),
 )

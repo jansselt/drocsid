@@ -225,9 +225,11 @@ fn create_voice_popout(app: tauri::AppHandle) -> Result<(), String> {
         .get_webview_window("main")
         .ok_or("Main window not found")?;
     let mut popout_url = main_win.url().map_err(|e| e.to_string())?;
+    eprintln!("[popout] main window URL: {popout_url}");
     popout_url.set_path("/");
     popout_url.set_query(Some("popout=voice"));
     popout_url.set_fragment(None);
+    eprintln!("[popout] opening popout at: {popout_url}");
     let url = WebviewUrl::External(popout_url);
 
     WebviewWindowBuilder::new(&app, "voice-popout", url)
