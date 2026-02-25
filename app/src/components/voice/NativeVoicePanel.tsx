@@ -477,6 +477,13 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
     }
   }, [participants]);
 
+  // Connect local camera stream to preview element when it mounts
+  useEffect(() => {
+    if (cameraActive && localPreviewRef.current && cameraStreamRef.current) {
+      localPreviewRef.current.srcObject = cameraStreamRef.current;
+    }
+  }, [cameraActive]);
+
   // -- Camera capture --
   const stopCameraCapture = useCallback(() => {
     if (cameraIntervalRef.current) {
@@ -506,11 +513,6 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
           video: { width: 640, height: 480, frameRate: 15 },
         });
         cameraStreamRef.current = stream;
-
-        // Local preview
-        if (localPreviewRef.current) {
-          localPreviewRef.current.srcObject = stream;
-        }
 
         // Hidden video + canvas for frame extraction
         const video = document.createElement('video');

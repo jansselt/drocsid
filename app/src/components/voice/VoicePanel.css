@@ -24,6 +24,7 @@
 
 .voice-panel.compact .voice-video-grid {
   max-height: none;
+  grid-template-columns: 1fr;
 }
 
 .voice-panel-header {
