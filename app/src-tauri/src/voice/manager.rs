@@ -41,6 +41,8 @@ pub struct VoiceManager {
     deaf: Arc<AtomicBool>,
     noise_suppression: Arc<AtomicBool>,
     shutdown_tx: mpsc::Sender<()>,
+    /// Shared flag to signal audio mixer + video forwarder to stop.
+    shutdown_flag: Arc<AtomicBool>,
     /// Per-user volume (0.0-2.0). Protected by tokio Mutex since only accessed from async tasks.
     user_volumes: Arc<Mutex<HashMap<String, f32>>>,
     /// Channel to send a replacement mic ring-buffer consumer to the forwarder task.
@@ -199,6 +201,7 @@ impl VoiceManager {
         let user_volumes: Arc<Mutex<HashMap<String, f32>>> =
             Arc::new(Mutex::new(HashMap::new()));
         let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>(1);
+        let shutdown_flag = Arc::new(AtomicBool::new(false));
 
         // Channels for hot-swapping audio devices while connected
         let (mic_swap_tx, mic_swap_rx) = mpsc::channel::<rtrb::Consumer<i16>>(4);
@@ -230,7 +233,7 @@ impl VoiceManager {
             remote_video_streams.clone(),
         );
 
-        Self::spawn_video_forwarder(app, remote_video_streams);
+        Self::spawn_video_forwarder(app, remote_video_streams, shutdown_flag.clone());
 
         Self::spawn_audio_mixer(
             remote_streams,
@@ -238,6 +241,7 @@ impl VoiceManager {
             user_volumes.clone(),
             deaf.clone(),
             output_swap_rx,
+            shutdown_flag.clone(),
         );
 
         log::info!("VoiceManager::connect: all steps complete, voice active");
@@ -249,6 +253,7 @@ impl VoiceManager {
             deaf,
             noise_suppression,
             shutdown_tx,
+            shutdown_flag,
             user_volumes,
             mic_swap_tx,
             output_swap_tx,
@@ -273,6 +278,7 @@ impl VoiceManager {
                 let _ = self.stop_audio_share().await;
             }
         }
+        self.shutdown_flag.store(true, Ordering::Relaxed);
         let _ = self.shutdown_tx.send(()).await;
         let _ = self.room.close().await;
         log::info!("VoiceManager::disconnect: done, streams dropped");
@@ -1102,6 +1108,7 @@ impl VoiceManager {
         user_volumes: Arc<Mutex<HashMap<String, f32>>>,
         deaf: Arc<AtomicBool>,
         mut swap_rx: mpsc::Receiver<rtrb::Producer<i16>>,
+        shutdown: Arc<AtomicBool>,
     ) {
         tokio::spawn(async move {
             let mut interval =
@@ -1117,6 +1124,10 @@ impl VoiceManager {
             let mut diag_ticks_with_audio: u64 = 0;
 
             loop {
+                if shutdown.load(Ordering::Relaxed) {
+                    log::info!("audio_mixer: shutdown signal received, exiting");
+                    break;
+                }
                 interval.tick().await;
 
                 // Check for a device-swap message (non-blocking)
@@ -1198,6 +1209,7 @@ impl VoiceManager {
     fn spawn_video_forwarder(
         app: tauri::AppHandle,
         remote_video_streams: Arc<Mutex<HashMap<String, NativeVideoStreamReader>>>,
+        shutdown: Arc<AtomicBool>,
     ) {
         tokio::spawn(async move {
             // ~15fps
@@ -1205,6 +1217,10 @@ impl VoiceManager {
                 tokio::time::interval(std::time::Duration::from_millis(66));
 
             loop {
+                if shutdown.load(Ordering::Relaxed) {
+                    log::info!("video_forwarder: shutdown signal received, exiting");
+                    break;
+                }
                 interval.tick().await;
 
                 let mut streams = remote_video_streams.lock().await;

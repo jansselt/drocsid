@@ -14,6 +14,7 @@ import { KeyboardShortcutsDialog } from '../common/KeyboardShortcutsDialog';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 import { useFaviconBadge } from '../../hooks/useFaviconBadge';
 import { useTrayBadge } from '../../hooks/useTrayBadge';
+import { isTauri } from '../../api/instance';
 import './AppLayout.css';
 
 const IDLE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
@@ -144,9 +145,13 @@ export function AppLayout() {
     return () => window.removeEventListener('open-bug-report', handleOpenBugReport);
   }, [handleOpenBugReport]);
 
-  // Idle detection: go idle after 5 minutes of no focus/activity
+  // Idle detection: go idle after 5 minutes of inactivity.
+  // In Tauri, polls system-level idle time (D-Bus) so switching to other apps
+  // doesn't falsely mark the user idle. In web, uses in-window events.
   useEffect(() => {
     const goIdle = () => {
+      // Never go idle while in a voice channel
+      if (useServerStore.getState().voiceChannelId) return;
       if (!isIdleRef.current) {
         isIdleRef.current = true;
         gateway.sendPresenceUpdate('idle');
@@ -167,6 +172,25 @@ export function AppLayout() {
       idleTimerRef.current = setTimeout(goIdle, IDLE_TIMEOUT);
     };
 
+    // Tauri: poll system idle time instead of relying on in-window events
+    let systemIdleInterval: ReturnType<typeof setInterval> | undefined;
+    if (isTauri()) {
+      import('@tauri-apps/api/core').then(({ invoke }) => {
+        systemIdleInterval = setInterval(async () => {
+          try {
+            const idleMs = await invoke<number>('get_system_idle_ms');
+            if (idleMs >= IDLE_TIMEOUT) {
+              goIdle();
+            } else {
+              goOnline();
+            }
+          } catch {
+            // D-Bus not available — fall through to in-window events
+          }
+        }, 30_000); // Check every 30s
+      });
+    }
+
     const onVisibilityChange = () => {
       if (document.hidden) {
         idleTimerRef.current = setTimeout(goIdle, IDLE_TIMEOUT);
@@ -178,16 +202,21 @@ export function AppLayout() {
     // Start idle timer
     idleTimerRef.current = setTimeout(goIdle, IDLE_TIMEOUT);
 
-    // Reset on user activity
+    // Reset on user activity (mousemove, keydown, click, scroll, touch)
     document.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('mousemove', goOnline);
     window.addEventListener('keydown', goOnline);
+    window.addEventListener('mousedown', goOnline);
+    window.addEventListener('scroll', goOnline, true);
 
     return () => {
       clearTimeout(idleTimerRef.current);
+      if (systemIdleInterval) clearInterval(systemIdleInterval);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('mousemove', goOnline);
       window.removeEventListener('keydown', goOnline);
+      window.removeEventListener('mousedown', goOnline);
+      window.removeEventListener('scroll', goOnline, true);
     };
   }, []);
 

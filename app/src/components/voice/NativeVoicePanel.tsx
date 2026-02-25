@@ -56,6 +56,7 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
   const [localIdentity, setLocalIdentity] = useState<string | null>(null);
   const voiceAudioSharing = useServerStore((s) => s.voiceAudioSharing);
   const voiceSetAudioSharing = useServerStore((s) => s.voiceSetAudioSharing);
+  const voiceSetVideoActive = useServerStore((s) => s.voiceSetVideoActive);
 
   const [showSoundboard, setShowSoundboard] = useState(false);
   const [showAudioSharePicker, setShowAudioSharePicker] = useState(false);
@@ -467,6 +468,13 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
     }
   }, [participants]);
 
+  // Sync video-active state to store (drives full-height layout in ChatArea)
+  useEffect(() => {
+    const hasVideo = cameraActive || screenShareActive || remoteVideoTracks.size > 0;
+    voiceSetVideoActive(hasVideo);
+    return () => voiceSetVideoActive(false);
+  }, [cameraActive, screenShareActive, remoteVideoTracks.size, voiceSetVideoActive]);
+
   // Connect local camera stream to preview element when it mounts
   useEffect(() => {
     if (cameraActive && localPreviewRef.current && cameraStreamRef.current) {
@@ -637,7 +645,8 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
         )}
       </div>
 
-      {/* Participant list */}
+      {/* Participant list (hide when alone) */}
+      {allParticipants.length > 1 && (
       <div className="voice-participants">
         {allParticipants.map((p) => {
           const user = users.get(p.identity);
@@ -672,6 +681,7 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
           );
         })}
       </div>
+      )}
 
       {/* Video grid (local preview + remote videos) */}
       {(cameraActive || screenShareActive || remoteVideoTracks.size > 0) && (

@@ -25,6 +25,7 @@ export function ChatArea() {
   const dmRecipients = useServerStore((s) => s.dmRecipients);
   const dmChannels = useServerStore((s) => s.dmChannels);
   const voiceChannelId = useServerStore((s) => s.voiceChannelId);
+  const voiceVideoActive = useServerStore((s) => s.voiceVideoActive);
   const currentUser = useAuthStore((s) => s.user);
 
   const servers = useServerStore((s) => s.servers);
@@ -94,8 +95,8 @@ export function ChatArea() {
   return (
     <div className="chat-area-wrapper">
       <div className="chat-area">
-        {/* Voice panel pinned at top when connected */}
-        {voiceChannelId && <VoicePanelCompact />}
+        {/* Voice panel: full-height when video/screenshare active, compact bar otherwise */}
+        {voiceChannelId && <VoicePanelCompact fullHeight={voiceVideoActive} />}
 
         <div
           className={`chat-header ${bannerUrl ? 'has-banner' : ''}`}
@@ -237,17 +238,16 @@ export function ChatArea() {
   );
 }
 
-/** Compact voice panel that shows at top of chat area when browsing text while in voice */
-function VoicePanelCompact() {
+/** Voice panel wrapper: compact bar normally, full-height when video/screenshare is active */
+function VoicePanelCompact({ fullHeight }: { fullHeight?: boolean }) {
   const voiceChannelId = useServerStore((s) => s.voiceChannelId);
   const voiceToken = useServerStore((s) => s.voiceToken);
   const voiceUrl = useServerStore((s) => s.voiceUrl);
   if (!voiceToken || !voiceUrl || !voiceChannelId) return null;
 
-  // We still need the LiveKitRoom for audio, but we render it minimally
   return (
-    <div className="voice-compact-bar">
-      <VoicePanel compact />
+    <div className={fullHeight ? 'voice-full-height' : 'voice-compact-bar'}>
+      <VoicePanel compact={!fullHeight} />
     </div>
   );
 }

@@ -106,6 +106,7 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
   const [showSoundboard, setShowSoundboard] = useState(false);
   const [isAudioSharing, setIsAudioSharing] = useState(false);
   const voiceSetAudioSharing = useServerStore((s) => s.voiceSetAudioSharing);
+  const voiceSetVideoActive = useServerStore((s) => s.voiceSetVideoActive);
 
   // Per-user volume control
   const [volumeMenu, setVolumeMenu] = useState<{ identity: string; x: number; y: number } | null>(null);
@@ -401,6 +402,12 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
 
   const hasVideo = screenShareTracks.length > 0 || cameraTrackRefs.length > 0;
 
+  // Sync video-active state to store (drives full-height layout in ChatArea)
+  useEffect(() => {
+    voiceSetVideoActive(hasVideo);
+    return () => voiceSetVideoActive(false);
+  }, [hasVideo, voiceSetVideoActive]);
+
   const handleToggleMute = async () => {
     if (localParticipant) {
       const newMute = !voiceSelfMute;
@@ -498,7 +505,8 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
         </div>
       )}
 
-      {/* Participant list */}
+      {/* Participant list (hide when alone) */}
+      {participants.length > 1 && (
       <div className="voice-participants">
         {participants.map((p) => {
           const user = users.get(p.identity);
@@ -533,6 +541,7 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
           );
         })}
       </div>
+      )}
 
       {/* Per-user volume menu */}
       {volumeMenu && (() => {

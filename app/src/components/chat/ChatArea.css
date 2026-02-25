@@ -121,6 +121,22 @@
   border-bottom: 1px solid var(--border);
 }
 
+/* Full-height voice panel when video/screenshare is active */
+.voice-full-height {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Hide chat content when voice takes full height */
+.voice-full-height ~ .chat-header,
+.voice-full-height ~ .message-list-wrapper,
+.voice-full-height ~ .typing-indicator,
+.voice-full-height ~ .message-input-wrapper {
+  display: none;
+}
+
 /* ── Pinned Messages Panel ────────────────────────── */
 
 .pinned-panel {

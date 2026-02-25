@@ -119,6 +119,7 @@ interface ServerState {
   voiceSelfMute: boolean;
   voiceSelfDeaf: boolean;
   voiceAudioSharing: boolean;
+  voiceVideoActive: boolean; // true when camera, screenshare, or remote video is active
   voiceStates: Map<string, VoiceState[]>; // channel_id -> voice states
   speakingUsers: Set<string>; // user_ids currently speaking (from LiveKit)
 
@@ -191,6 +192,7 @@ interface ServerState {
   voiceToggleMute: () => Promise<void>;
   voiceToggleDeaf: () => Promise<void>;
   voiceSetAudioSharing: (sharing: boolean) => Promise<void>;
+  voiceSetVideoActive: (active: boolean) => void;
   loadVoiceStates: (channelId: string) => Promise<void>;
   setSpeakingUsers: (userIds: Set<string>) => void;
 
@@ -342,6 +344,7 @@ export const useServerStore = create<ServerState>((set, get) => ({
   voiceSelfMute: false,
   voiceSelfDeaf: false,
   voiceAudioSharing: false,
+  voiceVideoActive: false,
   voiceStates: new Map(),
   speakingUsers: new Set(),
   soundboardSounds: new Map(),
@@ -1053,7 +1056,15 @@ export const useServerStore = create<ServerState>((set, get) => ({
     removeVoiceBeforeUnload();
     const channelId = get().voiceChannelId;
     if (channelId) {
-      await api.voiceLeave(channelId).catch(() => {});
+      // Retry the leave API call to avoid ghost users in voice
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          await api.voiceLeave(channelId);
+          break;
+        } catch {
+          if (attempt < 2) await new Promise((r) => setTimeout(r, 500));
+        }
+      }
       playVoiceLeaveSound();
     }
     set({
@@ -1063,6 +1074,7 @@ export const useServerStore = create<ServerState>((set, get) => ({
       voiceSelfMute: false,
       voiceSelfDeaf: false,
       voiceAudioSharing: false,
+      voiceVideoActive: false,
     });
   },
 
@@ -1090,6 +1102,8 @@ export const useServerStore = create<ServerState>((set, get) => ({
     set({ voiceAudioSharing: sharing });
     await api.voiceUpdateState(channelId, undefined, undefined, sharing).catch(() => {});
   },
+
+  voiceSetVideoActive: (active) => set({ voiceVideoActive: active }),
 
   setSpeakingUsers: (userIds) => set({ speakingUsers: userIds }),
 

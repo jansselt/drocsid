@@ -125,6 +125,58 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Get system-level user idle time in milliseconds (Linux).
+/// Queries D-Bus org.gnome.Mutter.IdleMonitor (GNOME/Wayland) first,
+/// then falls back to org.freedesktop.ScreenSaver (KDE/others).
+#[cfg(target_os = "linux")]
+#[tauri::command]
+fn get_system_idle_ms() -> Result<u64, String> {
+    // Try GNOME Mutter IdleMonitor first
+    let output = std::process::Command::new("dbus-send")
+        .args([
+            "--print-reply",
+            "--dest=org.gnome.Mutter.IdleMonitor",
+            "/org/gnome/Mutter/IdleMonitor/Core",
+            "org.gnome.Mutter.IdleMonitor.GetIdletime",
+        ])
+        .output();
+
+    if let Ok(out) = &output {
+        if out.status.success() {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            // Parse "uint64 12345" from dbus-send output
+            if let Some(val) = stdout.split("uint64").nth(1) {
+                if let Ok(ms) = val.trim().parse::<u64>() {
+                    return Ok(ms);
+                }
+            }
+        }
+    }
+
+    // Fallback: org.freedesktop.ScreenSaver.GetSessionIdleTime (KDE)
+    let output = std::process::Command::new("dbus-send")
+        .args([
+            "--print-reply",
+            "--dest=org.freedesktop.ScreenSaver",
+            "/org/freedesktop/ScreenSaver",
+            "org.freedesktop.ScreenSaver.GetSessionIdleTime",
+        ])
+        .output();
+
+    if let Ok(out) = &output {
+        if out.status.success() {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            if let Some(val) = stdout.split("uint32").nth(1) {
+                if let Ok(ms) = val.trim().parse::<u64>() {
+                    return Ok(ms);
+                }
+            }
+        }
+    }
+
+    Err("Could not determine system idle time".into())
+}
+
 #[tauri::command]
 fn read_dropped_file(path: String) -> Result<Vec<u8>, String> {
     std::fs::read(&path).map_err(|e| format!("Failed to read {path}: {e}"))
@@ -274,6 +326,8 @@ pub fn run() {
             voice::voice_push_video_frame,
             voice::voice_mic_test_start,
             voice::voice_mic_test_stop,
+            #[cfg(target_os = "linux")]
+            get_system_idle_ms,
             get_update_method,
             update_tray_badge,
             read_dropped_file,

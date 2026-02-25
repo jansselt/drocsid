@@ -46,12 +46,13 @@
 /* ── Video Grid ────────────────────────────────────── */
 
 .voice-video-grid {
+  flex: 1;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 0.5rem;
   padding: 0.5rem;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .voice-video-tile {
@@ -59,7 +60,7 @@
   background: var(--bg-tertiary);
   border-radius: 8px;
   overflow: hidden;
-  aspect-ratio: 16 / 9;
+  min-height: 0;
 }
 
 .voice-video-tile video,
