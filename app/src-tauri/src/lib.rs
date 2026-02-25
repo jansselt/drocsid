@@ -218,17 +218,17 @@ fn create_voice_popout(app: tauri::AppHandle) -> Result<(), String> {
         let _ = existing.close();
     }
 
-    #[cfg(dev)]
-    let url = WebviewUrl::App(std::path::PathBuf::from("/?popout=voice"));
-
-    #[cfg(not(dev))]
-    let url = {
-        let port = app.state::<AppPort>().0;
-        let u: tauri::Url = format!("http://localhost:{}/?popout=voice", port)
-            .parse()
-            .map_err(|e: url::ParseError| e.to_string())?;
-        WebviewUrl::External(u)
-    };
+    // Get the main window's URL origin and append the popout query param.
+    // WebviewUrl::App(PathBuf) can't carry query strings (? gets URL-encoded),
+    // so we build an External URL from the main window's actual origin.
+    let main_win = app
+        .get_webview_window("main")
+        .ok_or("Main window not found")?;
+    let mut popout_url = main_win.url().map_err(|e| e.to_string())?;
+    popout_url.set_path("/");
+    popout_url.set_query(Some("popout=voice"));
+    popout_url.set_fragment(None);
+    let url = WebviewUrl::External(popout_url);
 
     WebviewWindowBuilder::new(&app, "voice-popout", url)
         .title("Drocsid - Voice")

@@ -23,6 +23,7 @@ export function VoicePopout() {
 
   // Setup BroadcastChannel
   useEffect(() => {
+    console.log('[VoicePopout] mounted, setting up BroadcastChannel');
     const bc = new BroadcastChannel(POPOUT_BC_CHANNEL);
     bcRef.current = bc;
 
@@ -30,6 +31,7 @@ export function VoicePopout() {
       const msg = event.data;
       switch (msg.type) {
         case 'state':
+          console.log('[VoicePopout] state sync:', msg);
           setMuted(msg.muted);
           setDeaf(msg.deaf);
           setCameraActive(msg.cameraActive);
@@ -48,6 +50,7 @@ export function VoicePopout() {
           break;
         }
         case 'voiceEnded':
+          console.log('[VoicePopout] voiceEnded received, closing');
           window.close();
           break;
       }
@@ -62,6 +65,7 @@ export function VoicePopout() {
     window.addEventListener('beforeunload', handleUnload);
 
     return () => {
+      console.log('[VoicePopout] cleanup');
       window.removeEventListener('beforeunload', handleUnload);
       bc.postMessage({ type: 'popoutClosed' });
       bc.close();
@@ -122,7 +126,9 @@ export function VoicePopout() {
       // Connection state — close popout if voice disconnected
       unlisteners.push(
         await listen<{ state: string }>('voice:connection-state', (event) => {
+          console.log('[VoicePopout] connection-state:', event.payload.state);
           if (event.payload.state === 'disconnected') {
+            console.log('[VoicePopout] disconnected, closing popout');
             window.close();
           }
         })
