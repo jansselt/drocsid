@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.9.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.8.4...drocsid-v0.9.0) (2026-02-26)
+
+
+### Features
+
+* add camera and screen share to Tauri native voice panel ([f05a42d](https://github.com/jansselt/drocsid/commit/f05a42d7083f0c843fb8e6ac8bd4b42f408cd406))
+* native screen capture via XDG portal + GStreamer for Tauri ([9c3cc5c](https://github.com/jansselt/drocsid/commit/9c3cc5c5e4da596a3ff32537b040495878ccad29))
+* pop-out window for voice video and screen share ([58faeea](https://github.com/jansselt/drocsid/commit/58faeeaae481732b384d5f74260fd8c37194618d))
+* private voice calls from DMs ([31f1198](https://github.com/jansselt/drocsid/commit/31f11987d7b3befb60f7f8db78c4ec11ce8164a0))
+* share application/system audio in voice channels ([9e0f71c](https://github.com/jansselt/drocsid/commit/9e0f71ca30a6123d801b3549d5d24b5d205f6ab4))
+
+
+### Bug Fixes
+
+* camera preview ref timing and compact video grid layout ([0726a4b](https://github.com/jansselt/drocsid/commit/0726a4bac0a8155af9adb65e4608cb2274ae637a))
+* pop-out window URL construction — PathBuf can't carry query strings ([076ffe8](https://github.com/jansselt/drocsid/commit/076ffe83707af7a5c2cf6d01e38999ce1d8daa3e))
+* popout killed by StrictMode double-invoke cleanup ([5fb8595](https://github.com/jansselt/drocsid/commit/5fb8595772a17cde06b82789606f4dd4e1815af8))
+* popout left open when disconnecting from main window ([27ad36d](https://github.com/jansselt/drocsid/commit/27ad36d8f70d1acfb16ebf46914b32f8b6edea4b))
+* proactive token refresh prevents session expiry during dev ([cd9fa54](https://github.com/jansselt/drocsid/commit/cd9fa54471e37a61012db6dd09a41d4914a0385c))
+* PWA update button does nothing — add SKIP_WAITING handler to service worker ([257fac4](https://github.com/jansselt/drocsid/commit/257fac4ca291dc24935f0681cfea13a739a126c9))
+* PWA update button stuck on "Updating..." — add fallback reload + clients.claim ([b711ecf](https://github.com/jansselt/drocsid/commit/b711ecf61754966029c90429f4b1c70e5daf4c69))
+* use distinct broadcast icon for Share Audio button ([cb73de0](https://github.com/jansselt/drocsid/commit/cb73de0d588d0fc8ead621676644ff3f0e00b4d5))
+* voice panel bugs — audio mixer leak, ghost users, false idle, hidden participants ([a8f37c1](https://github.com/jansselt/drocsid/commit/a8f37c1ff8c54986294515ec8ed35049f2f66a56))
+
 ## [0.8.4](https://github.com/jansselt/drocsid/compare/drocsid-v0.8.3...drocsid-v0.8.4) (2026-02-24)
 
 
