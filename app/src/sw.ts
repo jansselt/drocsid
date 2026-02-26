@@ -10,7 +10,7 @@ precacheAndRoute(self.__WB_MANIFEST);
 // Allow the app to trigger activation of a waiting service worker
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
+    self.skipWaiting().then(() => self.clients.claim());
   }
 });
 

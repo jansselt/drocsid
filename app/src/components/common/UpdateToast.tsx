@@ -45,7 +45,15 @@ export function UpdateToast() {
     setUpdating(true);
     try {
       if (update?.source === 'pwa') {
-        await applyUpdate();
+        // Race the SW-based update against a timeout — if the service worker
+        // flow hangs (e.g. controllerchange never fires), fall back to a
+        // hard reload so the user isn't stuck on "Updating..." forever.
+        const timeout = new Promise<'timeout'>((r) => setTimeout(() => r('timeout'), 5_000));
+        const result = await Promise.race([applyUpdate(), timeout]);
+        if (result === 'timeout') {
+          window.location.reload();
+        }
+        return;
       } else if (update?.source === 'tauri') {
         const { check } = await import('@tauri-apps/plugin-updater');
         const { relaunch } = await import('@tauri-apps/plugin-process');
