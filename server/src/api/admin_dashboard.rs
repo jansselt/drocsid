@@ -339,6 +339,10 @@ async fn handle_log_stream(
         .as_deref()
         .and_then(parse_level_priority);
 
+    // Cloudflare drops idle WebSockets after ~100s. Send a ping every 30s.
+    let mut ping_interval = tokio::time::interval(std::time::Duration::from_secs(30));
+    ping_interval.tick().await; // consume the immediate first tick
+
     loop {
         tokio::select! {
             msg = rx.recv() => {
@@ -361,6 +365,11 @@ async fn handle_log_stream(
                         continue;
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            _ = ping_interval.tick() => {
+                if ws_sender.send(Message::Ping(vec![].into())).await.is_err() {
+                    break;
                 }
             }
             msg = ws_receiver.next() => {

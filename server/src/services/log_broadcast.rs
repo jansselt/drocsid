@@ -39,7 +39,7 @@ impl<S: Subscriber> Layer<S> for LogBroadcastLayer {
             chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
             level,
             target,
-            visitor.message,
+            visitor.result(),
         );
         let _ = self.sender.send(line);
     }
@@ -48,26 +48,67 @@ impl<S: Subscriber> Layer<S> for LogBroadcastLayer {
 #[derive(Default)]
 struct FieldCollector {
     message: String,
+    fields: String,
+}
+
+impl FieldCollector {
+    fn result(self) -> String {
+        if self.message.is_empty() {
+            self.fields
+        } else if self.fields.is_empty() {
+            self.message
+        } else {
+            format!("{} {}", self.message, self.fields)
+        }
+    }
 }
 
 impl tracing::field::Visit for FieldCollector {
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn fmt::Debug) {
         if field.name() == "message" {
             self.message = format!("{:?}", value);
-        } else if !self.message.is_empty() {
-            self.message.push_str(&format!(" {}={:?}", field.name(), value));
         } else {
-            self.message = format!("{}={:?}", field.name(), value);
+            let entry = format!("{}={:?}", field.name(), value);
+            if self.fields.is_empty() {
+                self.fields = entry;
+            } else {
+                self.fields.push(' ');
+                self.fields.push_str(&entry);
+            }
         }
     }
 
     fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
         if field.name() == "message" {
             self.message = value.to_string();
-        } else if !self.message.is_empty() {
-            self.message.push_str(&format!(" {}={}", field.name(), value));
         } else {
-            self.message = format!("{}={}", field.name(), value);
+            let entry = format!("{}={}", field.name(), value);
+            if self.fields.is_empty() {
+                self.fields = entry;
+            } else {
+                self.fields.push(' ');
+                self.fields.push_str(&entry);
+            }
+        }
+    }
+
+    fn record_i64(&mut self, field: &tracing::field::Field, value: i64) {
+        let entry = format!("{}={}", field.name(), value);
+        if self.fields.is_empty() {
+            self.fields = entry;
+        } else {
+            self.fields.push(' ');
+            self.fields.push_str(&entry);
+        }
+    }
+
+    fn record_u64(&mut self, field: &tracing::field::Field, value: u64) {
+        let entry = format!("{}={}", field.name(), value);
+        if self.fields.is_empty() {
+            self.fields = entry;
+        } else {
+            self.fields.push(' ');
+            self.fields.push_str(&entry);
         }
     }
 }
