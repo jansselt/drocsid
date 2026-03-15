@@ -170,6 +170,7 @@ impl VoiceManager {
             .publish_track(
                 LocalTrack::Audio(local_track),
                 TrackPublishOptions {
+                    source: TrackSource::Microphone,
                     // 48kbps Opus — matches LiveKit "music" preset for clear voice
                     audio_encoding: Some(AudioEncoding { max_bitrate: 48_000 }),
                     dtx: true,  // save bandwidth when silent
