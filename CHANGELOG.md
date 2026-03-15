@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.1](https://github.com/jansselt/drocsid/compare/drocsid-v0.9.0...drocsid-v0.9.1) (2026-03-15)
+
+
+### Bug Fixes
+
+* add single-instance enforcement to prevent session loss ([59805df](https://github.com/jansselt/drocsid/commit/59805dfb88b1c82fa275114d45fd191afeb84608))
+* improve voice chat audio quality and fix volume sliders ([48af96f](https://github.com/jansselt/drocsid/commit/48af96f99eb82b119861bf1e5346110743d799ce))
+
 ## [0.9.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.8.4...drocsid-v0.9.0) (2026-02-26)
 
 
