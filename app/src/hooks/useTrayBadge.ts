@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
 import { useServerStore } from '../stores/serverStore';
-import { isTauri } from '../api/instance';
+import { isDesktop } from '../api/instance';
 
 /**
- * Syncs the total unread count (mentions + unread DMs) to the Tauri
+ * Syncs the total unread count (mentions + unread DMs) to the Electron
  * system tray icon badge. No-op in web builds.
  */
 export function useTrayBadge() {
@@ -11,7 +11,7 @@ export function useTrayBadge() {
   const dmChannels = useServerStore((s) => s.dmChannels);
 
   useEffect(() => {
-    if (!isTauri()) return;
+    if (!isDesktop()) return;
 
     let totalMentions = 0;
     for (const rs of readStates.values()) {
@@ -28,8 +28,6 @@ export function useTrayBadge() {
 
     const badgeCount = totalMentions + unreadDms;
 
-    import('@tauri-apps/api/core').then(({ invoke }) => {
-      invoke('update_tray_badge', { count: badgeCount }).catch(() => {});
-    });
+    (window as any).electronAPI?.updateTrayBadge(badgeCount);
   }, [readStates, dmChannels]);
 }

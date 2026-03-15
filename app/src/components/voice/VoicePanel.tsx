@@ -19,9 +19,7 @@ import {
   type RoomOptions,
 } from 'livekit-client';
 import { useServerStore } from '../../stores/serverStore';
-import { isTauri, isLinux } from '../../api/instance';
-import { applyAudioOutputTauri, labelAudioStreamsTauri, getNoiseSuppression } from '../../utils/audioDevices';
-import { NativeVoicePanel } from './NativeVoicePanel';
+import { getNoiseSuppression } from '../../utils/audioDevices';
 import { SoundboardPanel } from './SoundboardPanel';
 import './VoicePanel.css';
 
@@ -50,6 +48,11 @@ export function VoicePanel({ compact }: { compact?: boolean } = {}) {
   const roomOptions = useMemo<RoomOptions>(() => ({
     dynacast: true,
     adaptiveStream: true,
+    // Force all media through TURN relay (UDP 443) — never attempt direct connections
+    // or TCP fallback. This ensures consistent quality and avoids firewall issues.
+    rtcConfig: {
+      iceTransportPolicy: 'relay',
+    },
     publishDefaults: {
       audioPreset: AudioPresets.music, // 48kbps Opus (up from ~24kbps default)
       dtx: true,  // discontinuous transmission — saves bandwidth when silent
@@ -73,20 +76,6 @@ export function VoicePanel({ compact }: { compact?: boolean } = {}) {
       channelName = ch.name;
       break;
     }
-  }
-
-  // Only use native LiveKit + cpal on Linux Tauri (WebKit2GTK WebRTC is broken).
-  // Windows Tauri uses WebView2 (Chromium) which has full WebRTC support,
-  // so it gets the JS SDK path with AdaptiveStream, audio features, etc.
-  if (isTauri() && isLinux()) {
-    return (
-      <NativeVoicePanel
-        token={voiceToken}
-        url={voiceUrl}
-        channelName={channelName}
-        compact={compact}
-      />
-    );
   }
 
   return (
@@ -385,23 +374,10 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
       const deviceId = localStorage.getItem('drocsid_speaker');
       if (!deviceId) return;
 
-      if (isTauri()) {
-        // Tauri/Linux: route via PulseAudio — retry since sink-input may appear after a delay
-        for (let attempt = 0; attempt < 5; attempt++) {
-          try {
-            await applyAudioOutputTauri(deviceId);
-            break;
-          } catch {
-            await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
-          }
-        }
-      } else {
-        // Web: use LiveKit SDK's setSinkId-based switching
-        try {
-          await room.switchActiveDevice('audiooutput', deviceId);
-        } catch (e) {
-          console.warn('[VoicePanel] Failed to switch audio output:', e);
-        }
+      try {
+        await room.switchActiveDevice('audiooutput', deviceId);
+      } catch (e) {
+        console.warn('[VoicePanel] Failed to switch audio output:', e);
       }
     };
 
@@ -441,23 +417,6 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
       window.removeEventListener('drocsid-noise-suppression-changed', republishMic);
     };
   }, [room, localParticipant]);
-
-  // Label PipeWire audio streams with distinct names (best-effort, after connection)
-  useEffect(() => {
-    if (!room || !isTauri()) return;
-
-    const label = async () => {
-      // Wait a moment for audio streams to register in PipeWire
-      await new Promise((r) => setTimeout(r, 1500));
-      try {
-        await labelAudioStreamsTauri();
-      } catch {
-        // pw-cli not available — PULSE_PROP baseline naming still applies
-      }
-    };
-
-    label();
-  }, [room]);
 
   // Get video tracks for screen sharing
   const screenShareTracks = useTracks([Track.Source.ScreenShare]);

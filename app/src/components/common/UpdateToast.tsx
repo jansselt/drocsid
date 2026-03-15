@@ -3,7 +3,7 @@ import { usePwaUpdate } from '../../hooks/usePwaUpdate';
 import { useUpdateStore } from '../../stores/updateStore';
 import './UpdateToast.css';
 
-const isTauri = '__TAURI_INTERNALS__' in globalThis;
+const isDesktop = !!(globalThis as any).electronAPI;
 
 const CHECK_INTERVAL_MS = 30 * 60 * 1000;
 const INITIAL_DELAY_MS = 10_000;
@@ -25,14 +25,14 @@ export function UpdateToast() {
   const { needRefresh, applyUpdate } = usePwaUpdate();
 
   useEffect(() => {
-    if (needRefresh && !isTauri) {
+    if (needRefresh && !isDesktop) {
       setUpdate({ version: '', source: 'pwa' });
     }
   }, [needRefresh, setUpdate]);
 
-  // Periodic Tauri update check
+  // Periodic Electron update check
   useEffect(() => {
-    if (!isTauri) return;
+    if (!isDesktop) return;
     const initialTimeout = setTimeout(checkForUpdates, INITIAL_DELAY_MS);
     const interval = setInterval(checkForUpdates, CHECK_INTERVAL_MS);
     return () => {
@@ -54,15 +54,9 @@ export function UpdateToast() {
           window.location.reload();
         }
         return;
-      } else if (update?.source === 'tauri') {
-        const { check } = await import('@tauri-apps/plugin-updater');
-        const { relaunch } = await import('@tauri-apps/plugin-process');
-        const result = await check();
-        if (result) {
-          await result.downloadAndInstall();
-          await relaunch();
-        }
-      } else if (update?.source === 'tauri-manual') {
+      } else if (update?.source === 'electron') {
+        await (window as any).electronAPI?.downloadAndInstall();
+      } else if (update?.source === 'electron-manual') {
         window.open(`https://github.com/${REPO}/releases/latest`, '_blank');
       }
     } catch {
@@ -79,7 +73,7 @@ export function UpdateToast() {
 
   if (!update || dismissed) return null;
 
-  const isManual = update.source === 'tauri-manual';
+  const isManual = update.source === 'electron-manual';
 
   return (
     <div className="update-toast">

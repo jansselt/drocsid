@@ -6,7 +6,7 @@ import { InstancePicker } from './components/auth/InstancePicker';
 import { AppLayout } from './components/layout/AppLayout';
 import { JoinInvite } from './components/server/JoinInvite';
 import { UpdateToast } from './components/common/UpdateToast';
-import { isTauri, hasInstance } from './api/instance';
+import { isDesktop, hasInstance } from './api/instance';
 
 export default function App() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -14,7 +14,7 @@ export default function App() {
   const init = useAuthStore((s) => s.init);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [resetToken, setResetToken] = useState<string | null>(null);
-  const [needsInstance, setNeedsInstance] = useState(() => isTauri() && !hasInstance());
+  const [needsInstance, setNeedsInstance] = useState(() => isDesktop() && !hasInstance());
 
   useEffect(() => {
     if (!needsInstance) {

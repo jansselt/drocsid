@@ -1,29 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import './VoicePopout.css';
 
 export const POPOUT_BC_CHANNEL = 'drocsid-voice-popout';
 
-interface RemoteVideoTrack {
-  identity: string;
-  source: string;
-}
-
 export function VoicePopout() {
-  const [remoteVideoTracks, setRemoteVideoTracks] = useState<Map<string, RemoteVideoTrack>>(new Map());
   const [cameraActive, setCameraActive] = useState(false);
   const [screenShareActive, setScreenShareActive] = useState(false);
   const [muted, setMuted] = useState(false);
   const [deaf, setDeaf] = useState(false);
 
-  const remoteImgRefs = useRef<Map<string, HTMLImageElement>>(new Map());
-  const localCameraRef = useRef<HTMLImageElement>(null);
-  const localScreenRef = useRef<HTMLImageElement>(null);
   const bcRef = useRef<BroadcastChannel | null>(null);
 
   // Setup BroadcastChannel
   useEffect(() => {
-    console.log('[VoicePopout] mounted, setting up BroadcastChannel');
     const bc = new BroadcastChannel(POPOUT_BC_CHANNEL);
     bcRef.current = bc;
 
@@ -31,16 +20,10 @@ export function VoicePopout() {
       const msg = event.data;
       switch (msg.type) {
         case 'state':
-          console.log('[VoicePopout] state sync:', msg);
           setMuted(msg.muted);
           setDeaf(msg.deaf);
           setCameraActive(msg.cameraActive);
           setScreenShareActive(msg.screenShareActive);
-          break;
-        case 'localCameraFrame':
-          if (localCameraRef.current) {
-            localCameraRef.current.src = `data:image/jpeg;base64,${msg.data}`;
-          }
           break;
         case 'theme': {
           const root = document.documentElement;
@@ -50,7 +33,6 @@ export function VoicePopout() {
           break;
         }
         case 'voiceEnded':
-          console.log('[VoicePopout] voiceEnded received, closing');
           window.close();
           break;
       }
@@ -65,78 +47,10 @@ export function VoicePopout() {
     window.addEventListener('beforeunload', handleUnload);
 
     return () => {
-      console.log('[VoicePopout] cleanup');
       window.removeEventListener('beforeunload', handleUnload);
       bc.postMessage({ type: 'popoutClosed' });
       bc.close();
     };
-  }, []);
-
-  // Listen to Tauri events (remote video frames come from Rust, broadcast to all windows)
-  useEffect(() => {
-    const unlisteners: UnlistenFn[] = [];
-
-    const setup = async () => {
-      // Remote video frames
-      unlisteners.push(
-        await listen<{ identity: string; source: string; data: string }>('voice:remote-video-frame', (event) => {
-          const { identity, source, data } = event.payload;
-          const key = `${identity}:${source}`;
-          const img = remoteImgRefs.current.get(key);
-          if (img) {
-            img.src = `data:image/jpeg;base64,${data}`;
-          }
-        })
-      );
-
-      // Remote video track add/remove
-      unlisteners.push(
-        await listen<{ identity: string; source: string; active: boolean }>('voice:remote-video-track', (event) => {
-          const { identity, source, active } = event.payload;
-          const key = `${identity}:${source}`;
-          setRemoteVideoTracks((prev) => {
-            const next = new Map(prev);
-            if (active) {
-              next.set(key, { identity, source });
-            } else {
-              next.delete(key);
-              remoteImgRefs.current.delete(key);
-            }
-            return next;
-          });
-        })
-      );
-
-      // Local screen preview (emitted from Rust GStreamer capture)
-      unlisteners.push(
-        await listen<string>('voice:local-screen-preview', (event) => {
-          if (localScreenRef.current) {
-            localScreenRef.current.src = `data:image/jpeg;base64,${event.payload}`;
-          }
-        })
-      );
-
-      // Screen share ended
-      unlisteners.push(
-        await listen<void>('voice:screenshare-ended', () => {
-          setScreenShareActive(false);
-        })
-      );
-
-      // Connection state — close popout if voice disconnected
-      unlisteners.push(
-        await listen<{ state: string }>('voice:connection-state', (event) => {
-          console.log('[VoicePopout] connection-state:', event.payload.state);
-          if (event.payload.state === 'disconnected') {
-            console.log('[VoicePopout] disconnected, closing popout');
-            window.close();
-          }
-        })
-      );
-    };
-
-    setup();
-    return () => { unlisteners.forEach((fn) => fn()); };
   }, []);
 
   const handlePopIn = () => {
@@ -157,7 +71,7 @@ export function VoicePopout() {
     window.close();
   };
 
-  const hasVideo = cameraActive || screenShareActive || remoteVideoTracks.size > 0;
+  const hasVideo = cameraActive || screenShareActive;
 
   return (
     <div className="voice-popout">
@@ -165,33 +79,14 @@ export function VoicePopout() {
         <div className="voice-popout-grid">
           {cameraActive && (
             <div className="voice-video-tile">
-              <img ref={localCameraRef} alt="Camera" style={{ transform: 'scaleX(-1)' }} />
               <span className="voice-video-label">You (Camera)</span>
             </div>
           )}
           {screenShareActive && (
             <div className="voice-video-tile screen-share">
-              <img ref={localScreenRef} alt="Screen" />
               <span className="voice-video-label">You (Screen)</span>
             </div>
           )}
-          {Array.from(remoteVideoTracks.entries()).map(([key, track]) => {
-            const isScreenShare = track.source === 'screenshare';
-            return (
-              <div key={key} className={`voice-video-tile ${isScreenShare ? 'screen-share' : ''}`}>
-                <img
-                  ref={(el) => {
-                    if (el) remoteImgRefs.current.set(key, el);
-                    else remoteImgRefs.current.delete(key);
-                  }}
-                  alt={`${track.identity} ${track.source}`}
-                />
-                <span className="voice-video-label">
-                  {track.identity} ({isScreenShare ? 'Screen' : 'Camera'})
-                </span>
-              </div>
-            );
-          })}
         </div>
       ) : (
         <div className="voice-popout-empty">

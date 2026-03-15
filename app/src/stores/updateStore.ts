@@ -2,11 +2,11 @@ import { create } from 'zustand';
 
 export interface UpdateInfo {
   version: string;
-  source: 'pwa' | 'tauri' | 'tauri-manual';
+  source: 'pwa' | 'electron' | 'electron-manual';
   installCmd?: string;
 }
 
-const isTauri = '__TAURI_INTERNALS__' in globalThis;
+const isDesktop = !!(globalThis as any).electronAPI;
 
 const REPO = 'jansselt/drocsid';
 
@@ -62,22 +62,16 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     if (get().checking) return;
     set({ checking: true });
     try {
-      if (isTauri) {
-        const { check } = await import('@tauri-apps/plugin-updater');
-        const { invoke } = await import('@tauri-apps/api/core');
-        const result = await check();
+      if (isDesktop) {
+        const result = await (window as any).electronAPI?.checkForUpdates();
         if (result) {
-          const method = await invoke<{ auto_update: boolean; pkg_type: string | null }>('get_update_method');
-          let info: UpdateInfo;
-          if (method.auto_update) {
-            info = { version: result.version, source: 'tauri' };
-          } else {
-            info = {
-              version: result.version,
-              source: 'tauri-manual',
-              installCmd: buildInstallCmd(result.version, method.pkg_type),
-            };
-          }
+          const info: UpdateInfo = result.autoUpdate
+            ? { version: result.version, source: 'electron' }
+            : {
+                version: result.version,
+                source: 'electron-manual',
+                installCmd: buildInstallCmd(result.version, result.pkgType ?? null),
+              };
           set({ update: info, dismissed: false });
         }
       } else {

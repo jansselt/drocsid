@@ -7,10 +7,13 @@ const DEFAULT_INSTANCE = import.meta.env.VITE_API_URL
 
 let instanceUrl: string | null = null;
 
-/** Whether we're running inside Tauri */
-export function isTauri(): boolean {
-  return '__TAURI_INTERNALS__' in window;
+/** Whether we're running inside Electron (desktop app) */
+export function isDesktop(): boolean {
+  return !!(window as any).electronAPI;
 }
+
+/** @deprecated Use isDesktop() instead */
+export const isTauri = isDesktop;
 
 /** Whether we're on Linux (relevant for native voice — WebKit2GTK WebRTC is broken) */
 export function isLinux(): boolean {
@@ -28,12 +31,12 @@ export function getInstanceUrl(): string | null {
   }
 
   // In web mode, always fall back to defaults so the app works without setup
-  if (!isTauri()) {
+  if (!isDesktop()) {
     instanceUrl = DEFAULT_INSTANCE;
     return instanceUrl;
   }
 
-  // Tauri with no stored instance — needs setup
+  // Desktop with no stored instance — needs setup
   return null;
 }
 

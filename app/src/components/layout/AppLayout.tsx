@@ -14,7 +14,7 @@ import { KeyboardShortcutsDialog } from '../common/KeyboardShortcutsDialog';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 import { useFaviconBadge } from '../../hooks/useFaviconBadge';
 import { useTrayBadge } from '../../hooks/useTrayBadge';
-import { isTauri } from '../../api/instance';
+import { isDesktop } from '../../api/instance';
 import './AppLayout.css';
 
 const IDLE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
@@ -146,7 +146,7 @@ export function AppLayout() {
   }, [handleOpenBugReport]);
 
   // Idle detection: go idle after 5 minutes of inactivity.
-  // In Tauri, polls system-level idle time (D-Bus) so switching to other apps
+  // In Electron, polls system-level idle time so switching to other apps
   // doesn't falsely mark the user idle. In web, uses in-window events.
   useEffect(() => {
     const goIdle = () => {
@@ -172,23 +172,21 @@ export function AppLayout() {
       idleTimerRef.current = setTimeout(goIdle, IDLE_TIMEOUT);
     };
 
-    // Tauri: poll system idle time instead of relying on in-window events
+    // Electron: poll system idle time instead of relying on in-window events
     let systemIdleInterval: ReturnType<typeof setInterval> | undefined;
-    if (isTauri()) {
-      import('@tauri-apps/api/core').then(({ invoke }) => {
-        systemIdleInterval = setInterval(async () => {
-          try {
-            const idleMs = await invoke<number>('get_system_idle_ms');
-            if (idleMs >= IDLE_TIMEOUT) {
-              goIdle();
-            } else {
-              goOnline();
-            }
-          } catch {
-            // D-Bus not available — fall through to in-window events
+    if (isDesktop()) {
+      systemIdleInterval = setInterval(async () => {
+        try {
+          const idleMs = await (window as any).electronAPI?.getSystemIdleMs();
+          if (idleMs != null && idleMs >= IDLE_TIMEOUT) {
+            goIdle();
+          } else {
+            goOnline();
           }
-        }, 30_000); // Check every 30s
-      });
+        } catch {
+          // API not available — fall through to in-window events
+        }
+      }, 30_000); // Check every 30s
     }
 
     const onVisibilityChange = () => {

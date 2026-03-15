@@ -1,0 +1,57 @@
+appId: com.drocsid.desktop
+productName: Drocsid
+copyright: Copyright © 2024-2026 Drocsid
+
+directories:
+  output: dist-electron
+
+asar: true
+
+files:
+  - dist/**/*
+  - electron-dist/**/*.js
+  - electron-dist/**/*.js.map
+
+extraResources:
+  - from: icons
+    to: icons
+
+icon: icons/icon
+
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+    - target: rpm
+      arch:
+        - x64
+  category: Network
+  icon: icons
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: icons/icon.ico
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  icon: icons/icon.icns
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+
+publish:
+  provider: github
+  owner: jansselt
+  repo: drocsid

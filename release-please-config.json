@@ -5,8 +5,6 @@
       "component": "drocsid",
       "extra-files": [
         "app/package.json",
-        "app/src-tauri/tauri.conf.json",
-        "app/src-tauri/Cargo.toml",
         "server/Cargo.toml"
       ]
     }

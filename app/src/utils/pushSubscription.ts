@@ -1,11 +1,10 @@
-import { isTauri } from '../api/instance';
-import { getApiUrl } from '../api/instance';
+import { isDesktop, getApiUrl } from '../api/instance';
 import { getAccessToken } from '../api/client';
 
 const PUSH_ENABLED_KEY = 'drocsid:push-notifications-enabled';
 
 export function isPushSupported(): boolean {
-  return !isTauri() && 'serviceWorker' in navigator && 'PushManager' in window;
+  return !isDesktop() && 'serviceWorker' in navigator && 'PushManager' in window;
 }
 
 export function getPushEnabled(): boolean {

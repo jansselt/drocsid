@@ -16,7 +16,7 @@ import {
   SOUND_THEME_LABELS,
   type SoundTheme,
 } from '../../utils/notificationSounds';
-import { isTauri } from '../../api/instance';
+import { isDesktop } from '../../api/instance';
 import { useUpdateStore } from '../../stores/updateStore';
 import {
   getBrowserNotificationsEnabled,
@@ -805,11 +805,8 @@ function VoiceVideoSettings() {
   const cameraStreamRef = useRef<MediaStream | null>(null);
 
   const loadDevices = useCallback(async () => {
-    if (!isTauri() && navigator.mediaDevices) {
-      // Web browser path: request getUserMedia to unlock device labels,
-      // then enumerate video devices. Skip on Tauri — cpal handles audio
-      // devices natively, and calling getUserMedia in WebView2 while cpal
-      // has WASAPI devices open can crash the process.
+    if (navigator.mediaDevices) {
+      // Request getUserMedia to unlock device labels, then enumerate video devices.
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true }).catch(
           () => navigator.mediaDevices.getUserMedia({ audio: true }),
@@ -825,7 +822,6 @@ function VoiceVideoSettings() {
         // enumerateDevices not available
       }
     }
-    // Audio inputs/outputs: use platform abstraction (cpal on Tauri, enumerateDevices on web)
     const [inputs, outputs] = await Promise.all([listAudioInputs(), listAudioOutputs()]);
     setAudioInputs(inputs);
     setAudioOutputs(outputs);
@@ -843,25 +839,8 @@ function VoiceVideoSettings() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const micTestUnlistenRef = useRef<(() => void) | null>(null);
-
   const startMicTest = async () => {
     try {
-      if (isTauri()) {
-        const { invoke } = await import('@tauri-apps/api/core');
-        const { listen } = await import('@tauri-apps/api/event');
-        const unlisten = await listen<number>('voice:mic-level', (event) => {
-          setMicLevel(Math.min(100, event.payload * (micVolume / 100)));
-        });
-        micTestUnlistenRef.current = unlisten;
-        // Pass null for empty strings so Rust uses the system default device
-        await invoke('voice_mic_test_start', {
-          deviceId: selectedMic || null,
-          speakerDeviceId: selectedSpeaker || null,
-        });
-        setMicTesting(true);
-        return;
-      }
       const constraints: MediaStreamConstraints = {
         audio: (selectedMic && selectedMic !== 'default') ? { deviceId: { exact: selectedMic } } : true,
       };
@@ -894,19 +873,6 @@ function VoiceVideoSettings() {
   };
 
   const stopMicTest = async () => {
-    if (isTauri()) {
-      try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('voice_mic_test_stop');
-      } catch (e) {
-        console.warn('[Settings] Failed to stop mic test:', e);
-      }
-      micTestUnlistenRef.current?.();
-      micTestUnlistenRef.current = null;
-      setMicTesting(false);
-      setMicLevel(0);
-      return;
-    }
     micStreamRef.current?.getTracks().forEach((t) => t.stop());
     micStreamRef.current = null;
     audioCtxRef.current?.close().catch(() => {});
@@ -955,14 +921,6 @@ function VoiceVideoSettings() {
           const val = e.target.value;
           setSelectedMic(val);
           saveMicrophone(val);
-          if (isTauri()) {
-            try {
-              const { invoke } = await import('@tauri-apps/api/core');
-              await invoke('voice_set_input_device', { deviceId: val || null });
-            } catch (err) {
-              console.warn('[Settings] voice_set_input_device failed:', err);
-            }
-          }
         }}>
           <option value="">Default</option>
           {audioInputs.map((d) => (
@@ -984,11 +942,6 @@ function VoiceVideoSettings() {
             setMicVolume(val);
             localStorage.setItem('drocsid_mic_volume', String(val));
             window.dispatchEvent(new CustomEvent('drocsid-mic-volume-changed', { detail: val }));
-            if (isTauri()) {
-              import('@tauri-apps/api/core').then(({ invoke }) =>
-                invoke('voice_set_mic_gain', { volumePercent: val }).catch(() => {})
-              );
-            }
           }}
         />
         <span className="profile-field-hint">{micVolume}%</span>
@@ -1086,14 +1039,6 @@ function VoiceVideoSettings() {
           const val = e.target.value;
           setSelectedSpeaker(val);
           saveSpeaker(val);
-          if (isTauri()) {
-            try {
-              const { invoke } = await import('@tauri-apps/api/core');
-              await invoke('voice_set_output_device', { deviceId: val || null });
-            } catch (err) {
-              console.warn('[Settings] voice_set_output_device failed:', err);
-            }
-          }
         }}>
           <option value="">Default</option>
           {audioOutputs.map((d) => (
@@ -1115,11 +1060,6 @@ function VoiceVideoSettings() {
             setSpeakerVolume(val);
             localStorage.setItem('drocsid_speaker_volume', String(val));
             window.dispatchEvent(new CustomEvent('drocsid-speaker-volume-changed', { detail: val }));
-            if (isTauri()) {
-              import('@tauri-apps/api/core').then(({ invoke }) =>
-                invoke('voice_set_master_volume', { volumePercent: val }).catch(() => {})
-              );
-            }
           }}
         />
         <span className="profile-field-hint">{speakerVolume}%</span>

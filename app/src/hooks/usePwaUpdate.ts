@@ -10,8 +10,8 @@ export function usePwaUpdate() {
   const [updateSW, setUpdateSW] = useState<((reloadPage?: boolean) => Promise<void>) | null>(null);
 
   useEffect(() => {
-    // Skip in Tauri — no service worker there
-    if ('__TAURI_INTERNALS__' in window) return;
+    // Skip in Electron — no service worker there
+    if ((window as any).electronAPI) return;
 
     let cancelled = false;
 
