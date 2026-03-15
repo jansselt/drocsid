@@ -54,10 +54,12 @@ export function VoicePanel({ compact }: { compact?: boolean } = {}) {
       audioPreset: AudioPresets.music, // 48kbps Opus (up from ~24kbps default)
       dtx: true,  // discontinuous transmission — saves bandwidth when silent
       red: true,  // redundant audio data — helps recover from packet loss
-      videoEncoding: VideoPresets.h360.encoding, // cap camera to 360p ~450kbps
-      screenShareEncoding: ScreenSharePresets.h1080fps15.encoding, // cap screenshare
+      // Keep video bitrates LOW — audio is the priority, video is a bonus.
+      // High video bitrate starves audio and causes choppiness for everyone.
+      videoEncoding: { maxBitrate: 300_000, maxFramerate: 15 }, // camera: 300kbps
+      screenShareEncoding: ScreenSharePresets.h720fps5.encoding, // screenshare: 720p@5fps ~400kbps
       simulcast: true,
-      videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360],
+      videoSimulcastLayers: [VideoPresets.h180],
     },
   }), []);
 

@@ -398,10 +398,10 @@ impl VoiceManager {
                 LocalTrack::Video(local_track),
                 TrackPublishOptions {
                     source: TrackSource::Camera,
-                    // Cap camera to 450kbps @ 20fps to prevent starving audio
+                    // Cap camera to 300kbps @ 15fps — audio is the priority
                     video_encoding: Some(VideoEncoding {
-                        max_bitrate: 450_000,
-                        max_framerate: 20.0,
+                        max_bitrate: 300_000,
+                        max_framerate: 15.0,
                     }),
                     simulcast: true,
                     ..Default::default()
@@ -463,10 +463,11 @@ impl VoiceManager {
                 LocalTrack::Video(local_track),
                 TrackPublishOptions {
                     source: TrackSource::Screenshare,
-                    // Cap screenshare to 1.5Mbps @ 15fps to prevent starving audio
+                    // Cap screenshare to 500kbps @ 5fps — audio is the priority.
+                    // High screenshare bitrate starves audio for everyone.
                     video_encoding: Some(VideoEncoding {
-                        max_bitrate: 1_500_000,
-                        max_framerate: 15.0,
+                        max_bitrate: 500_000,
+                        max_framerate: 5.0,
                     }),
                     simulcast: true,
                     ..Default::default()
@@ -509,10 +510,11 @@ impl VoiceManager {
                 LocalTrack::Video(local_track),
                 TrackPublishOptions {
                     source: TrackSource::Screenshare,
-                    // Cap screenshare to 1.5Mbps @ 15fps to prevent starving audio
+                    // Cap screenshare to 500kbps @ 5fps — audio is the priority.
+                    // High screenshare bitrate starves audio for everyone.
                     video_encoding: Some(VideoEncoding {
-                        max_bitrate: 1_500_000,
-                        max_framerate: 15.0,
+                        max_bitrate: 500_000,
+                        max_framerate: 5.0,
                     }),
                     simulcast: true,
                     ..Default::default()
@@ -959,11 +961,12 @@ impl VoiceManager {
 
                         if buf.is_empty() {
                             empty_ticks += 1;
-                            // Log a warning if we've been getting no samples for a while
                             if empty_ticks == 100 {
                                 log::warn!("mic_forwarder: no samples received for 1 second — cpal input stream may not be producing data");
                             }
-                            continue;
+                            // Send silence to LiveKit to maintain a consistent stream.
+                            // Skipping frames causes choppy audio on the receiving end.
+                            buf.resize(480, 0i16); // 10ms of silence at 48kHz mono
                         }
 
                         if !first_samples_logged {
