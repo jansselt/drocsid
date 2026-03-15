@@ -106,6 +106,11 @@ async fn main() -> anyhow::Result<()> {
     // Start background scheduler for scheduled messages
     let _scheduler = services::scheduler::spawn_scheduler(state.clone());
 
+    // Tail LiveKit Docker container logs into the admin log stream
+    if let Some(ref sender) = state.log_sender {
+        services::log_broadcast::spawn_docker_log_tailer(sender.clone(), "drocsid-livekit");
+    }
+
     // Build router
     let app = api::router()
         .layer(TraceLayer::new_for_http())

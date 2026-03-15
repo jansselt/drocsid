@@ -4,8 +4,16 @@ import { connectLogStream } from '../api';
 const MAX_LINES = 2000;
 
 function extractLevel(line: string): string {
-  const match = line.match(/\s(TRACE|DEBUG|INFO|WARN|ERROR)\s/);
-  return match ? match[1] : 'INFO';
+  // Rust tracing format: "... INFO ..." or "... DEBUG ..."
+  const rustMatch = line.match(/\s(TRACE|DEBUG|INFO|WARN|ERROR)\s/);
+  if (rustMatch) return rustMatch[1];
+  // LiveKit Go format: "... INF ..." or "... WRN ..." or "... ERR ..."
+  const goMatch = line.match(/\s(DBG|INF|WRN|ERR)\s/);
+  if (goMatch) {
+    const map: Record<string, string> = { DBG: 'DEBUG', INF: 'INFO', WRN: 'WARN', ERR: 'ERROR' };
+    return map[goMatch[1]] || 'INFO';
+  }
+  return 'INFO';
 }
 
 export function LogsPage() {

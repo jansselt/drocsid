@@ -79,6 +79,7 @@ services:
   # and so ICE candidates use real interface IPs (not Docker bridge IPs).
   livekit:
     image: livekit/livekit-server:v1.9.11
+    container_name: drocsid-livekit
     network_mode: host
     environment:
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
