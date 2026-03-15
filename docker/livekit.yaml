@@ -30,5 +30,12 @@ room:
   auto_create: true
   empty_timeout: 300  # 5 min before empty rooms are cleaned up
 
+turn:
+  enabled: true
+  # TURN/UDP on port 443 — nearly all firewalls allow UDP 443 (QUIC/HTTP3).
+  # This lets users behind restrictive NATs/firewalls relay media through
+  # the TURN server instead of failing to connect via direct UDP.
+  udp_port: 443
+
 logging:
   level: info
