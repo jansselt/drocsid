@@ -45,7 +45,7 @@ fn generate_code() -> String {
         .collect()
 }
 
-async fn require_admin(state: &AppState, user_id: Uuid) -> Result<(), ApiError> {
+pub async fn require_admin(state: &AppState, user_id: Uuid) -> Result<(), ApiError> {
     let user = queries::get_user_by_id(&state.db, user_id)
         .await?
         .ok_or(ApiError::NotFound("User"))?;

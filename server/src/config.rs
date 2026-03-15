@@ -13,6 +13,7 @@ pub struct AppConfig {
     pub email: Option<EmailConfig>,
     pub github: Option<GitHubConfig>,
     pub web_push: Option<WebPushConfig>,
+    pub admin_dashboard: Option<AdminDashboardConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -88,6 +89,12 @@ pub struct WebPushConfig {
     pub vapid_private_key: String,
     pub vapid_public_key: String,
     pub subject: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AdminDashboardConfig {
+    pub enabled: Option<bool>,
+    pub local_only: Option<bool>,
 }
 
 impl AppConfig {

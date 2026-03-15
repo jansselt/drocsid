@@ -364,6 +364,9 @@ mod tests {
             livekit: None,
             gif: None,
             email: None,
+            github: None,
+            web_push: None,
+            admin_dashboard: None,
         }
     }
 

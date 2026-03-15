@@ -14,4 +14,6 @@ pub struct AppState {
     pub gateway: Arc<GatewayState>,
     pub s3: Option<aws_sdk_s3::Client>,
     pub push: Option<Arc<PushService>>,
+    pub started_at: std::time::Instant,
+    pub log_sender: Option<tokio::sync::broadcast::Sender<String>>,
 }

@@ -67,6 +67,30 @@ impl GatewayState {
         }
     }
 
+    pub fn connection_count(&self) -> usize {
+        self.connections.len()
+    }
+
+    pub fn user_count(&self) -> usize {
+        self.user_sessions.len()
+    }
+
+    pub fn voice_channel_count(&self) -> usize {
+        self.voice_channels.len()
+    }
+
+    pub fn voice_user_count(&self) -> usize {
+        self.voice_states.len()
+    }
+
+    pub fn all_voice_states(&self) -> Vec<VoiceState> {
+        self.voice_states.iter().map(|r| r.value().clone()).collect()
+    }
+
+    pub fn online_user_ids(&self) -> Vec<Uuid> {
+        self.user_sessions.iter().map(|r| *r.key()).collect()
+    }
+
     pub fn add_connection(
         &self,
         session_id: Uuid,

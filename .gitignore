@@ -7,6 +7,8 @@
 # Node
 /app/node_modules/
 /app/dist/
+/admin/node_modules/
+/admin/dist/
 
 # Environment
 .env

@@ -11,6 +11,8 @@ use std::sync::Arc;
 
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
 use crate::config::AppConfig;
@@ -19,11 +21,14 @@ use crate::state::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Initialize logging
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
+    // Initialize logging with broadcast layer
+    let (log_broadcast_layer, log_sender) =
+        services::log_broadcast::LogBroadcastLayer::new(1000);
+
+    tracing_subscriber::registry()
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with(tracing_subscriber::fmt::layer())
+        .with(log_broadcast_layer)
         .init();
 
     // Load config
@@ -88,6 +93,8 @@ async fn main() -> anyhow::Result<()> {
         gateway: Arc::new(GatewayState::new()),
         s3,
         push,
+        started_at: std::time::Instant::now(),
+        log_sender: Some(log_sender),
     };
 
     // Start background scheduler for scheduled messages
@@ -104,9 +111,12 @@ async fn main() -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     tracing::info!(addr = %addr, "Server listening");
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
 
     Ok(())
 }

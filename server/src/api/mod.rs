@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod admin_dashboard;
 pub mod auth;
 pub mod bans;
 pub mod bookmarks;
@@ -30,9 +31,15 @@ use crate::gateway::connection::handle_connection;
 use crate::state::AppState;
 
 pub fn router() -> Router<AppState> {
+    use tower_http::services::ServeDir;
+
     Router::new()
         .nest("/api/v1", api_routes())
         .route("/gateway", get(gateway_upgrade))
+        .nest_service(
+            "/admin",
+            ServeDir::new("admin/dist").append_index_html_on_directories(true),
+        )
 }
 
 fn api_routes() -> Router<AppState> {
@@ -59,6 +66,7 @@ fn api_routes() -> Router<AppState> {
                 .merge(polls::routes()),
         )
         .nest("/admin", admin::routes())
+        .nest("/admin/dashboard", admin_dashboard::routes())
         .nest("/dms", dms::routes())
         .nest("/relationships", relationships::routes())
         .nest("/search", search::routes())
