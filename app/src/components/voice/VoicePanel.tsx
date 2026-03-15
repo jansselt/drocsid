@@ -8,7 +8,16 @@ import {
   useTracks,
   VideoTrack,
 } from '@livekit/components-react';
-import { Track, RoomEvent, RemoteParticipant, type Participant } from 'livekit-client';
+import {
+  Track,
+  RoomEvent,
+  RemoteParticipant,
+  AudioPresets,
+  VideoPresets,
+  ScreenSharePresets,
+  type Participant,
+  type RoomOptions,
+} from 'livekit-client';
 import { useServerStore } from '../../stores/serverStore';
 import { isTauri } from '../../api/instance';
 import { applyAudioOutputTauri, labelAudioStreamsTauri, getNoiseSuppression } from '../../utils/audioDevices';
@@ -36,6 +45,21 @@ export function VoicePanel({ compact }: { compact?: boolean } = {}) {
     }
     return constraints;
   }, []);
+
+  // Room options: prioritize audio quality, cap video bitrates to prevent audio starvation
+  const roomOptions = useMemo<RoomOptions>(() => ({
+    dynacast: true,
+    adaptiveStream: true,
+    publishDefaults: {
+      audioPreset: AudioPresets.music, // 48kbps Opus (up from ~24kbps default)
+      dtx: true,  // discontinuous transmission — saves bandwidth when silent
+      red: true,  // redundant audio data — helps recover from packet loss
+      videoEncoding: VideoPresets.h360.encoding, // cap camera to 360p ~450kbps
+      screenShareEncoding: ScreenSharePresets.h1080fps15.encoding, // cap screenshare
+      simulcast: true,
+      videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360],
+    },
+  }), []);
 
   if (!voiceToken || !voiceUrl || !voiceChannelId) return null;
 
@@ -68,6 +92,7 @@ export function VoicePanel({ compact }: { compact?: boolean } = {}) {
       connect={true}
       audio={audioOptions}
       video={false}
+      options={roomOptions}
       onDisconnected={() => voiceLeave()}
     >
       <VoicePanelContent channelName={channelName} compact={compact} />
@@ -131,15 +156,37 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
     return () => document.removeEventListener('mousedown', handleClick);
   }, [volumeMenu]);
 
-  // Apply saved volumes when remote participants join
-  useEffect(() => {
+  // Global speaker volume (from settings), stored as 0.0-2.0 multiplier
+  const speakerVolumeRef = useRef(
+    (() => { const s = localStorage.getItem('drocsid_speaker_volume'); return s ? Number(s) / 100 : 1.0; })()
+  );
+
+  // Apply effective volume (per-user × global) to all remote participants
+  const applyAllVolumes = useCallback(() => {
     const saved = loadSavedVolumes();
+    const globalVol = speakerVolumeRef.current;
     for (const p of participants) {
-      if (p instanceof RemoteParticipant && saved[p.identity] !== undefined) {
-        p.setVolume(saved[p.identity] / 100);
+      if (p instanceof RemoteParticipant) {
+        const userVol = (saved[p.identity] ?? 100) / 100;
+        p.setVolume(userVol * globalVol);
       }
     }
   }, [participants]);
+
+  // Apply saved volumes when remote participants join
+  useEffect(() => {
+    applyAllVolumes();
+  }, [applyAllVolumes]);
+
+  // Listen for global speaker volume changes from settings
+  useEffect(() => {
+    const handler = (e: Event) => {
+      speakerVolumeRef.current = (e as CustomEvent<number>).detail / 100;
+      applyAllVolumes();
+    };
+    window.addEventListener('drocsid-speaker-volume-changed', handler);
+    return () => window.removeEventListener('drocsid-speaker-volume-changed', handler);
+  }, [applyAllVolumes]);
 
   const setParticipantVolume = useCallback((identity: string, volume: number) => {
     setUserVolumes((prev) => {
@@ -150,7 +197,7 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
     });
     const p = participants.find((p) => p.identity === identity);
     if (p instanceof RemoteParticipant) {
-      p.setVolume(volume / 100);
+      p.setVolume((volume / 100) * speakerVolumeRef.current);
     }
   }, [participants]);
 

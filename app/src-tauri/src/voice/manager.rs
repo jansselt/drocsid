@@ -1,12 +1,12 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU32, Ordering},
     Arc,
 };
 
 use futures_util::{FutureExt, StreamExt};
-use livekit::options::TrackPublishOptions;
+use livekit::options::{AudioEncoding, TrackPublishOptions, VideoEncoding};
 use livekit::prelude::*;
 use livekit::webrtc::audio_frame::AudioFrame;
 use livekit::webrtc::audio_source::native::NativeAudioSource;
@@ -45,6 +45,10 @@ pub struct VoiceManager {
     shutdown_flag: Arc<AtomicBool>,
     /// Per-user volume (0.0-2.0). Protected by tokio Mutex since only accessed from async tasks.
     user_volumes: Arc<Mutex<HashMap<String, f32>>>,
+    /// Global output (speaker) volume as percentage (0-200). Atomic for lock-free mixer access.
+    master_volume: Arc<AtomicU32>,
+    /// Global input (mic) volume as percentage (0-200). Atomic for lock-free forwarder access.
+    mic_gain: Arc<AtomicU32>,
     /// Channel to send a replacement mic ring-buffer consumer to the forwarder task.
     mic_swap_tx: mpsc::Sender<rtrb::Consumer<i16>>,
     /// Channel to send a replacement output ring-buffer producer to the mixer task.
@@ -162,7 +166,13 @@ impl VoiceManager {
         room.local_participant()
             .publish_track(
                 LocalTrack::Audio(local_track),
-                TrackPublishOptions::default(),
+                TrackPublishOptions {
+                    // 48kbps Opus — matches LiveKit "music" preset for clear voice
+                    audio_encoding: Some(AudioEncoding { max_bitrate: 48_000 }),
+                    dtx: true,  // save bandwidth when silent
+                    red: true,  // redundant audio for packet loss recovery
+                    ..Default::default()
+                },
             )
             .await
             .map_err(|e| {
@@ -200,6 +210,8 @@ impl VoiceManager {
         let noise_suppression = Arc::new(AtomicBool::new(true));
         let user_volumes: Arc<Mutex<HashMap<String, f32>>> =
             Arc::new(Mutex::new(HashMap::new()));
+        let master_volume = Arc::new(AtomicU32::new(100)); // 100% default
+        let mic_gain = Arc::new(AtomicU32::new(100)); // 100% default
         let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>(1);
         let shutdown_flag = Arc::new(AtomicBool::new(false));
 
@@ -215,6 +227,7 @@ impl VoiceManager {
             audio_source,
             mic_muted.clone(),
             noise_suppression.clone(),
+            mic_gain.clone(),
             shutdown_rx,
             mic_swap_rx,
         );
@@ -239,6 +252,7 @@ impl VoiceManager {
             remote_streams,
             output_producer,
             user_volumes.clone(),
+            master_volume.clone(),
             deaf.clone(),
             output_swap_rx,
             shutdown_flag.clone(),
@@ -255,6 +269,8 @@ impl VoiceManager {
             shutdown_tx,
             shutdown_flag,
             user_volumes,
+            master_volume,
+            mic_gain,
             mic_swap_tx,
             output_swap_tx,
             camera_source: None,
@@ -295,6 +311,14 @@ impl VoiceManager {
 
     pub fn set_noise_suppression(&self, enabled: bool) {
         self.noise_suppression.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn set_master_volume(&self, volume_percent: u32) {
+        self.master_volume.store(volume_percent, Ordering::Relaxed);
+    }
+
+    pub fn set_mic_gain(&self, volume_percent: u32) {
+        self.mic_gain.store(volume_percent, Ordering::Relaxed);
     }
 
     pub async fn set_user_volume(&self, identity: &str, volume_percent: u32) {
@@ -362,6 +386,12 @@ impl VoiceManager {
                 LocalTrack::Video(local_track),
                 TrackPublishOptions {
                     source: TrackSource::Camera,
+                    // Cap camera to 450kbps @ 20fps to prevent starving audio
+                    video_encoding: Some(VideoEncoding {
+                        max_bitrate: 450_000,
+                        max_framerate: 20.0,
+                    }),
+                    simulcast: true,
                     ..Default::default()
                 },
             )
@@ -421,6 +451,12 @@ impl VoiceManager {
                 LocalTrack::Video(local_track),
                 TrackPublishOptions {
                     source: TrackSource::Screenshare,
+                    // Cap screenshare to 1.5Mbps @ 15fps to prevent starving audio
+                    video_encoding: Some(VideoEncoding {
+                        max_bitrate: 1_500_000,
+                        max_framerate: 15.0,
+                    }),
+                    simulcast: true,
                     ..Default::default()
                 },
             )
@@ -461,6 +497,12 @@ impl VoiceManager {
                 LocalTrack::Video(local_track),
                 TrackPublishOptions {
                     source: TrackSource::Screenshare,
+                    // Cap screenshare to 1.5Mbps @ 15fps to prevent starving audio
+                    video_encoding: Some(VideoEncoding {
+                        max_bitrate: 1_500_000,
+                        max_framerate: 15.0,
+                    }),
+                    simulcast: true,
                     ..Default::default()
                 },
             )
@@ -630,6 +672,9 @@ impl VoiceManager {
                 LocalTrack::Audio(share_track),
                 TrackPublishOptions {
                     source: TrackSource::ScreenshareAudio,
+                    audio_encoding: Some(AudioEncoding { max_bitrate: 64_000 }), // stereo music quality
+                    dtx: false, // don't drop audio during quiet parts of shared audio
+                    red: true,
                     ..Default::default()
                 },
             )
@@ -808,6 +853,7 @@ impl VoiceManager {
         audio_source: NativeAudioSource,
         mic_muted: Arc<AtomicBool>,
         noise_suppression: Arc<AtomicBool>,
+        mic_gain: Arc<AtomicU32>,
         mut shutdown_rx: mpsc::Receiver<()>,
         mut swap_rx: mpsc::Receiver<rtrb::Consumer<i16>>,
     ) {
@@ -897,6 +943,15 @@ impl VoiceManager {
                                 i += ns_frame_size;
                             }
                             // Remaining samples (< frame_size) pass through unprocessed.
+                        }
+
+                        // Apply mic gain (input volume from settings)
+                        let gain_pct = mic_gain.load(Ordering::Relaxed);
+                        if gain_pct != 100 {
+                            let gain = gain_pct as f32 / 100.0;
+                            for sample in buf.iter_mut() {
+                                *sample = (*sample as f32 * gain).clamp(-32768.0, 32767.0) as i16;
+                            }
                         }
 
                         // Compute RMS level for local speaking indicator (after NS for accuracy)
@@ -1106,6 +1161,7 @@ impl VoiceManager {
         remote_streams: Arc<Mutex<HashMap<String, NativeAudioStream>>>,
         mut output_producer: Producer<i16>,
         user_volumes: Arc<Mutex<HashMap<String, f32>>>,
+        master_volume: Arc<AtomicU32>,
         deaf: Arc<AtomicBool>,
         mut swap_rx: mpsc::Receiver<rtrb::Producer<i16>>,
         shutdown: Arc<AtomicBool>,
@@ -1195,8 +1251,16 @@ impl VoiceManager {
                         log::info!("audio_mixer: first remote audio received and mixed to output");
                         first_audio_logged = true;
                     }
+                    // Apply master output volume
+                    let mv_pct = master_volume.load(Ordering::Relaxed);
+                    let mv = mv_pct as f32 / 100.0;
                     for &sample in &mix_buf {
-                        let clamped = sample.clamp(-32768, 32767) as i16;
+                        let scaled = if mv_pct != 100 {
+                            (sample as f32 * mv) as i32
+                        } else {
+                            sample
+                        };
+                        let clamped = scaled.clamp(-32768, 32767) as i16;
                         let _ = output_producer.push(clamped);
                     }
                     diag_samples_written += mix_buf.len() as u64;

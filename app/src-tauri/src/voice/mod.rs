@@ -128,6 +128,32 @@ pub async fn voice_set_user_volume(
 }
 
 #[tauri::command]
+pub async fn voice_set_master_volume(
+    state: State<'_, VoiceState>,
+    volume_percent: u32,
+) -> Result<(), String> {
+    log::debug!("voice_set_master_volume: {volume_percent}%");
+    let guard = state.0.lock().await;
+    if let Some(mgr) = guard.as_ref() {
+        mgr.set_master_volume(volume_percent);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn voice_set_mic_gain(
+    state: State<'_, VoiceState>,
+    volume_percent: u32,
+) -> Result<(), String> {
+    log::debug!("voice_set_mic_gain: {volume_percent}%");
+    let guard = state.0.lock().await;
+    if let Some(mgr) = guard.as_ref() {
+        mgr.set_mic_gain(volume_percent);
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn voice_set_input_device(
     state: State<'_, VoiceState>,
     device_id: Option<String>,

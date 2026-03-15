@@ -25,5 +25,10 @@ rtc:
     includes:
       - eno1
 
+room:
+  # Prioritize audio quality — voice chat is the core experience
+  auto_create: true
+  empty_timeout: 300  # 5 min before empty rooms are cleaned up
+
 logging:
   level: info

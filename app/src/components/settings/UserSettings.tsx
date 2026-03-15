@@ -777,8 +777,14 @@ function VoiceVideoSettings() {
   const [selectedMic, setSelectedMic] = useState(() => localStorage.getItem('drocsid_mic') || '');
   const [selectedSpeaker, setSelectedSpeaker] = useState(() => localStorage.getItem('drocsid_speaker') || '');
   const [selectedCamera, setSelectedCamera] = useState(() => localStorage.getItem('drocsid_camera') || '');
-  const [micVolume, setMicVolume] = useState(100);
-  const [speakerVolume, setSpeakerVolume] = useState(100);
+  const [micVolume, setMicVolume] = useState(() => {
+    const saved = localStorage.getItem('drocsid_mic_volume');
+    return saved ? Number(saved) : 100;
+  });
+  const [speakerVolume, setSpeakerVolume] = useState(() => {
+    const saved = localStorage.getItem('drocsid_speaker_volume');
+    return saved ? Number(saved) : 100;
+  });
   const [micTesting, setMicTesting] = useState(false);
   const [micLevel, setMicLevel] = useState(0);
   const [cameraPreview, setCameraPreview] = useState(false);
@@ -973,7 +979,17 @@ function VoiceVideoSettings() {
           min={0}
           max={200}
           value={micVolume}
-          onChange={(e) => setMicVolume(Number(e.target.value))}
+          onChange={(e) => {
+            const val = Number(e.target.value);
+            setMicVolume(val);
+            localStorage.setItem('drocsid_mic_volume', String(val));
+            window.dispatchEvent(new CustomEvent('drocsid-mic-volume-changed', { detail: val }));
+            if (isTauri()) {
+              import('@tauri-apps/api/core').then(({ invoke }) =>
+                invoke('voice_set_mic_gain', { volumePercent: val }).catch(() => {})
+              );
+            }
+          }}
         />
         <span className="profile-field-hint">{micVolume}%</span>
       </div>
@@ -1094,7 +1110,17 @@ function VoiceVideoSettings() {
           min={0}
           max={200}
           value={speakerVolume}
-          onChange={(e) => setSpeakerVolume(Number(e.target.value))}
+          onChange={(e) => {
+            const val = Number(e.target.value);
+            setSpeakerVolume(val);
+            localStorage.setItem('drocsid_speaker_volume', String(val));
+            window.dispatchEvent(new CustomEvent('drocsid-speaker-volume-changed', { detail: val }));
+            if (isTauri()) {
+              import('@tauri-apps/api/core').then(({ invoke }) =>
+                invoke('voice_set_master_volume', { volumePercent: val }).catch(() => {})
+              );
+            }
+          }}
         />
         <span className="profile-field-hint">{speakerVolume}%</span>
       </div>

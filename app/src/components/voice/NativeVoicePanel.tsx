@@ -126,6 +126,16 @@ export function NativeVoicePanel({ token, url, channelName, compact }: NativeVoi
           speakerDeviceId,
         });
 
+        // Apply saved volume settings
+        const savedMicVol = localStorage.getItem('drocsid_mic_volume');
+        if (savedMicVol) {
+          invoke('voice_set_mic_gain', { volumePercent: Number(savedMicVol) }).catch(() => {});
+        }
+        const savedSpeakerVol = localStorage.getItem('drocsid_speaker_volume');
+        if (savedSpeakerVol) {
+          invoke('voice_set_master_volume', { volumePercent: Number(savedSpeakerVol) }).catch(() => {});
+        }
+
         if (gen !== connectGenRef.current) {
           // A newer connect was issued (StrictMode or dep change).
           // The newer voice_connect already replaced our session in Rust.
