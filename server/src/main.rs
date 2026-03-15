@@ -25,8 +25,14 @@ async fn main() -> anyhow::Result<()> {
     let (log_broadcast_layer, log_sender) =
         services::log_broadcast::LogBroadcastLayer::new(1000);
 
+    // Set global filter to debug so the broadcast layer captures HTTP trace
+    // events and gateway activity for the admin log viewer. The terminal will
+    // also show debug output; set RUST_LOG=info to suppress in production.
     tracing_subscriber::registry()
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new("info,tower_http=debug")),
+        )
         .with(tracing_subscriber::fmt::layer())
         .with(log_broadcast_layer)
         .init();
