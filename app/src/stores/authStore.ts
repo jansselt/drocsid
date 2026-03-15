@@ -45,6 +45,14 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
 
     try {
+      // Ensure we have a valid (non-expired) access token before calling getMe.
+      // If the token expired while the app was closed, this refreshes it first.
+      const valid = await api.ensureValidToken();
+      if (!valid) {
+        set({ isLoading: false });
+        return;
+      }
+
       const user = await api.getMe();
       await applyUserTheme(user.theme_preference);
       set({ user, isAuthenticated: true, isLoading: false });

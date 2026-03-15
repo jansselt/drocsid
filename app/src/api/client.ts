@@ -17,6 +17,9 @@ let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 // Margin before expiry to trigger proactive refresh (5 minutes)
 const REFRESH_MARGIN_MS = 5 * 60 * 1000;
 
+// Dedup concurrent refresh calls — only one in-flight at a time
+let refreshPromise: Promise<boolean> | null = null;
+
 /** Decode JWT payload without verification (just to read expiry) */
 function getTokenExpiry(token: string): number | null {
   try {
@@ -39,8 +42,9 @@ function scheduleProactiveRefresh() {
 
   const delay = expiry - Date.now() - REFRESH_MARGIN_MS;
   if (delay <= 0) {
-    // Already near expiry — refresh immediately
-    refreshAccessToken().catch(() => {});
+    // Already expired or near expiry — don't fire-and-forget here.
+    // init() calls ensureValidToken() which handles the refresh properly.
+    // Only schedule if we have a positive delay.
     return;
   }
 
@@ -143,6 +147,20 @@ async function request<T>(
 }
 
 async function refreshAccessToken(): Promise<boolean> {
+  // Dedup: if a refresh is already in flight, wait for it instead of
+  // sending a second request (the server deletes the old session on
+  // first use, so a concurrent second call would fail and clear tokens).
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = doRefresh();
+  try {
+    return await refreshPromise;
+  } finally {
+    refreshPromise = null;
+  }
+}
+
+async function doRefresh(): Promise<boolean> {
   if (!refreshToken) return false;
 
   try {
