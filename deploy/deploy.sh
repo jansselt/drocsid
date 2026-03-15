@@ -28,6 +28,15 @@ if [ -z "${VITE_API_URL:-}" ] || [ -z "${VITE_WS_URL:-}" ]; then
 fi
 
 # ── Infrastructure ───────────────────────────────────────
+# Inject LIVEKIT_DOMAIN into livekit.yaml (required for TURN server)
+if [ -n "${LIVEKIT_DOMAIN:-}" ]; then
+    echo "==> Injecting LIVEKIT_DOMAIN=${LIVEKIT_DOMAIN} into livekit.yaml"
+    envsubst '$LIVEKIT_DOMAIN' < "${REPO_DIR}/docker/livekit.yaml" > "${REPO_DIR}/docker/livekit.yaml.tmp"
+    mv "${REPO_DIR}/docker/livekit.yaml.tmp" "${REPO_DIR}/docker/livekit.yaml"
+else
+    echo "WARNING: LIVEKIT_DOMAIN not set — TURN server will not start"
+fi
+
 echo "==> Starting infrastructure services..."
 docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
 

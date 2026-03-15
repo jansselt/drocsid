@@ -32,6 +32,9 @@ room:
 
 turn:
   enabled: true
+  # Domain is required for TURN — injected by deploy script from LIVEKIT_DOMAIN secret.
+  # Without it, LiveKit silently skips TURN startup.
+  domain: ${LIVEKIT_DOMAIN}
   # TURN/UDP on port 443 — nearly all firewalls allow UDP 443 (QUIC/HTTP3).
   # This lets users behind restrictive NATs/firewalls relay media through
   # the TURN server instead of failing to connect via direct UDP.
