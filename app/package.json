@@ -1,7 +1,7 @@
 {
   "name": "drocsid",
   "private": true,
-  "version": "0.13.0",
+  "version": "1.0.0",
   "main": "electron-dist/main.js",
   "scripts": {
     "dev": "vite",

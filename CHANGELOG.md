@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.0.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.13.0...drocsid-v1.0.0) (2026-03-15)
+
+
+### ⚠ BREAKING CHANGES
+
+* Desktop app now uses Electron instead of Tauri. Users will need to reinstall the app (localStorage/auth tokens will not carry over from the Tauri version).
+
+### Features
+
+* migrate desktop app from Tauri/Rust to Electron ([cd3ecec](https://github.com/jansselt/drocsid/commit/cd3ecec2f43b291b11e103636ae8d42b67a5d061))
+
+
+### Bug Fixes
+
+* remove unused isDesktop import in UserSettings ([9127330](https://github.com/jansselt/drocsid/commit/912733010d64d63fcafaf3ae63f9afde9ddceb2b))
+
 ## [0.13.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.12.0...drocsid-v0.13.0) (2026-03-15)
 
 
