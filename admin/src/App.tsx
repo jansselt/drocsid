@@ -9,7 +9,6 @@ import './style.css';
 type Page = 'dashboard' | 'livekit' | 'logs' | 'voice';
 
 function LoginForm({ onLogin }: { onLogin: () => void }) {
-  const [url, setUrl] = useState(localStorage.getItem('drocsid_admin_url') || '');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -20,17 +19,14 @@ function LoginForm({ onLogin }: { onLogin: () => void }) {
     setError('');
     setLoading(true);
     try {
-      const baseUrl = url.replace(/\/+$/, '');
-      localStorage.setItem('drocsid_admin_url', baseUrl);
-
-      const res = await fetch(`${baseUrl}/api/v1/auth/login`, {
+      const res = await fetch('/api/v1/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || `Login failed (${res.status})`);
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || `Login failed (${res.status})`);
       }
       const data = await res.json();
       setToken(data.access_token);
@@ -47,13 +43,6 @@ function LoginForm({ onLogin }: { onLogin: () => void }) {
       <div className="login-card">
         <h1>Drocsid Admin</h1>
         <form onSubmit={handleSubmit}>
-          <label>Server URL</label>
-          <input
-            type="text"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="http://localhost:3001"
-          />
           <label>Email</label>
           <input
             type="email"

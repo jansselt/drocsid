@@ -42,13 +42,21 @@ npm install --prefer-offline
 VITE_API_URL="${VITE_API_URL}" VITE_WS_URL="${VITE_WS_URL}" npm run build
 cd "$REPO_DIR"
 
+# ── Build Admin Dashboard ────────────────────────────────
+echo "==> Building admin dashboard..."
+cd "${REPO_DIR}/admin"
+npm install --prefer-offline
+npm run build
+cd "$REPO_DIR"
+
 # ── Deploy ───────────────────────────────────────────────
 echo "==> Stopping drocsid-server..."
 sudo systemctl stop drocsid-server || true
 
-echo "==> Copying binary, frontend, and config..."
+echo "==> Copying binary, frontend, admin dashboard, and config..."
 cp "${REPO_DIR}/server/target/release/drocsid-server" "${DEPLOY_DIR}/drocsid-server"
 rsync -a --delete "${REPO_DIR}/app/dist/" "${DEPLOY_DIR}/web/"
+rsync -a --delete "${REPO_DIR}/admin/dist/" "${DEPLOY_DIR}/admin/"
 mkdir -p "${DEPLOY_DIR}/config"
 cp "${REPO_DIR}/config/default.toml" "${DEPLOY_DIR}/config/default.toml"
 

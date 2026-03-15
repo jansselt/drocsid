@@ -1,5 +1,8 @@
-use axum::extract::{FromRef, State};
+use std::net::SocketAddr;
+
+use axum::extract::{ConnectInfo, FromRef, State};
 use axum::http::request::Parts;
+use axum::http::HeaderMap;
 use axum::response::IntoResponse;
 use axum::routing::post;
 use axum::{Json, Router};
@@ -11,6 +14,44 @@ use crate::services::auth as auth_service;
 use crate::state::AppState;
 use crate::types::entities::{LoginRequest, RefreshRequest, RegisterRequest};
 use crate::types::events::ServerMemberAddEvent;
+
+/// Extract client IP from X-Real-IP header (set by nginx) or fall back to peer addr.
+fn client_ip(headers: &HeaderMap, connect_info: &ConnectInfo<SocketAddr>) -> String {
+    headers
+        .get("x-real-ip")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| connect_info.0.ip().to_string())
+}
+
+/// Check a Redis rate limit counter. Returns Err(RateLimited) if exceeded.
+async fn check_rate_limit(
+    redis: &mut redis::aio::ConnectionManager,
+    key: &str,
+    max_attempts: i64,
+    window_secs: u64,
+) -> Result<(), ApiError> {
+    let count: Option<i64> = redis::cmd("GET")
+        .arg(key)
+        .query_async(redis)
+        .await
+        .unwrap_or(None);
+
+    if count.unwrap_or(0) >= max_attempts {
+        return Err(ApiError::RateLimited {
+            retry_after_ms: window_secs * 1000,
+        });
+    }
+
+    redis::pipe()
+        .cmd("INCR").arg(key)
+        .cmd("EXPIRE").arg(key).arg(window_secs as i64)
+        .query_async::<()>(redis)
+        .await
+        .ok();
+
+    Ok(())
+}
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -50,8 +91,19 @@ async fn register(
 
 async fn login(
     State(state): State<AppState>,
+    connect_info: ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Json(body): Json<LoginRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
+    let mut redis = state.redis.clone();
+    let ip = client_ip(&headers, &connect_info);
+
+    // Rate limit: 5 per email per 5 min + 20 per IP per 5 min
+    let email_key = format!("login_email:{}", body.email.to_lowercase());
+    let ip_key = format!("login_ip:{ip}");
+    check_rate_limit(&mut redis, &email_key, 5, 300).await?;
+    check_rate_limit(&mut redis, &ip_key, 20, 300).await?;
+
     let response =
         auth_service::login(&state.db, &state.config, &body.email, &body.password).await?;
 
@@ -60,8 +112,17 @@ async fn login(
 
 async fn refresh(
     State(state): State<AppState>,
+    connect_info: ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Json(body): Json<RefreshRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
+    let mut redis = state.redis.clone();
+    let ip = client_ip(&headers, &connect_info);
+
+    // Rate limit: 30 per IP per 5 min (higher since refresh is automated)
+    let ip_key = format!("refresh_ip:{ip}");
+    check_rate_limit(&mut redis, &ip_key, 30, 300).await?;
+
     let response =
         auth_service::refresh(&state.db, &state.config, &body.refresh_token).await?;
 
@@ -85,31 +146,9 @@ async fn forgot_password(
     State(state): State<AppState>,
     Json(body): Json<ForgotPasswordRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    // Rate limit by email via Redis
     let mut redis = state.redis.clone();
     let rate_key = format!("pw_reset:{}", body.email.to_lowercase());
-    let count: Option<i64> = redis::cmd("GET")
-        .arg(&rate_key)
-        .query_async(&mut redis)
-        .await
-        .unwrap_or(None);
-
-    if count.unwrap_or(0) >= 10 {
-        return Err(ApiError::RateLimited {
-            retry_after_ms: 900_000,
-        });
-    }
-
-    // Increment rate limit counter with 15-minute TTL
-    redis::pipe()
-        .cmd("INCR")
-        .arg(&rate_key)
-        .cmd("EXPIRE")
-        .arg(&rate_key)
-        .arg(900)
-        .query_async::<()>(&mut redis)
-        .await
-        .ok();
+    check_rate_limit(&mut redis, &rate_key, 10, 900).await?;
 
     auth_service::request_password_reset(&state.db, &state.config, &body.email).await?;
 
