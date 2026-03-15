@@ -56,7 +56,8 @@ sudo systemctl stop drocsid-server || true
 echo "==> Copying binary, frontend, admin dashboard, and config..."
 cp "${REPO_DIR}/server/target/release/drocsid-server" "${DEPLOY_DIR}/drocsid-server"
 rsync -a --delete "${REPO_DIR}/app/dist/" "${DEPLOY_DIR}/web/"
-rsync -a --delete "${REPO_DIR}/admin/dist/" "${DEPLOY_DIR}/admin/"
+# Deploy admin under web root so nginx try_files works without alias
+rsync -a --delete "${REPO_DIR}/admin/dist/" "${DEPLOY_DIR}/web/admin/"
 mkdir -p "${DEPLOY_DIR}/config"
 cp "${REPO_DIR}/config/default.toml" "${DEPLOY_DIR}/config/default.toml"
 
