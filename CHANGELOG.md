@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.10.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.9.1...drocsid-v0.10.0) (2026-03-15)
+
+
+### Features
+
+* add admin dashboard for server monitoring & LiveKit diagnostics ([78584b1](https://github.com/jansselt/drocsid/commit/78584b1a750d097de3a30bc6e58dd1b10a6b5a2a))
+
+
+### Bug Fixes
+
+* audio sharing not working — wrong PIPEWIRE_NODE name for monitor ([021ddc9](https://github.com/jansselt/drocsid/commit/021ddc99bc7a006d302af21e076723194090fe83))
+* eliminate choppy audio on Linux native voice path ([e5ccc13](https://github.com/jansselt/drocsid/commit/e5ccc13d64501e2784f2a3783080378fd002ff18))
+
 ## [0.9.1](https://github.com/jansselt/drocsid/compare/drocsid-v0.9.0...drocsid-v0.9.1) (2026-03-15)
 
 
