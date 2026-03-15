@@ -134,6 +134,18 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
 
   const [showSoundboard, setShowSoundboard] = useState(false);
   const [isAudioSharing, setIsAudioSharing] = useState(false);
+  const [micError, setMicError] = useState<string | null>(null);
+
+  // Detect mic/camera access failures (e.g. WebView2 permissions not granted)
+  useEffect(() => {
+    if (!room) return;
+    const onMediaError = (err: Error) => {
+      console.error('[VoicePanel] Media device error:', err);
+      setMicError('Microphone access denied. Check your system permissions and reload.');
+    };
+    room.on(RoomEvent.MediaDevicesError, onMediaError);
+    return () => { room.off(RoomEvent.MediaDevicesError, onMediaError); };
+  }, [room]);
   const voiceSetAudioSharing = useServerStore((s) => s.voiceSetAudioSharing);
   const voiceSetVideoActive = useServerStore((s) => s.voiceSetVideoActive);
 
@@ -536,6 +548,10 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
         </svg>
         <span className="voice-panel-title">{channelName}</span>
       </div>
+
+      {micError && (
+        <div className="voice-mic-error">{micError}</div>
+      )}
 
       {/* Video grid (screen share or cameras) */}
       {hasVideo && (

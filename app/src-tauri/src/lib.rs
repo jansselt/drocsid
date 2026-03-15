@@ -526,6 +526,47 @@ pub fn run() {
                 });
             }
 
+            // Auto-grant camera/mic permissions in WebView2 on Windows
+            #[cfg(target_os = "windows")]
+            {
+                let _ = window.with_webview(|webview: tauri::webview::PlatformWebview| {
+                    unsafe {
+                        use webview2_com::Microsoft::Web::WebView2::Win32::{
+                            ICoreWebView2,
+                            ICoreWebView2PermissionRequestedEventArgs,
+                            COREWEBVIEW2_PERMISSION_KIND_MICROPHONE,
+                            COREWEBVIEW2_PERMISSION_KIND_CAMERA,
+                            COREWEBVIEW2_PERMISSION_STATE_ALLOW,
+                        };
+                        use webview2_com::PermissionRequestedEventHandler;
+                        use windows::core::Interface;
+
+                        let controller = webview.controller();
+                        let core: ICoreWebView2 = controller
+                            .CoreWebView2()
+                            .expect("Failed to get CoreWebView2");
+
+                        let handler = PermissionRequestedEventHandler::create(Box::new(
+                            move |_sender, args| {
+                                if let Some(args) = args {
+                                    let args: ICoreWebView2PermissionRequestedEventArgs = args.cast()?;
+                                    let kind = args.PermissionKind()?;
+                                    if kind == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE
+                                        || kind == COREWEBVIEW2_PERMISSION_KIND_CAMERA
+                                    {
+                                        args.SetState(COREWEBVIEW2_PERMISSION_STATE_ALLOW)?;
+                                    }
+                                }
+                                Ok(())
+                            },
+                        ));
+
+                        let mut token = windows::Win32::System::Com::EventRegistrationToken::default();
+                        let _ = core.add_PermissionRequested(&handler, &mut token);
+                    }
+                });
+            }
+
             match setup_tray(app) {
                 Ok(()) => {}
                 Err(e) => {

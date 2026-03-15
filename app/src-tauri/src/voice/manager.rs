@@ -56,6 +56,9 @@ pub struct VoiceManager {
     mic_swap_tx: mpsc::Sender<rtrb::Consumer<i16>>,
     /// Channel to send a replacement output ring-buffer producer to the mixer task.
     output_swap_tx: mpsc::Sender<rtrb::Producer<i16>>,
+    /// Currently selected mic device ID (None = system default). Tracked so we can
+    /// restore the mic stream after audio share stops.
+    current_mic_device_id: Option<String>,
     /// Active camera video source (if camera is publishing)
     camera_source: Option<NativeVideoSource>,
     /// Active screenshare video source (if screen is sharing)
@@ -286,6 +289,7 @@ impl VoiceManager {
             mic_gain,
             mic_swap_tx,
             output_swap_tx,
+            current_mic_device_id: mic_device_id.map(|s| s.to_string()),
             camera_source: None,
             screenshare_source: None,
             #[cfg(target_os = "linux")]
@@ -354,6 +358,7 @@ impl VoiceManager {
         })?;
         // Replace stream — old one drops here, stopping its cpal callback
         self.input_stream = new_stream;
+        self.current_mic_device_id = device_id.map(|s| s.to_string());
         log::info!("VoiceManager::set_input_device: swap complete");
         Ok(())
     }
@@ -797,7 +802,8 @@ impl VoiceManager {
         Ok(())
     }
 
-    /// Stop sharing application audio. Cleans up null-sink, unpublishes track.
+    /// Stop sharing application audio. Cleans up null-sink, unpublishes track,
+    /// and rebuilds the mic stream to restore PipeWire routing.
     #[cfg(target_os = "linux")]
     pub async fn stop_audio_share(&mut self) -> Result<(), String> {
         if let Some(state) = self.audio_share.take() {
@@ -817,7 +823,28 @@ impl VoiceManager {
             // 3. Destroy null-sink (PipeWire auto-removes all its links)
             crate::audio::destroy_null_sink(state.null_sink_module_id);
 
-            // 4. cpal capture_stream is dropped here
+            // 4. cpal capture_stream is dropped here (the AudioShareState owns it)
+
+            // 5. Rebuild the mic cpal input stream on the original microphone device.
+            //    Destroying the null-sink can leave the existing mic stream's PipeWire
+            //    routing broken, causing the mic forwarder to receive silence forever.
+            //    Rebuilding forces PipeWire to create a fresh connection to the correct device.
+            log::info!("stop_audio_share: rebuilding mic input stream on device={:?}", self.current_mic_device_id);
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            let (producer, consumer) = rtrb::RingBuffer::new(MIC_RING_SIZE);
+            match audio_io::build_input_stream(self.current_mic_device_id.as_deref(), producer) {
+                Ok(new_stream) => {
+                    if let Err(e) = self.mic_swap_tx.try_send(consumer) {
+                        log::error!("stop_audio_share: failed to send new mic consumer: {e}");
+                    }
+                    self.input_stream = new_stream;
+                    log::info!("stop_audio_share: mic input stream rebuilt successfully");
+                }
+                Err(e) => {
+                    log::error!("stop_audio_share: failed to rebuild mic input stream: {e}");
+                }
+            }
+
             log::info!("stop_audio_share: cleanup complete");
         }
         Ok(())

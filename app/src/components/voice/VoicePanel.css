@@ -1,3 +1,13 @@
+.voice-mic-error {
+  padding: 6px 12px;
+  margin: 4px 8px;
+  background: var(--danger, #ed4245);
+  color: #fff;
+  border-radius: 4px;
+  font-size: 12px;
+  text-align: center;
+}
+
 .voice-panel {
   display: flex;
   flex-direction: column;

@@ -37,3 +37,7 @@ base64 = "0.22"
 webkit2gtk = "2.0"
 ashpd = { version = "0.13", default-features = false, features = ["tokio", "screencast"] }
 libc = "0.2"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+webview2-com = "0.39"
+windows = { version = "0.62", features = ["Win32_System_Com"] }
