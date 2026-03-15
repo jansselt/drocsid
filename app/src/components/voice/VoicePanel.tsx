@@ -19,7 +19,7 @@ import {
   type RoomOptions,
 } from 'livekit-client';
 import { useServerStore } from '../../stores/serverStore';
-import { isTauri } from '../../api/instance';
+import { isTauri, isLinux } from '../../api/instance';
 import { applyAudioOutputTauri, labelAudioStreamsTauri, getNoiseSuppression } from '../../utils/audioDevices';
 import { NativeVoicePanel } from './NativeVoicePanel';
 import { SoundboardPanel } from './SoundboardPanel';
@@ -75,8 +75,10 @@ export function VoicePanel({ compact }: { compact?: boolean } = {}) {
     }
   }
 
-  // Tauri/Linux: use native LiveKit + cpal (WebKit2GTK WebRTC is broken)
-  if (isTauri()) {
+  // Only use native LiveKit + cpal on Linux Tauri (WebKit2GTK WebRTC is broken).
+  // Windows Tauri uses WebView2 (Chromium) which has full WebRTC support,
+  // so it gets the JS SDK path with AdaptiveStream, audio features, etc.
+  if (isTauri() && isLinux()) {
     return (
       <NativeVoicePanel
         token={voiceToken}

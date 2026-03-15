@@ -12,6 +12,11 @@ export function isTauri(): boolean {
   return '__TAURI_INTERNALS__' in window;
 }
 
+/** Whether we're on Linux (relevant for native voice — WebKit2GTK WebRTC is broken) */
+export function isLinux(): boolean {
+  return navigator.userAgent.includes('Linux') && !navigator.userAgent.includes('Android');
+}
+
 /** Get the configured instance URL, or null if none set (Tauri first-launch) */
 export function getInstanceUrl(): string | null {
   if (instanceUrl) return instanceUrl;
