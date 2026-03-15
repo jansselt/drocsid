@@ -317,6 +317,24 @@ use platform::{with_input_device, with_output_device};
 // stereo-only microphone).  We query the device's supported configurations
 // and pick one that works, then convert in the callback.
 
+/// Preferred cpal buffer size in frames.
+/// 480 frames = 10ms at 48kHz — matches the tokio mixer/forwarder interval.
+/// A fixed size prevents PipeWire/ALSA from choosing a very large period that
+/// causes timing misalignment with the ring buffer.
+#[cfg(target_os = "linux")]
+const PREFERRED_BUFFER_FRAMES: u32 = 480;
+
+/// On non-Linux, use the OS default (CoreAudio/WASAPI handle buffering well).
+#[cfg(not(target_os = "linux"))]
+fn preferred_buffer_size() -> cpal::BufferSize {
+    cpal::BufferSize::Default
+}
+
+#[cfg(target_os = "linux")]
+fn preferred_buffer_size() -> cpal::BufferSize {
+    cpal::BufferSize::Fixed(PREFERRED_BUFFER_FRAMES)
+}
+
 /// Negotiate a compatible input stream config.
 /// Returns (StreamConfig, native_channel_count).
 fn negotiate_input_config(device: &cpal::Device) -> Result<(cpal::StreamConfig, u16), String> {
@@ -341,7 +359,7 @@ fn negotiate_input_config(device: &cpal::Device) -> Result<(cpal::StreamConfig, 
             return Ok((cpal::StreamConfig {
                 channels,
                 sample_rate: 48000,
-                buffer_size: cpal::BufferSize::Default,
+                buffer_size: preferred_buffer_size(),
             }, channels));
         }
     }
@@ -357,7 +375,7 @@ fn negotiate_input_config(device: &cpal::Device) -> Result<(cpal::StreamConfig, 
     Ok((cpal::StreamConfig {
         channels,
         sample_rate: default.sample_rate(),
-        buffer_size: cpal::BufferSize::Default,
+        buffer_size: preferred_buffer_size(),
     }, channels))
 }
 
@@ -389,7 +407,7 @@ fn negotiate_output_config(device: &cpal::Device) -> Result<(cpal::StreamConfig,
             return Ok((cpal::StreamConfig {
                 channels,
                 sample_rate: 48000,
-                buffer_size: cpal::BufferSize::Default,
+                buffer_size: preferred_buffer_size(),
             }, channels));
         }
     }
@@ -405,7 +423,7 @@ fn negotiate_output_config(device: &cpal::Device) -> Result<(cpal::StreamConfig,
     Ok((cpal::StreamConfig {
         channels,
         sample_rate: default.sample_rate(),
-        buffer_size: cpal::BufferSize::Default,
+        buffer_size: preferred_buffer_size(),
     }, channels))
 }
 
@@ -479,10 +497,40 @@ pub fn build_output_stream(
             config.channels, config.sample_rate
         );
 
+        // Track underruns: when the ring buffer is empty and cpal needs data
+        let underrun_count = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let underrun_count_cb = underrun_count.clone();
+        let callback_count = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let callback_count_cb = callback_count.clone();
+
+        // Log buffer health periodically from a background thread
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(5));
+                let underruns = underrun_count.load(std::sync::atomic::Ordering::Relaxed);
+                let callbacks = callback_count.load(std::sync::atomic::Ordering::Relaxed);
+                if callbacks > 0 && underruns > 0 {
+                    log::warn!(
+                        "cpal output: {underruns} underruns in {callbacks} callbacks ({:.1}%)",
+                        underruns as f64 / callbacks as f64 * 100.0
+                    );
+                }
+            }
+        });
+
         let stream = device
             .build_output_stream(
                 &config,
                 move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
+                    callback_count_cb.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let available = consumer.slots();  // how many samples in ring buffer
+                    let needed = data.len();           // how many cpal wants
+
+                    // Detect underrun: ring buffer has less than what cpal needs
+                    if available < needed {
+                        underrun_count_cb.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
+
                     let ch = native_ch as usize;
                     if ch == 2 {
                         // Stereo pass-through from ring buffer

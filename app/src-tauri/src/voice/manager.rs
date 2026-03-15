@@ -29,9 +29,12 @@ use super::suppressor;
 
 const SAMPLE_RATE: u32 = 48000;
 const NUM_CHANNELS: u32 = 1;
-// Ring buffer: 200ms at 48kHz mono for mic, 200ms at 48kHz stereo for output
-const MIC_RING_SIZE: usize = (SAMPLE_RATE as usize) / 5;
-const OUTPUT_RING_SIZE: usize = (SAMPLE_RATE as usize) * 2 / 5;
+// Ring buffer: 500ms at 48kHz mono for mic, 500ms at 48kHz stereo for output.
+// Large buffers prevent underruns from tokio interval jitter and PipeWire period misalignment.
+const MIC_RING_SIZE: usize = (SAMPLE_RATE as usize) / 2;       // 24000 mono samples
+const OUTPUT_RING_SIZE: usize = (SAMPLE_RATE as usize);         // 48000 stereo samples (= 500ms)
+/// Pre-fill output ring with this many ms of silence to absorb timing jitter
+const OUTPUT_PREFILL_MS: usize = 60;
 
 pub struct VoiceManager {
     room: Room,
@@ -192,7 +195,16 @@ impl VoiceManager {
         // 5. Build cpal streams AFTER libwebrtc is fully initialized.
         log::info!("  step 5: setting up ring buffers and cpal streams");
         let (mic_producer, mic_consumer) = rtrb::RingBuffer::new(MIC_RING_SIZE);
-        let (output_producer, output_consumer) = rtrb::RingBuffer::new(OUTPUT_RING_SIZE);
+        let (mut output_producer, output_consumer) = rtrb::RingBuffer::new(OUTPUT_RING_SIZE);
+
+        // Pre-fill the output ring with silence so the cpal output callback has
+        // data to consume immediately, absorbing timing jitter between tokio
+        // mixer ticks and cpal callbacks.
+        let prefill_samples = (SAMPLE_RATE as usize * 2 * OUTPUT_PREFILL_MS) / 1000;
+        for _ in 0..prefill_samples {
+            let _ = output_producer.push(0i16);
+        }
+        log::info!("  pre-filled output ring with {prefill_samples} samples ({OUTPUT_PREFILL_MS}ms)");
 
         log::info!("  step 5a: building cpal input stream (mic={mic_device_id:?})...");
         let input_stream =
@@ -1251,20 +1263,23 @@ impl VoiceManager {
                         log::info!("audio_mixer: first remote audio received and mixed to output");
                         first_audio_logged = true;
                     }
-                    // Apply master output volume
-                    let mv_pct = master_volume.load(Ordering::Relaxed);
-                    let mv = mv_pct as f32 / 100.0;
-                    for &sample in &mix_buf {
-                        let scaled = if mv_pct != 100 {
-                            (sample as f32 * mv) as i32
-                        } else {
-                            sample
-                        };
-                        let clamped = scaled.clamp(-32768, 32767) as i16;
-                        let _ = output_producer.push(clamped);
-                    }
-                    diag_samples_written += mix_buf.len() as u64;
                 }
+
+                // Always write to the output ring buffer — silence when no audio.
+                // This prevents the cpal output callback from starving and producing
+                // choppy audio due to alternating data/silence in the ring buffer.
+                let mv_pct = master_volume.load(Ordering::Relaxed);
+                let mv = mv_pct as f32 / 100.0;
+                for &sample in &mix_buf {
+                    let scaled = if mv_pct != 100 {
+                        (sample as f32 * mv) as i32
+                    } else {
+                        sample
+                    };
+                    let clamped = scaled.clamp(-32768, 32767) as i16;
+                    let _ = output_producer.push(clamped);
+                }
+                diag_samples_written += mix_buf.len() as u64;
             }
         });
     }
