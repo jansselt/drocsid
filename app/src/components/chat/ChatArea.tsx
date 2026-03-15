@@ -26,6 +26,8 @@ export function ChatArea() {
   const dmChannels = useServerStore((s) => s.dmChannels);
   const voiceChannelId = useServerStore((s) => s.voiceChannelId);
   const voiceVideoActive = useServerStore((s) => s.voiceVideoActive);
+  const voiceStates = useServerStore((s) => s.voiceStates);
+  const users = useServerStore((s) => s.users);
   const currentUser = useAuthStore((s) => s.user);
 
   const servers = useServerStore((s) => s.servers);
@@ -211,6 +213,36 @@ export function ChatArea() {
             </>
           )}
         </div>
+        {/* DM active call banner — shown when others are in a call and you're not */}
+        {isDm && voiceChannelId !== activeChannelId && (() => {
+          const callUsers = voiceStates.get(activeChannelId) || [];
+          if (callUsers.length === 0) return null;
+          return (
+            <div className="dm-call-banner">
+              <div className="dm-call-banner-info">
+                <div className="dm-call-banner-avatars">
+                  {callUsers.slice(0, 5).map((vs) => {
+                    const u = users.get(vs.user_id);
+                    return (
+                      <span key={vs.user_id} className="dm-call-banner-avatar" title={u?.username}>
+                        {u?.avatar_url ? <img src={u.avatar_url} alt="" /> : (u?.username || '?').charAt(0).toUpperCase()}
+                      </span>
+                    );
+                  })}
+                </div>
+                <span className="dm-call-banner-text">
+                  {callUsers.length === 1 ? '1 person' : `${callUsers.length} people`} in call
+                </span>
+              </div>
+              <button
+                className="dm-call-banner-join"
+                onClick={() => useServerStore.getState().voiceJoin(activeChannelId)}
+              >
+                Join Call
+              </button>
+            </div>
+          );
+        })()}
         <MessageList channelId={activeChannelId} />
         <TypingIndicator channelId={activeChannelId} />
         <MessageInput channelId={activeChannelId} />

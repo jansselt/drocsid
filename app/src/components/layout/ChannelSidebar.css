@@ -219,6 +219,18 @@
   display: block;
 }
 
+.dm-call-indicator {
+  display: flex;
+  align-items: center;
+  margin-left: 0.25rem;
+  animation: dm-call-pulse 2s ease-in-out infinite;
+}
+
+@keyframes dm-call-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .dm-avatar {
   width: 32px;
   height: 32px;

@@ -547,6 +547,75 @@
   align-items: center;
 }
 
+/* ── DM Call Banner ───────────────────────────────── */
+
+.dm-call-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 1rem;
+  background: rgba(59, 165, 92, 0.12);
+  border-bottom: 1px solid rgba(59, 165, 92, 0.2);
+  flex-shrink: 0;
+}
+
+.dm-call-banner-info {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.dm-call-banner-avatars {
+  display: flex;
+}
+
+.dm-call-banner-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.625rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  border: 2px solid var(--bg-primary);
+  margin-left: -6px;
+  overflow: hidden;
+}
+
+.dm-call-banner-avatar:first-child {
+  margin-left: 0;
+}
+
+.dm-call-banner-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.dm-call-banner-text {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--success, #3ba55c);
+}
+
+.dm-call-banner-join {
+  padding: 0.25rem 0.75rem;
+  background: var(--success, #3ba55c);
+  color: white;
+  border: none;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dm-call-banner-join:hover {
+  filter: brightness(1.1);
+}
+
 /* ── Typing Indicator ─────────────────────────────── */
 
 .typing-indicator {
