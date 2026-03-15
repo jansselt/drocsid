@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.11.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.10.1...drocsid-v0.11.0) (2026-03-15)
+
+
+### Features
+
+* secure admin dashboard for remote deployment ([8e5b334](https://github.com/jansselt/drocsid/commit/8e5b334758c4010e9d8cd8e38fb47b0bb45614f0))
+* stream LiveKit Docker logs into admin dashboard ([5a462ed](https://github.com/jansselt/drocsid/commit/5a462ed1f06e9cfd7c910b9a4b2a82c5e0aa3bdd))
+
+
+### Bug Fixes
+
+* admin 301 redirect to http://host:3080 causes redirect loop ([6cc22c9](https://github.com/jansselt/drocsid/commit/6cc22c933e9ddc0f30fb9cba80621cfaa279ba18))
+* admin dashboard redirect loop — deploy under web root ([9668e0d](https://github.com/jansselt/drocsid/commit/9668e0de8bed708e1152c8efe732fd659a0ea750))
+* admin log stream shows no logs — tower_http events filtered out ([99c4e9b](https://github.com/jansselt/drocsid/commit/99c4e9bf227274dfc8693e8d8a49bad0cd880adf))
+* admin log stream WebSocket fails — nginx /api/ missing upgrade headers ([e80bb21](https://github.com/jansselt/drocsid/commit/e80bb21c9c67493fa8aa0a89dcdc699d7805ddd8))
+* admin route caught by main SPA catch-all — use ^~ prefix match ([3885d2b](https://github.com/jansselt/drocsid/commit/3885d2b3534dcf83389b94f242dac771a959baed))
+* log stream WS disconnects + missing server/API logs ([356152c](https://github.com/jansselt/drocsid/commit/356152cef105ae432aa82c8e4b690bfb053741e6))
+* mic track published with source UNKNOWN — set to Microphone ([7a4ee42](https://github.com/jansselt/drocsid/commit/7a4ee42c3dbeaab44025a81cae04cd45f0293e6d))
+* remove invalid navigateFallbackDenylist from injectManifest config ([d5428c6](https://github.com/jansselt/drocsid/commit/d5428c6c5d079031cb535cf43d3b31378ed227e5))
+* screen share causes choppy audio + mic choppiness on Linux ([ced2c91](https://github.com/jansselt/drocsid/commit/ced2c9103c07dec95262c4ef0ad67ce00c4bb2e5))
+* service worker intercepts /admin routes — exclude from precache ([1430883](https://github.com/jansselt/drocsid/commit/1430883aa1b793345e229309e3691483cbb12b2e))
+
 ## [0.10.1](https://github.com/jansselt/drocsid/compare/drocsid-v0.10.0...drocsid-v0.10.1) (2026-03-15)
 
 
