@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.12.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.11.0...drocsid-v0.12.0) (2026-03-15)
+
+
+### Features
+
+* show active call indicator and join banner for DM voice calls ([da7d12d](https://github.com/jansselt/drocsid/commit/da7d12d30ec808de5daac2a571e02d401b281b96))
+
+
+### Bug Fixes
+
+* DM call banner shows usernames instead of just count ([6055d60](https://github.com/jansselt/drocsid/commit/6055d60e4a76bbbf2ba67f03487cafac04265453))
+* Windows Tauri now uses JS LiveKit SDK instead of limited Rust SDK ([f6a1841](https://github.com/jansselt/drocsid/commit/f6a1841b66b140c7f33ed054718456a7501bdef8))
+
 ## [0.11.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.10.1...drocsid-v0.11.0) (2026-03-15)
 
 
