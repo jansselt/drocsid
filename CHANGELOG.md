@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.2](https://github.com/jansselt/drocsid/compare/drocsid-v1.0.1...drocsid-v1.0.2) (2026-03-15)
+
+
+### Bug Fixes
+
+* add author, description, homepage for electron-builder deb ([e55ab9a](https://github.com/jansselt/drocsid/commit/e55ab9ae42b7b5d835378681523e56d6c5846685))
+* use relative base path for Electron builds ([38f3e13](https://github.com/jansselt/drocsid/commit/38f3e13143f83e232f1eb83f6611fe109049e1bf))
+
 ## [1.0.1](https://github.com/jansselt/drocsid/compare/drocsid-v1.0.0...drocsid-v1.0.1) (2026-03-15)
 
 
