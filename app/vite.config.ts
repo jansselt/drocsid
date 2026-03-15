@@ -11,6 +11,9 @@ const isElectron = !!process.env.ELECTRON
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Electron loads via file:// — absolute paths like /assets/foo.js resolve to
+  // filesystem root. Use relative paths (./) so assets load from the app directory.
+  base: isElectron ? './' : '/',
   plugins: [
     react(),
     // Always load PWA plugin so virtual:pwa-register resolves in all builds.
