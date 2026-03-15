@@ -694,11 +694,14 @@ impl VoiceManager {
             .map_err(|e| format!("Publish audio share track failed: {e}"))?;
         log::info!("start_audio_share: published ScreenShareAudio track");
 
-        // 6. Open cpal stereo input on the null-sink monitor
-        let monitor_name = format!("{sink_name}.monitor");
-        let stereo_ring_size = (SAMPLE_RATE as usize) * 2 / 5; // 200ms stereo
+        // 6. Open cpal stereo input on the null-sink's monitor source.
+        // PIPEWIRE_NODE targets by node.name — use the sink name directly (without
+        // ".monitor" suffix). PipeWire automatically routes capture streams on a
+        // sink to its monitor output. The ".monitor" suffix is a PulseAudio convention
+        // that doesn't map to a PipeWire node name.
+        let stereo_ring_size = (SAMPLE_RATE as usize); // 500ms stereo
         let (producer, consumer) = rtrb::RingBuffer::new(stereo_ring_size);
-        let capture_stream = audio_io::build_stereo_input_stream(Some(&monitor_name), producer)?;
+        let capture_stream = audio_io::build_stereo_input_stream(Some(&sink_name), producer)?;
 
         // 7. Spawn audio share forwarder task
         let (share_shutdown_tx, share_shutdown_rx) = mpsc::channel::<()>(1);
@@ -829,16 +832,37 @@ impl VoiceManager {
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_millis(10));
             let mut buf = Vec::with_capacity(960); // 10ms at 48kHz stereo
+            let mut diag_ticks: u64 = 0;
+            let mut diag_samples: u64 = 0;
+            let mut diag_empty_ticks: u64 = 0;
+            let mut diag_capture_errors: u64 = 0;
 
             loop {
                 tokio::select! {
                     _ = interval.tick() => {
+                        diag_ticks += 1;
+
                         buf.clear();
                         while let Ok(sample) = consumer.pop() {
                             buf.push(sample);
                         }
                         if buf.is_empty() {
+                            diag_empty_ticks += 1;
+                            if diag_empty_ticks == 100 {
+                                log::warn!("audio_share_forwarder: no samples for 1s — cpal monitor capture may not be producing data");
+                            }
                             continue;
+                        }
+
+                        diag_samples += buf.len() as u64;
+                        diag_empty_ticks = 0;
+
+                        // Log diagnostics every second
+                        if diag_ticks % 100 == 0 {
+                            log::info!(
+                                "audio_share_forwarder [{}s]: samples={}, errors={}",
+                                diag_ticks / 100, diag_samples, diag_capture_errors,
+                            );
                         }
 
                         let samples_per_channel = (buf.len() / 2) as u32;
@@ -848,7 +872,15 @@ impl VoiceManager {
                             num_channels: 2,
                             samples_per_channel,
                         };
-                        let _ = audio_source.capture_frame(&frame).await;
+                        match audio_source.capture_frame(&frame).await {
+                            Ok(()) => {}
+                            Err(e) => {
+                                diag_capture_errors += 1;
+                                if diag_capture_errors <= 5 {
+                                    log::error!("audio_share_forwarder: capture_frame error: {e}");
+                                }
+                            }
+                        }
                     }
                     _ = shutdown_rx.recv() => {
                         log::info!("audio_share_forwarder: shutdown received");
