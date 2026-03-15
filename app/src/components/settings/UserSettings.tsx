@@ -16,7 +16,6 @@ import {
   SOUND_THEME_LABELS,
   type SoundTheme,
 } from '../../utils/notificationSounds';
-import { isDesktop } from '../../api/instance';
 import { useUpdateStore } from '../../stores/updateStore';
 import {
   getBrowserNotificationsEnabled,
