@@ -231,7 +231,7 @@ export function ChatArea() {
                   })}
                 </div>
                 <span className="dm-call-banner-text">
-                  {callUsers.length === 1 ? '1 person' : `${callUsers.length} people`} in call
+                  {callUsers.map((vs) => users.get(vs.user_id)?.username || 'Unknown').join(', ')} in call
                 </span>
               </div>
               <button
