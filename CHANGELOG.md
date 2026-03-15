@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/jansselt/drocsid/compare/drocsid-v1.0.0...drocsid-v1.0.1) (2026-03-15)
+
+
+### Bug Fixes
+
+* add --publish never to electron-builder commands ([5838486](https://github.com/jansselt/drocsid/commit/58384869f4fc36dc60b91f11d1a6224ff33efbea))
+
 ## [1.0.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.13.0...drocsid-v1.0.0) (2026-03-15)
 
 
