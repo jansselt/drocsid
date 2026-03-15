@@ -28,6 +28,7 @@ nnnoiseless = "0.5"
 log = "0.4"
 simplelog = "0.12"
 tauri-plugin-localhost = "2.3.2"
+tauri-plugin-single-instance = "2"
 portpicker = "0.1.1"
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 base64 = "0.22"

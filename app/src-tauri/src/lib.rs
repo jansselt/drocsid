@@ -322,15 +322,32 @@ pub fn run() {
     // breaks YouTube embeds (Error 153) and may affect Web Audio.  Serve
     // the frontend on http://localhost:<port> instead.
     // Use a fixed port so localStorage (auth tokens, settings) persists
-    // across restarts.  Fall back to a random port if it's occupied.
+    // across restarts (localStorage is origin-specific).
+    // The single-instance plugin prevents duplicate processes, so this port
+    // should always be free.  Fall back to a random port as a last resort
+    // but log a warning since it will reset localStorage.
     const PREFERRED_PORT: u16 = 14544;
     let port = if portpicker::is_free(PREFERRED_PORT) {
         PREFERRED_PORT
     } else {
-        portpicker::pick_unused_port().expect("failed to find unused port")
+        let fallback = portpicker::pick_unused_port().expect("failed to find unused port");
+        eprintln!(
+            "WARNING: preferred port {} is occupied, falling back to {}. \
+             localStorage (auth tokens, settings) will not persist!",
+            PREFERRED_PORT, fallback
+        );
+        fallback
     };
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // Second instance launched — focus existing window instead
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
