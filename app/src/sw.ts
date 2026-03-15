@@ -5,7 +5,13 @@ declare const self: ServiceWorkerGlobalScope;
 
 // Workbox precaching (manifest injected by VitePWA at build time)
 cleanupOutdatedCaches();
-precacheAndRoute(self.__WB_MANIFEST);
+precacheAndRoute(self.__WB_MANIFEST, {
+  // Don't let the service worker handle /admin routes — they're a separate SPA
+  urlManipulation: ({ url }) => {
+    if (url.pathname.startsWith('/admin')) return [];
+    return [url];
+  },
+});
 
 // Allow the app to trigger activation of a waiting service worker
 self.addEventListener('message', (event) => {
