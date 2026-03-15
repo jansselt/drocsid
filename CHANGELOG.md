@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.2](https://github.com/jansselt/drocsid/compare/drocsid-v0.10.1...drocsid-v0.10.2) (2026-03-15)
+
+
+### Bug Fixes
+
+* screen share causes choppy audio + mic choppiness on Linux ([ced2c91](https://github.com/jansselt/drocsid/commit/ced2c9103c07dec95262c4ef0ad67ce00c4bb2e5))
+
 ## [0.10.1](https://github.com/jansselt/drocsid/compare/drocsid-v0.10.0...drocsid-v0.10.1) (2026-03-15)
 
 
