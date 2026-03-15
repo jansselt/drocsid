@@ -2,6 +2,12 @@
   "name": "drocsid",
   "private": true,
   "version": "1.0.1",
+  "description": "A self-hosted Discord alternative with voice, video, and text chat",
+  "author": {
+    "name": "Luke Janssen",
+    "email": "jansselt@gmail.com"
+  },
+  "homepage": "https://github.com/jansselt/drocsid",
   "main": "electron-dist/main.js",
   "scripts": {
     "dev": "vite",
