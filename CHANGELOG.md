@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.13.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.12.0...drocsid-v0.13.0) (2026-03-15)
+
+
+### Features
+
+* enable built-in TURN server for firewall traversal ([3b0caeb](https://github.com/jansselt/drocsid/commit/3b0caeb5292e34de86e02453a673248a9cb2e700))
+
+
+### Bug Fixes
+
+* Windows voice broken + mic dies after stopping audio share ([8a6b3b6](https://github.com/jansselt/drocsid/commit/8a6b3b6fd9ee785dacc92cd13d7e7cb5cc4da324))
+
 ## [0.12.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.11.0...drocsid-v0.12.0) (2026-03-15)
 
 
