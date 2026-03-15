@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/jansselt/drocsid/compare/drocsid-v0.10.0...drocsid-v0.10.1) (2026-03-15)
+
+
+### Bug Fixes
+
+* session lost on app reopen — race condition in token refresh ([cc4a54e](https://github.com/jansselt/drocsid/commit/cc4a54e34b4102c3b22303cc23620237b2a75077))
+
 ## [0.10.0](https://github.com/jansselt/drocsid/compare/drocsid-v0.9.1...drocsid-v0.10.0) (2026-03-15)
 
 
