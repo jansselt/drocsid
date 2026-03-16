@@ -260,15 +260,34 @@ function createMainWindow(): void {
     }
   );
 
-  // Fix YouTube embeds — YouTube blocks Electron's default user-agent.
-  // Override for YouTube requests to look like a regular Chrome browser.
+  // Fix YouTube embeds — YouTube blocks Electron's user-agent and rejects
+  // non-http(s) origins/referrers. Strip Electron tokens from UA and replace
+  // app:// referrer/origin with a neutral https one.
   mainWindow.webContents.session.webRequest.onBeforeSendHeaders(
     { urls: ['*://*.youtube.com/*', '*://*.googlevideo.com/*'] },
     (details, callback) => {
       details.requestHeaders['User-Agent'] = details.requestHeaders['User-Agent']
         .replace(/Electron\/[\d.]+ /, '')
         .replace(/drocsid\/[\d.]+ /, '');
+      // YouTube rejects embeds with non-http origins (file://, app://, etc.)
+      if (details.requestHeaders['Referer']?.startsWith('app://')) {
+        details.requestHeaders['Referer'] = 'https://drocsid.app/';
+      }
+      if (details.requestHeaders['Origin']?.startsWith('app://')) {
+        details.requestHeaders['Origin'] = 'https://drocsid.app';
+      }
       callback({ requestHeaders: details.requestHeaders });
+    }
+  );
+
+  // Remove X-Frame-Options from YouTube responses so embeds render in our app
+  mainWindow.webContents.session.webRequest.onHeadersReceived(
+    { urls: ['*://*.youtube.com/*', '*://*.googlevideo.com/*'] },
+    (details, callback) => {
+      const headers = { ...details.responseHeaders };
+      delete headers['X-Frame-Options'];
+      delete headers['x-frame-options'];
+      callback({ responseHeaders: headers });
     }
   );
 
