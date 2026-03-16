@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.4](https://github.com/jansselt/drocsid/compare/drocsid-v1.1.3...drocsid-v1.1.4) (2026-03-16)
+
+
+### Bug Fixes
+
+* suppress EPIPE crash from console.log in AppImage ([80fd22d](https://github.com/jansselt/drocsid/commit/80fd22de017624efe441bbac53910031cf69762b))
+
 ## [1.1.3](https://github.com/jansselt/drocsid/compare/drocsid-v1.1.2...drocsid-v1.1.3) (2026-03-16)
 
 
