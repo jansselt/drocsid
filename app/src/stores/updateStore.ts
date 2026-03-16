@@ -63,14 +63,20 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
     set({ checking: true });
     try {
       if (isDesktop) {
-        const result = await (window as any).electronAPI?.checkForUpdates();
+        const api = (window as any).electronAPI;
+        const [result, method] = await Promise.all([
+          api?.checkForUpdates(),
+          api?.getUpdateMethod(),
+        ]);
         if (result) {
-          const info: UpdateInfo = result.autoUpdate
+          const autoUpdate = method?.autoUpdate ?? false;
+          const pkgType = method?.pkgType ?? null;
+          const info: UpdateInfo = autoUpdate
             ? { version: result.version, source: 'electron' }
             : {
                 version: result.version,
                 source: 'electron-manual',
-                installCmd: buildInstallCmd(result.version, result.pkgType ?? null),
+                installCmd: buildInstallCmd(result.version, pkgType),
               };
           set({ update: info, dismissed: false });
         }

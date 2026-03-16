@@ -3,6 +3,8 @@ import {
   BrowserWindow,
   desktopCapturer,
   ipcMain,
+  net,
+  protocol,
   session,
   Tray,
   Menu,
@@ -14,6 +16,7 @@ import {
 import { autoUpdater } from 'electron-updater';
 import * as path from 'path';
 import * as fs from 'fs';
+import { pathToFileURL } from 'url';
 import {
   listAudioApplications,
   createNullSink,
@@ -25,6 +28,21 @@ import {
 
 const isDev = !!process.env.ELECTRON_DEV;
 const DEV_URL = 'http://localhost:5174';
+
+// Register custom protocol scheme so production builds have an HTTP-like origin.
+// YouTube embeds (and others) refuse to load inside file:// origins.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'app',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  },
+]);
 
 let mainWindow: BrowserWindow | null = null;
 let voicePopout: BrowserWindow | null = null;
@@ -208,6 +226,7 @@ function createMainWindow(): void {
     width: 1280,
     height: 800,
     icon: loadBaseIcon(),
+    autoHideMenuBar: true,
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
@@ -256,7 +275,7 @@ function createMainWindow(): void {
   if (isDev) {
     mainWindow.loadURL(DEV_URL);
   } else {
-    mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
+    mainWindow.loadURL('app://drocsid/index.html');
   }
 
   // Minimize to tray on close instead of quitting
@@ -298,7 +317,7 @@ function createVoicePopout(): void {
 
   const popoutUrl = isDev
     ? `${DEV_URL}?popout=voice`
-    : `file://${path.join(__dirname, '..', 'dist', 'index.html')}?popout=voice`;
+    : 'app://drocsid/index.html?popout=voice';
 
   voicePopout.loadURL(popoutUrl);
 
@@ -442,8 +461,13 @@ function registerIpcHandlers(): void {
       return { autoUpdate: true, pkgType: null };
     }
 
-    // Linux: detect package type from /etc/os-release
+    // Linux: check AppImage FIRST (env var set by AppImage runtime),
+    // then fall back to distro detection for deb/rpm/pacman.
     if (platform === 'linux') {
+      if (process.env.APPIMAGE) {
+        return { autoUpdate: true, pkgType: 'appimage' };
+      }
+
       try {
         const osRelease = fs.readFileSync('/etc/os-release', 'utf-8');
         const idLine = osRelease.split('\n').find((l) => l.startsWith('ID='));
@@ -463,11 +487,6 @@ function registerIpcHandlers(): void {
         }
       } catch {
         // Cannot read os-release
-      }
-
-      // Check if running as AppImage
-      if (process.env.APPIMAGE) {
-        return { autoUpdate: true, pkgType: 'appimage' };
       }
 
       return { autoUpdate: false, pkgType: null };
@@ -531,6 +550,21 @@ function registerIpcHandlers(): void {
 // ── App lifecycle ───────────────────────────────────────────────────────
 
 app.whenReady().then(() => {
+  // Serve app files via app:// protocol so embeds (YouTube, etc.) work in production.
+  // file:// origins are blocked by most embed providers.
+  if (!isDev) {
+    const distPath = path.join(__dirname, '..', 'dist');
+    protocol.handle('app', (req) => {
+      const url = new URL(req.url);
+      let filePath = path.join(distPath, decodeURIComponent(url.pathname));
+      // Serve index.html for SPA routes
+      if (!path.extname(filePath)) {
+        filePath = path.join(distPath, 'index.html');
+      }
+      return net.fetch(pathToFileURL(filePath).toString());
+    });
+  }
+
   registerIpcHandlers();
   createTray();
   createMainWindow();

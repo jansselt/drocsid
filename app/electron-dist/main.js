@@ -37,8 +37,24 @@ const electron_1 = require("electron");
 const electron_updater_1 = require("electron-updater");
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
+const url_1 = require("url");
+const pipewire_1 = require("./pipewire");
 const isDev = !!process.env.ELECTRON_DEV;
 const DEV_URL = 'http://localhost:5174';
+// Register custom protocol scheme so production builds have an HTTP-like origin.
+// YouTube embeds (and others) refuse to load inside file:// origins.
+electron_1.protocol.registerSchemesAsPrivileged([
+    {
+        scheme: 'app',
+        privileges: {
+            standard: true,
+            secure: true,
+            supportFetchAPI: true,
+            corsEnabled: true,
+            stream: true,
+        },
+    },
+]);
 let mainWindow = null;
 let voicePopout = null;
 let tray = null;
@@ -204,6 +220,7 @@ function createMainWindow() {
         width: 1280,
         height: 800,
         icon: loadBaseIcon(),
+        autoHideMenuBar: true,
         webPreferences: {
             preload: preloadPath,
             contextIsolation: true,
@@ -211,11 +228,39 @@ function createMainWindow() {
             backgroundThrottling: false,
         },
     });
+    // Auto-grant microphone and camera permissions
+    mainWindow.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
+        const allowed = ['media', 'mediaKeySystem', 'display-capture', 'notifications'];
+        callback(allowed.includes(permission));
+    });
+    // Handle screen share via Electron's desktopCapturer.
+    // getDisplayMedia() doesn't work in Electron on Linux — we provide sources manually.
+    mainWindow.webContents.session.setDisplayMediaRequestHandler(async (_request, callback) => {
+        const sources = await electron_1.desktopCapturer.getSources({
+            types: ['screen', 'window'],
+            thumbnailSize: { width: 320, height: 180 },
+        });
+        // Auto-select the first screen (primary display)
+        if (sources.length > 0) {
+            callback({ video: sources[0] });
+        }
+        else {
+            callback({});
+        }
+    });
+    // Fix YouTube embeds — YouTube blocks Electron's default user-agent.
+    // Override for YouTube requests to look like a regular Chrome browser.
+    mainWindow.webContents.session.webRequest.onBeforeSendHeaders({ urls: ['*://*.youtube.com/*', '*://*.googlevideo.com/*'] }, (details, callback) => {
+        details.requestHeaders['User-Agent'] = details.requestHeaders['User-Agent']
+            .replace(/Electron\/[\d.]+ /, '')
+            .replace(/drocsid\/[\d.]+ /, '');
+        callback({ requestHeaders: details.requestHeaders });
+    });
     if (isDev) {
         mainWindow.loadURL(DEV_URL);
     }
     else {
-        mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
+        mainWindow.loadURL('app://drocsid/index.html');
     }
     // Minimize to tray on close instead of quitting
     mainWindow.on('close', (e) => {
@@ -250,7 +295,7 @@ function createVoicePopout() {
     });
     const popoutUrl = isDev
         ? `${DEV_URL}?popout=voice`
-        : `file://${path.join(__dirname, '..', 'dist', 'index.html')}?popout=voice`;
+        : 'app://drocsid/index.html?popout=voice';
     voicePopout.loadURL(popoutUrl);
     voicePopout.on('closed', () => {
         voicePopout = null;
@@ -291,6 +336,57 @@ function registerIpcHandlers() {
         const buf = fs.readFileSync(filePath);
         return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
     });
+    // Return a desktop capturer source ID for system audio capture.
+    electron_1.ipcMain.handle('get-desktop-audio-source-id', async () => {
+        const sources = await electron_1.desktopCapturer.getSources({
+            types: ['screen'],
+            thumbnailSize: { width: 1, height: 1 },
+        });
+        return sources.length > 0 ? sources[0].id : null;
+    });
+    // Capture audio from a PipeWire null-sink monitor using parec.
+    // Streams Float32 PCM at 48kHz stereo to the renderer via IPC.
+    let parecProcess = null;
+    electron_1.ipcMain.handle('start-audio-capture', (_event, sinkName) => {
+        if (parecProcess) {
+            parecProcess.kill();
+            parecProcess = null;
+        }
+        const { spawn } = require('child_process');
+        // parec records from a PulseAudio/PipeWire monitor source
+        // --monitor-stream isn't reliable, use the sink monitor directly
+        const monitorSource = `${sinkName}.monitor`;
+        parecProcess = spawn('parec', [
+            '--device', monitorSource,
+            '--format=float32le',
+            '--rate=48000',
+            '--channels=2',
+            '--raw',
+        ]);
+        parecProcess.stdout?.on('data', (chunk) => {
+            // Send raw PCM to renderer
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('audio-capture-data', chunk);
+            }
+        });
+        parecProcess.stderr?.on('data', (data) => {
+            console.error('[parec]', data.toString());
+        });
+        parecProcess.on('close', (code) => {
+            console.log(`[parec] exited with code ${code}`);
+            parecProcess = null;
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('audio-capture-ended');
+            }
+        });
+        return true;
+    });
+    electron_1.ipcMain.handle('stop-audio-capture', () => {
+        if (parecProcess) {
+            parecProcess.kill();
+            parecProcess = null;
+        }
+    });
     electron_1.ipcMain.handle('create-voice-popout', () => {
         createVoicePopout();
     });
@@ -316,8 +412,12 @@ function registerIpcHandlers() {
         if (platform === 'win32' || platform === 'darwin') {
             return { autoUpdate: true, pkgType: null };
         }
-        // Linux: detect package type from /etc/os-release
+        // Linux: check AppImage FIRST (env var set by AppImage runtime),
+        // then fall back to distro detection for deb/rpm/pacman.
         if (platform === 'linux') {
+            if (process.env.APPIMAGE) {
+                return { autoUpdate: true, pkgType: 'appimage' };
+            }
             try {
                 const osRelease = fs.readFileSync('/etc/os-release', 'utf-8');
                 const idLine = osRelease.split('\n').find((l) => l.startsWith('ID='));
@@ -338,10 +438,6 @@ function registerIpcHandlers() {
             catch {
                 // Cannot read os-release
             }
-            // Check if running as AppImage
-            if (process.env.APPIMAGE) {
-                return { autoUpdate: true, pkgType: 'appimage' };
-            }
             return { autoUpdate: false, pkgType: null };
         }
         return { autoUpdate: false, pkgType: null };
@@ -357,9 +453,50 @@ function registerIpcHandlers() {
             win?.webContents.send('popout-message', msg);
         }
     });
+    // ── PipeWire audio sharing (Linux only) ──────────────────────────────
+    electron_1.ipcMain.handle('list-audio-applications', () => {
+        return (0, pipewire_1.listAudioApplications)();
+    });
+    electron_1.ipcMain.handle('start-audio-share', async (_event, targetNodeIds, _systemMode) => {
+        const sinkName = `drocsid_share_${Date.now()}`;
+        // 1. Create null-sink
+        const moduleId = (0, pipewire_1.createNullSink)(sinkName);
+        // 2. Wait for PipeWire to register it
+        await new Promise((r) => setTimeout(r, 300));
+        // 3. Run pw-dump to find the null-sink node and link apps
+        const objects = (0, pipewire_1.getPwDump)();
+        const sinkNodeId = (0, pipewire_1.findNodeByName)(objects, sinkName);
+        if (sinkNodeId === null) {
+            (0, pipewire_1.destroyNullSink)(moduleId);
+            throw new Error('Failed to find null-sink node after creation');
+        }
+        // 4. Link target apps to null-sink
+        for (const targetNodeId of targetNodeIds) {
+            (0, pipewire_1.linkAppToNullSink)(objects, targetNodeId, sinkNodeId);
+        }
+        // 5. Return info for cleanup and monitor device discovery
+        return { moduleId, sinkName };
+    });
+    electron_1.ipcMain.handle('stop-audio-share', (_event, moduleId) => {
+        (0, pipewire_1.destroyNullSink)(moduleId);
+    });
 }
 // ── App lifecycle ───────────────────────────────────────────────────────
 electron_1.app.whenReady().then(() => {
+    // Serve app files via app:// protocol so embeds (YouTube, etc.) work in production.
+    // file:// origins are blocked by most embed providers.
+    if (!isDev) {
+        const distPath = path.join(__dirname, '..', 'dist');
+        electron_1.protocol.handle('app', (req) => {
+            const url = new URL(req.url);
+            let filePath = path.join(distPath, decodeURIComponent(url.pathname));
+            // Serve index.html for SPA routes
+            if (!path.extname(filePath)) {
+                filePath = path.join(distPath, 'index.html');
+            }
+            return electron_1.net.fetch((0, url_1.pathToFileURL)(filePath).toString());
+        });
+    }
     registerIpcHandlers();
     createTray();
     createMainWindow();

@@ -41,5 +41,35 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     sendPopoutMessage(msg) {
         electron_1.ipcRenderer.send('popout-message', msg);
     },
+    getDesktopAudioStream() {
+        return electron_1.ipcRenderer.invoke('get-desktop-audio-source-id');
+    },
+    startAudioCapture(sinkName) {
+        return electron_1.ipcRenderer.invoke('start-audio-capture', sinkName);
+    },
+    stopAudioCapture() {
+        return electron_1.ipcRenderer.invoke('stop-audio-capture');
+    },
+    onAudioCaptureData(callback) {
+        const handler = (_event, data) => {
+            callback(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
+        };
+        electron_1.ipcRenderer.on('audio-capture-data', handler);
+        return () => electron_1.ipcRenderer.removeListener('audio-capture-data', handler);
+    },
+    onAudioCaptureEnded(callback) {
+        const handler = () => callback();
+        electron_1.ipcRenderer.on('audio-capture-ended', handler);
+        return () => electron_1.ipcRenderer.removeListener('audio-capture-ended', handler);
+    },
+    listAudioApplications() {
+        return electron_1.ipcRenderer.invoke('list-audio-applications');
+    },
+    startAudioShare(targetNodeIds, systemMode) {
+        return electron_1.ipcRenderer.invoke('start-audio-share', targetNodeIds, systemMode);
+    },
+    stopAudioShare(moduleId) {
+        return electron_1.ipcRenderer.invoke('stop-audio-share', moduleId);
+    },
     isDesktop: true,
 });
