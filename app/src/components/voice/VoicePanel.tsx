@@ -498,43 +498,32 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
       // 2. Wait for PipeWire to register the monitor source
       await new Promise((r) => setTimeout(r, 500));
 
-      // 3. Find the monitor device in enumerateDevices
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const monitorDevice = devices.find(
-        (d) => d.kind === 'audioinput' && d.label.includes(sinkName),
-      );
-
+      // 3. Find the null-sink monitor in available audio inputs.
+      //    Try multiple times — PipeWire may take a moment to expose it.
       let audioTrack: MediaStreamTrack | null = null;
 
-      if (monitorDevice) {
-        // Capture from the null-sink monitor directly
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: { deviceId: { exact: monitorDevice.deviceId } },
-        });
-        audioTrack = stream.getAudioTracks()[0] || null;
-      } else {
-        // Fallback: try Electron desktop audio capture
-        const sourceId = await electronAPI.getDesktopAudioStream?.();
-        if (!sourceId) throw new Error('No audio source available — monitor device not found');
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const monitorDevice = devices.find(
+          (d) => d.kind === 'audioinput' &&
+            (d.label.includes(sinkName) || d.label.toLowerCase().includes('monitor of ' + sinkName.toLowerCase())),
+        );
 
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            // @ts-expect-error — Electron-specific constraint
-            mandatory: { chromeMediaSource: 'desktop' },
-          },
-          video: {
-            // @ts-expect-error — Electron-specific constraint
-            mandatory: {
-              chromeMediaSource: 'desktop',
-              chromeMediaSourceId: sourceId,
-              maxWidth: 1,
-              maxHeight: 1,
-              maxFrameRate: 1,
-            },
-          },
-        });
-        stream.getVideoTracks().forEach((t) => t.stop());
-        audioTrack = stream.getAudioTracks()[0] || null;
+        if (monitorDevice) {
+          console.log('[VoicePanel] Found monitor device:', monitorDevice.label, monitorDevice.deviceId);
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: { deviceId: { exact: monitorDevice.deviceId } },
+          });
+          audioTrack = stream.getAudioTracks()[0] || null;
+          break;
+        }
+
+        console.log(`[VoicePanel] Monitor device not found (attempt ${attempt + 1}/5), retrying...`);
+        await new Promise((r) => setTimeout(r, 300));
+      }
+
+      if (!audioTrack) {
+        throw new Error(`Monitor device for null-sink "${sinkName}" not found after retries`);
       }
 
       if (!audioTrack) throw new Error('No audio track captured');
