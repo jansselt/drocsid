@@ -459,13 +459,26 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
   const handleStopAudioShare = useCallback(async () => {
     if (!localParticipant) return;
 
-    // Unpublish screen share audio track
+    // Unpublish screen share audio track and clean up capture resources
     for (const [, pub] of localParticipant.trackPublications) {
       if (pub.source === Track.Source.ScreenShareAudio && pub.track) {
-        pub.track.mediaStreamTrack?.stop();
+        const track = pub.track.mediaStreamTrack;
+        // Clean up parec IPC listeners and AudioContext
+        if (track) {
+          (track as any)._cleanupCapture?.();
+          (track as any)._cleanupEnded?.();
+          (track as any)._scriptNode?.disconnect();
+          (track as any)._audioCtx?.close();
+          track.stop();
+        }
         await localParticipant.unpublishTrack(pub.track);
       }
     }
+
+    // Stop parec capture in main process
+    try {
+      await window.electronAPI?.stopAudioCapture();
+    } catch { /* ignore */ }
 
     // Clean up PipeWire null-sink if we created one
     if (audioShareModuleId !== null) {
@@ -495,36 +508,73 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
       const { moduleId, sinkName } = await electronAPI.startAudioShare(nodeIds, systemMode);
       setAudioShareModuleId(moduleId);
 
-      // 2. Wait for PipeWire to register the monitor source
-      await new Promise((r) => setTimeout(r, 500));
+      // 2. Wait for PipeWire to register the null-sink
+      await new Promise((r) => setTimeout(r, 300));
 
-      // 3. Find the null-sink monitor in available audio inputs.
-      //    Try multiple times — PipeWire may take a moment to expose it.
-      let audioTrack: MediaStreamTrack | null = null;
+      // 3. Capture audio from the null-sink monitor via parec in the main process.
+      //    parec streams raw Float32 PCM at 48kHz stereo via IPC to the renderer.
+      //    We wrap it into a MediaStreamTrack using AudioWorklet + MediaStreamDestination.
+      await electronAPI.startAudioCapture(sinkName);
 
-      for (let attempt = 0; attempt < 5; attempt++) {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const monitorDevice = devices.find(
-          (d) => d.kind === 'audioinput' &&
-            (d.label.includes(sinkName) || d.label.toLowerCase().includes('monitor of ' + sinkName.toLowerCase())),
-        );
+      const audioCtx = new AudioContext({ sampleRate: 48000 });
+      const dest = audioCtx.createMediaStreamDestination();
 
-        if (monitorDevice) {
-          console.log('[VoicePanel] Found monitor device:', monitorDevice.label, monitorDevice.deviceId);
-          const stream = await navigator.mediaDevices.getUserMedia({
-            audio: { deviceId: { exact: monitorDevice.deviceId } },
-          });
-          audioTrack = stream.getAudioTracks()[0] || null;
-          break;
+      // ScriptProcessorNode for receiving IPC audio data (simpler than AudioWorklet for IPC)
+      const bufferSize = 4096;
+      const scriptNode = audioCtx.createScriptProcessor(bufferSize, 2, 2);
+      const pendingChunks: Float32Array[] = [];
+
+      const cleanupCapture = electronAPI.onAudioCaptureData((data: ArrayBuffer) => {
+        pendingChunks.push(new Float32Array(data));
+      });
+
+      const cleanupEnded = electronAPI.onAudioCaptureEnded(() => {
+        handleStopAudioShare();
+      });
+
+      scriptNode.onaudioprocess = (e) => {
+        const outL = e.outputBuffer.getChannelData(0);
+        const outR = e.outputBuffer.getChannelData(1);
+        let outIdx = 0;
+
+        while (outIdx < outL.length && pendingChunks.length > 0) {
+          const chunk = pendingChunks[0];
+          const samplesNeeded = outL.length - outIdx;
+          // chunk is interleaved stereo: [L, R, L, R, ...]
+          const framesAvailable = Math.floor(chunk.length / 2);
+          const framesToCopy = Math.min(samplesNeeded, framesAvailable);
+
+          for (let i = 0; i < framesToCopy; i++) {
+            outL[outIdx + i] = chunk[i * 2];
+            outR[outIdx + i] = chunk[i * 2 + 1];
+          }
+          outIdx += framesToCopy;
+
+          if (framesToCopy >= framesAvailable) {
+            pendingChunks.shift();
+          } else {
+            // Partial consume — keep remainder
+            pendingChunks[0] = chunk.subarray(framesToCopy * 2);
+          }
         }
 
-        console.log(`[VoicePanel] Monitor device not found (attempt ${attempt + 1}/5), retrying...`);
-        await new Promise((r) => setTimeout(r, 300));
-      }
+        // Fill remaining with silence
+        for (let i = outIdx; i < outL.length; i++) {
+          outL[i] = 0;
+          outR[i] = 0;
+        }
+      };
 
-      if (!audioTrack) {
-        throw new Error(`Monitor device for null-sink "${sinkName}" not found after retries`);
-      }
+      scriptNode.connect(dest);
+
+      const audioTrack = dest.stream.getAudioTracks()[0];
+      if (!audioTrack) throw new Error('Failed to create audio track from capture');
+
+      // Store cleanup refs on the track for later
+      (audioTrack as any)._cleanupCapture = cleanupCapture;
+      (audioTrack as any)._cleanupEnded = cleanupEnded;
+      (audioTrack as any)._audioCtx = audioCtx;
+      (audioTrack as any)._scriptNode = scriptNode;
 
       if (!audioTrack) throw new Error('No audio track captured');
 

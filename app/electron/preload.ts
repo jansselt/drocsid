@@ -55,6 +55,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('get-desktop-audio-source-id');
   },
 
+  startAudioCapture(sinkName: string): Promise<boolean> {
+    return ipcRenderer.invoke('start-audio-capture', sinkName);
+  },
+
+  stopAudioCapture(): Promise<void> {
+    return ipcRenderer.invoke('stop-audio-capture');
+  },
+
+  onAudioCaptureData(callback: (data: ArrayBuffer) => void): () => void {
+    const handler = (_event: Electron.IpcRendererEvent, data: Buffer) => {
+      callback(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer);
+    };
+    ipcRenderer.on('audio-capture-data', handler);
+    return () => ipcRenderer.removeListener('audio-capture-data', handler);
+  },
+
+  onAudioCaptureEnded(callback: () => void): () => void {
+    const handler = () => callback();
+    ipcRenderer.on('audio-capture-ended', handler);
+    return () => ipcRenderer.removeListener('audio-capture-ended', handler);
+  },
+
   listAudioApplications(): Promise<{ nodeId: number; name: string; binary: string; streamName: string }[]> {
     return ipcRenderer.invoke('list-audio-applications');
   },

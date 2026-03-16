@@ -353,13 +353,63 @@ function registerIpcHandlers(): void {
   });
 
   // Return a desktop capturer source ID for system audio capture.
-  // The renderer uses this with getUserMedia({ audio: { chromeMediaSource: 'desktop' } })
   ipcMain.handle('get-desktop-audio-source-id', async () => {
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
       thumbnailSize: { width: 1, height: 1 },
     });
     return sources.length > 0 ? sources[0].id : null;
+  });
+
+  // Capture audio from a PipeWire null-sink monitor using parec.
+  // Streams Float32 PCM at 48kHz stereo to the renderer via IPC.
+  let parecProcess: import('child_process').ChildProcess | null = null;
+
+  ipcMain.handle('start-audio-capture', (_event, sinkName: string) => {
+    if (parecProcess) {
+      parecProcess.kill();
+      parecProcess = null;
+    }
+
+    const { spawn } = require('child_process') as typeof import('child_process');
+    // parec records from a PulseAudio/PipeWire monitor source
+    // --monitor-stream isn't reliable, use the sink monitor directly
+    const monitorSource = `${sinkName}.monitor`;
+    parecProcess = spawn('parec', [
+      '--device', monitorSource,
+      '--format=float32le',
+      '--rate=48000',
+      '--channels=2',
+      '--raw',
+    ]);
+
+    parecProcess.stdout?.on('data', (chunk: Buffer) => {
+      // Send raw PCM to renderer
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('audio-capture-data', chunk);
+      }
+    });
+
+    parecProcess.stderr?.on('data', (data: Buffer) => {
+      console.error('[parec]', data.toString());
+    });
+
+    parecProcess.on('close', (code) => {
+      console.log(`[parec] exited with code ${code}`);
+      parecProcess = null;
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('audio-capture-ended');
+      }
+    });
+
+    return true;
+  });
+
+  ipcMain.handle('stop-audio-capture', () => {
+    if (parecProcess) {
+      parecProcess.kill();
+      parecProcess = null;
+    }
   });
 
   ipcMain.handle('create-voice-popout', () => {

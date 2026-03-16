@@ -18,6 +18,10 @@ export interface ElectronAPI {
   onPopoutMessage(callback: (msg: unknown) => void): () => void;
   sendPopoutMessage(msg: unknown): void;
   getDesktopAudioStream(): Promise<string | null>;
+  startAudioCapture(sinkName: string): Promise<boolean>;
+  stopAudioCapture(): Promise<void>;
+  onAudioCaptureData(callback: (data: ArrayBuffer) => void): () => void;
+  onAudioCaptureEnded(callback: () => void): () => void;
   listAudioApplications(): Promise<AudioApp[]>;
   startAudioShare(targetNodeIds: number[], systemMode: boolean): Promise<{ moduleId: number; sinkName: string }>;
   stopAudioShare(moduleId: number): Promise<void>;
