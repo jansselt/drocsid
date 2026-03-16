@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.3](https://github.com/jansselt/drocsid/compare/drocsid-v1.1.2...drocsid-v1.1.3) (2026-03-16)
+
+
+### Bug Fixes
+
+* serve production builds via local HTTP server for YouTube embeds ([d68dc40](https://github.com/jansselt/drocsid/commit/d68dc40b9119defd8bfdcbc92e301dd232112d6e))
+
 ## [1.1.2](https://github.com/jansselt/drocsid/compare/drocsid-v1.1.1...drocsid-v1.1.2) (2026-03-16)
 
 
