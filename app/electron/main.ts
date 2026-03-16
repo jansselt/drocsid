@@ -344,6 +344,16 @@ function registerIpcHandlers(): void {
     return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
   });
 
+  // Return a desktop capturer source ID for system audio capture.
+  // The renderer uses this with getUserMedia({ audio: { chromeMediaSource: 'desktop' } })
+  ipcMain.handle('get-desktop-audio-source-id', async () => {
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: 1, height: 1 },
+    });
+    return sources.length > 0 ? sources[0].id : null;
+  });
+
   ipcMain.handle('create-voice-popout', () => {
     createVoicePopout();
   });

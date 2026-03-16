@@ -10,6 +10,7 @@ export interface ElectronAPI {
   showNotification(title: string, body: string): void;
   onPopoutMessage(callback: (msg: unknown) => void): () => void;
   sendPopoutMessage(msg: unknown): void;
+  getDesktopAudioStream(): Promise<string | null>;
   isDesktop: true;
 }
 

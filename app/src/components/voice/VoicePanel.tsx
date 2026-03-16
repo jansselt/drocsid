@@ -466,16 +466,48 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
       setIsAudioSharing(false);
       voiceSetAudioSharing(false);
     } else {
-      // Start: capture display audio via getDisplayMedia
+      // Start: capture system audio
       try {
-        const stream = await navigator.mediaDevices.getDisplayMedia({
-          audio: true,
-          video: true, // required by most browsers to get audio
-        });
-        // Discard video track — we only want audio
-        stream.getVideoTracks().forEach((t) => t.stop());
+        let audioTrack: MediaStreamTrack | null = null;
 
-        const audioTrack = stream.getAudioTracks()[0];
+        // In Electron, getDisplayMedia({ audio: true }) isn't supported on Linux.
+        // Use desktopCapturer to get a source ID, then getUserMedia with chromeMediaSource.
+        const electronAPI = (window as any).electronAPI;
+        if (electronAPI?.getDesktopAudioStream) {
+          const sourceId = await electronAPI.getDesktopAudioStream();
+          if (!sourceId) throw new Error('No desktop audio source available');
+
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              // @ts-expect-error — Electron-specific constraint
+              mandatory: {
+                chromeMediaSource: 'desktop',
+              },
+            },
+            video: {
+              // @ts-expect-error — Electron-specific constraint
+              mandatory: {
+                chromeMediaSource: 'desktop',
+                chromeMediaSourceId: sourceId,
+                maxWidth: 1,
+                maxHeight: 1,
+                maxFrameRate: 1,
+              },
+            },
+          });
+          // Discard the tiny video track — we only want audio
+          stream.getVideoTracks().forEach((t) => t.stop());
+          audioTrack = stream.getAudioTracks()[0] || null;
+        } else {
+          // Web browser: use getDisplayMedia
+          const stream = await navigator.mediaDevices.getDisplayMedia({
+            audio: true,
+            video: true,
+          });
+          stream.getVideoTracks().forEach((t) => t.stop());
+          audioTrack = stream.getAudioTracks()[0] || null;
+        }
+
         if (!audioTrack) throw new Error('No audio track captured');
 
         await localParticipant.publishTrack(audioTrack, {
@@ -483,7 +515,6 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
           name: 'audio-share',
         });
 
-        // Auto-cleanup when user stops sharing via browser UI
         audioTrack.addEventListener('ended', () => {
           setIsAudioSharing(false);
           voiceSetAudioSharing(false);

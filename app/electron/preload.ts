@@ -51,5 +51,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send('popout-message', msg);
   },
 
+  getDesktopAudioStream(): Promise<string | null> {
+    return ipcRenderer.invoke('get-desktop-audio-source-id');
+  },
+
   isDesktop: true as const,
 });
