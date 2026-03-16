@@ -1,7 +1,9 @@
 import {
   app,
   BrowserWindow,
+  desktopCapturer,
   ipcMain,
+  session,
   Tray,
   Menu,
   nativeImage,
@@ -205,6 +207,43 @@ function createMainWindow(): void {
       backgroundThrottling: false,
     },
   });
+
+  // Auto-grant microphone and camera permissions
+  mainWindow.webContents.session.setPermissionRequestHandler(
+    (_webContents, permission, callback) => {
+      const allowed = ['media', 'mediaKeySystem', 'display-capture', 'notifications'];
+      callback(allowed.includes(permission));
+    }
+  );
+
+  // Handle screen share via Electron's desktopCapturer.
+  // getDisplayMedia() doesn't work in Electron on Linux — we provide sources manually.
+  mainWindow.webContents.session.setDisplayMediaRequestHandler(
+    async (_request, callback) => {
+      const sources = await desktopCapturer.getSources({
+        types: ['screen', 'window'],
+        thumbnailSize: { width: 320, height: 180 },
+      });
+      // Auto-select the first screen (primary display)
+      if (sources.length > 0) {
+        callback({ video: sources[0] });
+      } else {
+        callback({});
+      }
+    }
+  );
+
+  // Fix YouTube embeds — YouTube blocks Electron's default user-agent.
+  // Override for YouTube requests to look like a regular Chrome browser.
+  mainWindow.webContents.session.webRequest.onBeforeSendHeaders(
+    { urls: ['*://*.youtube.com/*', '*://*.googlevideo.com/*'] },
+    (details, callback) => {
+      details.requestHeaders['User-Agent'] = details.requestHeaders['User-Agent']
+        .replace(/Electron\/[\d.]+ /, '')
+        .replace(/drocsid\/[\d.]+ /, '');
+      callback({ requestHeaders: details.requestHeaders });
+    }
+  );
 
   if (isDev) {
     mainWindow.loadURL(DEV_URL);
