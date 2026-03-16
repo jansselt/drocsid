@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/jansselt/drocsid/compare/drocsid-v1.1.0...drocsid-v1.1.1) (2026-03-16)
+
+
+### Bug Fixes
+
+* YouTube embeds in AppImage, auto-update detection, hide menu bar ([7915dc6](https://github.com/jansselt/drocsid/commit/7915dc6599907dbfcc5f24233aa568ba6a1b2cef))
+
 ## [1.1.0](https://github.com/jansselt/drocsid/compare/drocsid-v1.0.2...drocsid-v1.1.0) (2026-03-16)
 
 
