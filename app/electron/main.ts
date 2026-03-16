@@ -3,8 +3,6 @@ import {
   BrowserWindow,
   desktopCapturer,
   ipcMain,
-  net,
-  protocol,
   session,
   Tray,
   Menu,
@@ -16,7 +14,7 @@ import {
 import { autoUpdater } from 'electron-updater';
 import * as path from 'path';
 import * as fs from 'fs';
-import { pathToFileURL } from 'url';
+import * as http from 'http';
 import {
   listAudioApplications,
   createNullSink,
@@ -29,20 +27,11 @@ import {
 const isDev = !!process.env.ELECTRON_DEV;
 const DEV_URL = 'http://localhost:5174';
 
-// Register custom protocol scheme so production builds have an HTTP-like origin.
-// YouTube embeds (and others) refuse to load inside file:// origins.
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: 'app',
-    privileges: {
-      standard: true,
-      secure: true,
-      supportFetchAPI: true,
-      corsEnabled: true,
-      stream: true,
-    },
-  },
-]);
+// In production, we serve the app via a local HTTP server on a random port.
+// This gives the page a proper http:// origin so YouTube embeds (and other
+// third-party iframes) work correctly — they reject file:// and custom
+// protocol origins.
+let prodServerUrl = '';
 
 let mainWindow: BrowserWindow | null = null;
 let voicePopout: BrowserWindow | null = null;
@@ -260,41 +249,22 @@ function createMainWindow(): void {
     }
   );
 
-  // Fix YouTube embeds — YouTube blocks Electron's user-agent and rejects
-  // non-http(s) origins/referrers. Strip Electron tokens from UA and replace
-  // app:// referrer/origin with a neutral https one.
+  // YouTube blocks Electron's default user-agent. Strip Electron/app tokens
+  // so requests look like regular Chrome.
   mainWindow.webContents.session.webRequest.onBeforeSendHeaders(
     { urls: ['*://*.youtube.com/*', '*://*.googlevideo.com/*'] },
     (details, callback) => {
       details.requestHeaders['User-Agent'] = details.requestHeaders['User-Agent']
         .replace(/Electron\/[\d.]+ /, '')
         .replace(/drocsid\/[\d.]+ /, '');
-      // YouTube rejects embeds with non-http origins (file://, app://, etc.)
-      if (details.requestHeaders['Referer']?.startsWith('app://')) {
-        details.requestHeaders['Referer'] = 'https://drocsid.app/';
-      }
-      if (details.requestHeaders['Origin']?.startsWith('app://')) {
-        details.requestHeaders['Origin'] = 'https://drocsid.app';
-      }
       callback({ requestHeaders: details.requestHeaders });
-    }
-  );
-
-  // Remove X-Frame-Options from YouTube responses so embeds render in our app
-  mainWindow.webContents.session.webRequest.onHeadersReceived(
-    { urls: ['*://*.youtube.com/*', '*://*.googlevideo.com/*'] },
-    (details, callback) => {
-      const headers = { ...details.responseHeaders };
-      delete headers['X-Frame-Options'];
-      delete headers['x-frame-options'];
-      callback({ responseHeaders: headers });
     }
   );
 
   if (isDev) {
     mainWindow.loadURL(DEV_URL);
   } else {
-    mainWindow.loadURL('app://drocsid/index.html');
+    mainWindow.loadURL(prodServerUrl);
   }
 
   // Minimize to tray on close instead of quitting
@@ -336,7 +306,7 @@ function createVoicePopout(): void {
 
   const popoutUrl = isDev
     ? `${DEV_URL}?popout=voice`
-    : 'app://drocsid/index.html?popout=voice';
+    : `${prodServerUrl}?popout=voice`;
 
   voicePopout.loadURL(popoutUrl);
 
@@ -568,19 +538,67 @@ function registerIpcHandlers(): void {
 
 // ── App lifecycle ───────────────────────────────────────────────────────
 
-app.whenReady().then(() => {
-  // Serve app files via app:// protocol so embeds (YouTube, etc.) work in production.
-  // file:// origins are blocked by most embed providers.
+app.whenReady().then(async () => {
+  // In production, start a local HTTP server to serve the built app.
+  // This gives the renderer a real http:// origin so third-party embeds
+  // (YouTube, Twitter, etc.) work — they reject file:// and custom schemes.
   if (!isDev) {
     const distPath = path.join(__dirname, '..', 'dist');
-    protocol.handle('app', (req) => {
-      const url = new URL(req.url);
-      let filePath = path.join(distPath, decodeURIComponent(url.pathname));
-      // Serve index.html for SPA routes
+    const mimeTypes: Record<string, string> = {
+      '.html': 'text/html',
+      '.js': 'application/javascript',
+      '.css': 'text/css',
+      '.json': 'application/json',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.svg': 'image/svg+xml',
+      '.ico': 'image/x-icon',
+      '.woff': 'font/woff',
+      '.woff2': 'font/woff2',
+      '.ttf': 'font/ttf',
+      '.webp': 'image/webp',
+      '.webm': 'video/webm',
+      '.mp4': 'video/mp4',
+      '.wav': 'audio/wav',
+      '.mp3': 'audio/mpeg',
+      '.ogg': 'audio/ogg',
+    };
+
+    const server = http.createServer((req, res) => {
+      let urlPath = decodeURIComponent(new URL(req.url ?? '/', 'http://localhost').pathname);
+      let filePath = path.join(distPath, urlPath);
+
+      // SPA fallback: serve index.html for routes without file extensions
       if (!path.extname(filePath)) {
         filePath = path.join(distPath, 'index.html');
       }
-      return net.fetch(pathToFileURL(filePath).toString());
+
+      try {
+        const data = fs.readFileSync(filePath);
+        const ext = path.extname(filePath).toLowerCase();
+        res.writeHead(200, { 'Content-Type': mimeTypes[ext] ?? 'application/octet-stream' });
+        res.end(data);
+      } catch {
+        // Fallback to index.html for SPA routing
+        try {
+          const index = fs.readFileSync(path.join(distPath, 'index.html'));
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end(index);
+        } catch {
+          res.writeHead(404);
+          res.end('Not found');
+        }
+      }
+    });
+
+    await new Promise<void>((resolve) => {
+      server.listen(0, '127.0.0.1', () => {
+        const addr = server.address() as import('net').AddressInfo;
+        prodServerUrl = `http://127.0.0.1:${addr.port}/index.html`;
+        resolve();
+      });
     });
   }
 
