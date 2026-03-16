@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.1.0](https://github.com/jansselt/drocsid/compare/drocsid-v1.0.2...drocsid-v1.1.0) (2026-03-16)
+
+
+### Features
+
+* audio sharing in Electron via desktopCapturer ([dd99a48](https://github.com/jansselt/drocsid/commit/dd99a483dd0f9357581c9ec157de00edb0a15e7e))
+* clean system audio sharing dialog for Windows Electron ([b6fb550](https://github.com/jansselt/drocsid/commit/b6fb550036c2d38714128ec68c7da94e4fa506e2))
+* make TURN domain configurable via LIVEKIT_DOMAIN secret ([f37dd24](https://github.com/jansselt/drocsid/commit/f37dd24ca3a3117c1e3d9c8c312639153b5d23f8))
+* per-app audio sharing via PipeWire picker on Linux ([d1fd1c7](https://github.com/jansselt/drocsid/commit/d1fd1c7f46ea7d2a88156b37d3feffcf7495e7e5))
+
+
+### Bug Fixes
+
+* Electron mic permissions, screen share, YouTube embeds ([5ffdd49](https://github.com/jansselt/drocsid/commit/5ffdd49c926f955f1e062bb635afc76e624261fa))
+* retry monitor device discovery, remove display picker fallback ([7798859](https://github.com/jansselt/drocsid/commit/77988594296265ca3eaa8aeccd3785f097a72373))
+* use parec for audio capture instead of enumerateDevices ([6797913](https://github.com/jansselt/drocsid/commit/679791397f3abb7a670fb060ce29609755089ff5))
+
 ## [1.0.2](https://github.com/jansselt/drocsid/compare/drocsid-v1.0.1...drocsid-v1.0.2) (2026-03-15)
 
 
