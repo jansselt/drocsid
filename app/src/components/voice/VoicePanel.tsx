@@ -127,6 +127,7 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
   const [isAudioSharing, setIsAudioSharing] = useState(false);
   const [micError, setMicError] = useState<string | null>(null);
   const [showAudioSharePicker, setShowAudioSharePicker] = useState(false);
+  const [showSystemAudioConfirm, setShowSystemAudioConfirm] = useState(false);
   const [audioShareModuleId, setAudioShareModuleId] = useState<number | null>(null);
 
   // Detect mic/camera access failures (e.g. WebView2 permissions not granted)
@@ -601,6 +602,53 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
     }
   }, [localParticipant, audioShareModuleId, voiceSetAudioSharing, handleStopAudioShare]);
 
+  const handleSystemAudioShare = useCallback(async () => {
+    if (!localParticipant) return;
+    setShowSystemAudioConfirm(false);
+
+    try {
+      const electronAPI = window.electronAPI;
+      const sourceId = await electronAPI?.getDesktopAudioStream();
+      if (!sourceId) throw new Error('No desktop audio source available');
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          // @ts-expect-error — Electron-specific constraint
+          mandatory: { chromeMediaSource: 'desktop' },
+        },
+        video: {
+          // @ts-expect-error — Electron-specific constraint
+          mandatory: {
+            chromeMediaSource: 'desktop',
+            chromeMediaSourceId: sourceId,
+            maxWidth: 1,
+            maxHeight: 1,
+            maxFrameRate: 1,
+          },
+        },
+      });
+      stream.getVideoTracks().forEach((t) => t.stop());
+
+      const audioTrack = stream.getAudioTracks()[0];
+      if (!audioTrack) throw new Error('No audio track captured');
+
+      await localParticipant.publishTrack(audioTrack, {
+        source: Track.Source.ScreenShareAudio,
+        name: 'audio-share',
+      });
+
+      audioTrack.addEventListener('ended', () => {
+        setIsAudioSharing(false);
+        voiceSetAudioSharing(false);
+      });
+
+      setIsAudioSharing(true);
+      voiceSetAudioSharing(true);
+    } catch (e) {
+      console.warn('[VoicePanel] System audio sharing failed:', e);
+    }
+  }, [localParticipant, voiceSetAudioSharing]);
+
   const handleToggleAudioShare = async () => {
     if (!localParticipant) return;
 
@@ -609,45 +657,19 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
     } else if (isDesktop() && navigator.userAgent.includes('Linux')) {
       // On Electron + Linux: show the PipeWire app picker
       setShowAudioSharePicker(true);
+    } else if (isDesktop()) {
+      // Windows Electron: show confirmation for system-wide audio capture
+      setShowSystemAudioConfirm(true);
     } else {
-      // Web browser or non-Linux Electron: use getDisplayMedia
+      // Web browser: use getDisplayMedia
       try {
-        let audioTrack: MediaStreamTrack | null = null;
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          audio: true,
+          video: true,
+        });
+        stream.getVideoTracks().forEach((t) => t.stop());
 
-        const electronAPI = (window as any).electronAPI;
-        if (electronAPI?.getDesktopAudioStream) {
-          const sourceId = await electronAPI.getDesktopAudioStream();
-          if (!sourceId) throw new Error('No desktop audio source available');
-
-          const stream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              // @ts-expect-error — Electron-specific constraint
-              mandatory: {
-                chromeMediaSource: 'desktop',
-              },
-            },
-            video: {
-              // @ts-expect-error — Electron-specific constraint
-              mandatory: {
-                chromeMediaSource: 'desktop',
-                chromeMediaSourceId: sourceId,
-                maxWidth: 1,
-                maxHeight: 1,
-                maxFrameRate: 1,
-              },
-            },
-          });
-          stream.getVideoTracks().forEach((t) => t.stop());
-          audioTrack = stream.getAudioTracks()[0] || null;
-        } else {
-          const stream = await navigator.mediaDevices.getDisplayMedia({
-            audio: true,
-            video: true,
-          });
-          stream.getVideoTracks().forEach((t) => t.stop());
-          audioTrack = stream.getAudioTracks()[0] || null;
-        }
-
+        const audioTrack = stream.getAudioTracks()[0];
         if (!audioTrack) throw new Error('No audio track captured');
 
         await localParticipant.publishTrack(audioTrack, {
@@ -865,6 +887,23 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
           onClose={() => setShowAudioSharePicker(false)}
           onShare={handleAudioShareSelected}
         />
+      )}
+      {showSystemAudioConfirm && (
+        <div className="audio-share-picker-overlay" onClick={() => setShowSystemAudioConfirm(false)}>
+          <div className="audio-share-picker" onClick={(e) => e.stopPropagation()}>
+            <div className="audio-share-picker-header">
+              <h3>Share System Audio</h3>
+              <button className="audio-share-picker-close" onClick={() => setShowSystemAudioConfirm(false)}>×</button>
+            </div>
+            <div style={{ padding: '16px', color: 'var(--text-secondary)', fontSize: '14px', lineHeight: '1.5' }}>
+              This will share all system audio with everyone in the voice channel.
+            </div>
+            <div className="audio-share-picker-actions">
+              <button className="audio-share-picker-btn" onClick={() => setShowSystemAudioConfirm(false)}>Cancel</button>
+              <button className="audio-share-picker-btn audio-share-picker-btn-primary" onClick={handleSystemAudioShare}>Share</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
