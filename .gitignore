@@ -32,3 +32,4 @@ config/local.toml
 
 # Bug report images and logs
 bug_images/
+app/electron-dist/
