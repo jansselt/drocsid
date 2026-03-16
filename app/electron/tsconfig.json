@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
-  "include": ["main.ts", "preload.ts"]
+  "include": ["main.ts", "preload.ts", "pipewire.ts"]
 }

@@ -20,7 +20,9 @@ import {
 } from 'livekit-client';
 import { useServerStore } from '../../stores/serverStore';
 import { getNoiseSuppression } from '../../utils/audioDevices';
+import { isDesktop } from '../../api/instance';
 import { SoundboardPanel } from './SoundboardPanel';
+import { AudioSharePicker } from './AudioSharePicker';
 import './VoicePanel.css';
 
 export function VoicePanel({ compact }: { compact?: boolean } = {}) {
@@ -124,6 +126,8 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
   const [showSoundboard, setShowSoundboard] = useState(false);
   const [isAudioSharing, setIsAudioSharing] = useState(false);
   const [micError, setMicError] = useState<string | null>(null);
+  const [showAudioSharePicker, setShowAudioSharePicker] = useState(false);
+  const [audioShareModuleId, setAudioShareModuleId] = useState<number | null>(null);
 
   // Detect mic/camera access failures (e.g. WebView2 permissions not granted)
   useEffect(() => {
@@ -452,26 +456,125 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
     }
   };
 
+  const handleStopAudioShare = useCallback(async () => {
+    if (!localParticipant) return;
+
+    // Unpublish screen share audio track
+    for (const [, pub] of localParticipant.trackPublications) {
+      if (pub.source === Track.Source.ScreenShareAudio && pub.track) {
+        pub.track.mediaStreamTrack?.stop();
+        await localParticipant.unpublishTrack(pub.track);
+      }
+    }
+
+    // Clean up PipeWire null-sink if we created one
+    if (audioShareModuleId !== null) {
+      try {
+        await window.electronAPI?.stopAudioShare(audioShareModuleId);
+      } catch (e) {
+        console.warn('[VoicePanel] Failed to stop PipeWire audio share:', e);
+      }
+      setAudioShareModuleId(null);
+    }
+
+    setIsAudioSharing(false);
+    voiceSetAudioSharing(false);
+  }, [localParticipant, audioShareModuleId, voiceSetAudioSharing]);
+
+  const handleAudioShareSelected = useCallback(async (nodeIds: number[], systemMode: boolean) => {
+    if (!localParticipant) return;
+    setShowAudioSharePicker(false);
+
+    try {
+      const electronAPI = window.electronAPI;
+      if (!electronAPI?.startAudioShare) {
+        throw new Error('Audio share API not available');
+      }
+
+      // 1. Create null-sink and link selected apps
+      const { moduleId, sinkName } = await electronAPI.startAudioShare(nodeIds, systemMode);
+      setAudioShareModuleId(moduleId);
+
+      // 2. Wait for PipeWire to register the monitor source
+      await new Promise((r) => setTimeout(r, 500));
+
+      // 3. Find the monitor device in enumerateDevices
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const monitorDevice = devices.find(
+        (d) => d.kind === 'audioinput' && d.label.includes(sinkName),
+      );
+
+      let audioTrack: MediaStreamTrack | null = null;
+
+      if (monitorDevice) {
+        // Capture from the null-sink monitor directly
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { deviceId: { exact: monitorDevice.deviceId } },
+        });
+        audioTrack = stream.getAudioTracks()[0] || null;
+      } else {
+        // Fallback: try Electron desktop audio capture
+        const sourceId = await electronAPI.getDesktopAudioStream?.();
+        if (!sourceId) throw new Error('No audio source available — monitor device not found');
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            // @ts-expect-error — Electron-specific constraint
+            mandatory: { chromeMediaSource: 'desktop' },
+          },
+          video: {
+            // @ts-expect-error — Electron-specific constraint
+            mandatory: {
+              chromeMediaSource: 'desktop',
+              chromeMediaSourceId: sourceId,
+              maxWidth: 1,
+              maxHeight: 1,
+              maxFrameRate: 1,
+            },
+          },
+        });
+        stream.getVideoTracks().forEach((t) => t.stop());
+        audioTrack = stream.getAudioTracks()[0] || null;
+      }
+
+      if (!audioTrack) throw new Error('No audio track captured');
+
+      await localParticipant.publishTrack(audioTrack, {
+        source: Track.Source.ScreenShareAudio,
+        name: 'audio-share',
+      });
+
+      audioTrack.addEventListener('ended', () => {
+        handleStopAudioShare();
+      });
+
+      setIsAudioSharing(true);
+      voiceSetAudioSharing(true);
+    } catch (e) {
+      console.warn('[VoicePanel] PipeWire audio sharing failed:', e);
+      // Clean up the null-sink if we created one
+      if (audioShareModuleId !== null) {
+        try {
+          await window.electronAPI?.stopAudioShare(audioShareModuleId);
+        } catch { /* ignore */ }
+        setAudioShareModuleId(null);
+      }
+    }
+  }, [localParticipant, audioShareModuleId, voiceSetAudioSharing, handleStopAudioShare]);
+
   const handleToggleAudioShare = async () => {
     if (!localParticipant) return;
 
     if (isAudioSharing) {
-      // Stop: unpublish screen share audio track
-      for (const [, pub] of localParticipant.trackPublications) {
-        if (pub.source === Track.Source.ScreenShareAudio && pub.track) {
-          pub.track.mediaStreamTrack?.stop();
-          await localParticipant.unpublishTrack(pub.track);
-        }
-      }
-      setIsAudioSharing(false);
-      voiceSetAudioSharing(false);
+      await handleStopAudioShare();
+    } else if (isDesktop() && navigator.userAgent.includes('Linux')) {
+      // On Electron + Linux: show the PipeWire app picker
+      setShowAudioSharePicker(true);
     } else {
-      // Start: capture system audio
+      // Web browser or non-Linux Electron: use getDisplayMedia
       try {
         let audioTrack: MediaStreamTrack | null = null;
 
-        // In Electron, getDisplayMedia({ audio: true }) isn't supported on Linux.
-        // Use desktopCapturer to get a source ID, then getUserMedia with chromeMediaSource.
         const electronAPI = (window as any).electronAPI;
         if (electronAPI?.getDesktopAudioStream) {
           const sourceId = await electronAPI.getDesktopAudioStream();
@@ -495,11 +598,9 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
               },
             },
           });
-          // Discard the tiny video track — we only want audio
           stream.getVideoTracks().forEach((t) => t.stop());
           audioTrack = stream.getAudioTracks()[0] || null;
         } else {
-          // Web browser: use getDisplayMedia
           const stream = await navigator.mediaDevices.getDisplayMedia({
             audio: true,
             video: true,
@@ -718,6 +819,12 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
         <SoundboardPanel
           serverId={activeServerId}
           onClose={() => setShowSoundboard(false)}
+        />
+      )}
+      {showAudioSharePicker && (
+        <AudioSharePicker
+          onClose={() => setShowAudioSharePicker(false)}
+          onShare={handleAudioShareSelected}
         />
       )}
     </div>

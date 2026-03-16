@@ -14,6 +14,14 @@ import {
 import { autoUpdater } from 'electron-updater';
 import * as path from 'path';
 import * as fs from 'fs';
+import {
+  listAudioApplications,
+  createNullSink,
+  destroyNullSink,
+  findNodeByName,
+  linkAppToNullSink,
+  getPwDump,
+} from './pipewire';
 
 const isDev = !!process.env.ELECTRON_DEV;
 const DEV_URL = 'http://localhost:5174';
@@ -431,6 +439,42 @@ function registerIpcHandlers(): void {
     for (const win of allWindows) {
       win?.webContents.send('popout-message', msg);
     }
+  });
+
+  // ── PipeWire audio sharing (Linux only) ──────────────────────────────
+  ipcMain.handle('list-audio-applications', () => {
+    return listAudioApplications();
+  });
+
+  ipcMain.handle('start-audio-share', async (_event, targetNodeIds: number[], _systemMode: boolean) => {
+    const sinkName = `drocsid_share_${Date.now()}`;
+
+    // 1. Create null-sink
+    const moduleId = createNullSink(sinkName);
+
+    // 2. Wait for PipeWire to register it
+    await new Promise((r) => setTimeout(r, 300));
+
+    // 3. Run pw-dump to find the null-sink node and link apps
+    const objects = getPwDump();
+    const sinkNodeId = findNodeByName(objects, sinkName);
+
+    if (sinkNodeId === null) {
+      destroyNullSink(moduleId);
+      throw new Error('Failed to find null-sink node after creation');
+    }
+
+    // 4. Link target apps to null-sink
+    for (const targetNodeId of targetNodeIds) {
+      linkAppToNullSink(objects, targetNodeId, sinkNodeId);
+    }
+
+    // 5. Return info for cleanup and monitor device discovery
+    return { moduleId, sinkName };
+  });
+
+  ipcMain.handle('stop-audio-share', (_event, moduleId: number) => {
+    destroyNullSink(moduleId);
   });
 }
 

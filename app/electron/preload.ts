@@ -55,5 +55,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('get-desktop-audio-source-id');
   },
 
+  listAudioApplications(): Promise<{ nodeId: number; name: string; binary: string; streamName: string }[]> {
+    return ipcRenderer.invoke('list-audio-applications');
+  },
+
+  startAudioShare(targetNodeIds: number[], systemMode: boolean): Promise<{ moduleId: number; sinkName: string }> {
+    return ipcRenderer.invoke('start-audio-share', targetNodeIds, systemMode);
+  },
+
+  stopAudioShare(moduleId: number): Promise<void> {
+    return ipcRenderer.invoke('stop-audio-share', moduleId);
+  },
+
   isDesktop: true as const,
 });

@@ -1,3 +1,10 @@
+export interface AudioApp {
+  nodeId: number;
+  name: string;
+  binary: string;
+  streamName: string;
+}
+
 export interface ElectronAPI {
   updateTrayBadge(count: number): Promise<void>;
   getSystemIdleMs(): Promise<number>;
@@ -11,6 +18,9 @@ export interface ElectronAPI {
   onPopoutMessage(callback: (msg: unknown) => void): () => void;
   sendPopoutMessage(msg: unknown): void;
   getDesktopAudioStream(): Promise<string | null>;
+  listAudioApplications(): Promise<AudioApp[]>;
+  startAudioShare(targetNodeIds: number[], systemMode: boolean): Promise<{ moduleId: number; sinkName: string }>;
+  stopAudioShare(moduleId: number): Promise<void>;
   isDesktop: true;
 }
 
