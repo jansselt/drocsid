@@ -33,6 +33,12 @@ const DEV_URL = 'http://localhost:5174';
 // protocol origins.
 let prodServerUrl = '';
 
+// Suppress EPIPE errors on stdout/stderr — when running as an AppImage
+// there's no terminal, so console.log (e.g. from electron-updater) causes
+// a broken pipe crash.
+process.stdout?.on?.('error', () => {});
+process.stderr?.on?.('error', () => {});
+
 let mainWindow: BrowserWindow | null = null;
 let voicePopout: BrowserWindow | null = null;
 let tray: Tray | null = null;
