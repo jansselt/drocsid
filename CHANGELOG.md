@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2](https://github.com/jansselt/drocsid/compare/drocsid-v1.1.1...drocsid-v1.1.2) (2026-03-16)
+
+
+### Bug Fixes
+
+* spoof Referer/Origin and strip X-Frame-Options for YouTube embeds ([7280581](https://github.com/jansselt/drocsid/commit/7280581739b50aa6fdc685ec2bb570c665125c28))
+
 ## [1.1.1](https://github.com/jansselt/drocsid/compare/drocsid-v1.1.0...drocsid-v1.1.1) (2026-03-16)
 
 
