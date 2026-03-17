@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.1.6](https://github.com/jansselt/drocsid/compare/drocsid-v1.1.5...drocsid-v1.1.6) (2026-03-17)
+
+
+### Bug Fixes
+
+* add Electron production port 47847 to CORS allowlist ([12bcf56](https://github.com/jansselt/drocsid/commit/12bcf56fb48364db464eb2baf44a0a185e0f7e77))
+* constrain screen share video height, add pop-out button ([72fe3be](https://github.com/jansselt/drocsid/commit/72fe3be729ec8cf733f86562b997fa7d94a62610))
+* improve session persistence — atomic refresh, resilient token handling ([9afef79](https://github.com/jansselt/drocsid/commit/9afef793b816f45389751ea1c754d98185c91e41))
+* move useInfiniteScroll before early return, allow unsafe-inline in CSP ([414439f](https://github.com/jansselt/drocsid/commit/414439f5fd98b6c19e1087e603a849847e9a5128))
+* P2 hardening — CSP, error boundaries, unwrap safety, indexes, upload sanitization ([003754c](https://github.com/jansselt/drocsid/commit/003754c032ba9d57f42e3a97bff398c63f45cb67))
+* properly suppress speaking indicator when muted (all paths) ([ea564fa](https://github.com/jansselt/drocsid/commit/ea564faf07c7972a7b91faa4313da081ea86be38))
+* remove local VAD, use server-side speaking detection only ([5145a72](https://github.com/jansselt/drocsid/commit/5145a72636333d8dbd233c81ad5f2dd8a92cb50e))
+* remove unused 'get' parameter in presenceStore (build error) ([7bda23b](https://github.com/jansselt/drocsid/commit/7bda23b0eedaa1fa4bf032cb1a44c872f4891b1a))
+* scope CSP to local pages only, add font sources ([c6133fa](https://github.com/jansselt/drocsid/commit/c6133fad7c4c7f3e1476278c2dd6307018892299))
+* security hardening — CORS, auth extractors, XSS, rate limiting, N+1 queries ([d5f7bed](https://github.com/jansselt/drocsid/commit/d5f7bed6189b25c0184175ab737706fbd1dd57e0))
+* suppress speaking indicator when mic is muted ([18ba643](https://github.com/jansselt/drocsid/commit/18ba6439d75e6fb2ace8e876b22d81119fa5cefa))
+
+
+### Performance
+
+* P4 — remove unnecessary clones, add member list virtualization ([70ecc11](https://github.com/jansselt/drocsid/commit/70ecc112e4af32deb9acacc7a064b18be0ed969a))
+
+
+### Refactoring
+
+* P2 cleanup — split stores, refactor MessageInput, permission helpers, validation ([3e34caf](https://github.com/jansselt/drocsid/commit/3e34caf51b8f394b8c8fe51fd58601f709ee6a33))
+* P3 cleanup — race fixes, shared hooks/utils, UserSelector, code entropy ([d939951](https://github.com/jansselt/drocsid/commit/d939951dda82ff660f925beb906678e87ef55afd))
+
 ## [1.1.5](https://github.com/jansselt/drocsid/compare/drocsid-v1.1.4...drocsid-v1.1.5) (2026-03-17)
 
 
