@@ -4,6 +4,7 @@ use axum::extract::{Path, State};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use sqlx;
 use uuid::Uuid;
 
 use crate::api::auth::AuthUser;
@@ -276,24 +277,48 @@ async fn cast_vote(
         }
     }
 
-    // Delete existing votes and insert new ones
-    queries::delete_user_poll_votes(&state.db, poll_id, user.user_id).await?;
+    // Delete existing votes and insert new ones atomically, re-checking poll is still open
+    let mut tx = state.db.begin().await?;
+
+    // Re-check poll is still open inside the transaction
+    let still_open = sqlx::query_scalar::<_, bool>(
+        "SELECT NOT closed FROM polls WHERE id = $1 FOR UPDATE",
+    )
+    .bind(poll_id)
+    .fetch_one(&mut *tx)
+    .await
+    ?;
+
+    if !still_open {
+        return Err(ApiError::InvalidInput("Poll is closed".into()));
+    }
+
+    sqlx::query("DELETE FROM poll_votes WHERE poll_id = $1 AND user_id = $2")
+        .bind(poll_id)
+        .bind(user.user_id)
+        .execute(&mut *tx)
+        .await
+        ?;
 
     for (i, option_id) in body.option_ids.iter().enumerate() {
         let rank = match poll.poll_type {
             PollType::Ranked => Some((i + 1) as i16),
             _ => None,
         };
-        queries::insert_poll_vote(
-            &state.db,
-            Uuid::now_v7(),
-            poll_id,
-            *option_id,
-            user.user_id,
-            rank,
+        sqlx::query(
+            "INSERT INTO poll_votes (id, poll_id, option_id, user_id, rank) VALUES ($1, $2, $3, $4, $5)",
         )
-        .await?;
+        .bind(Uuid::now_v7())
+        .bind(poll_id)
+        .bind(*option_id)
+        .bind(user.user_id)
+        .bind(rank)
+        .execute(&mut *tx)
+        .await
+        ?;
     }
+
+    tx.commit().await?;
 
     // Build updated results
     let votes = queries::get_poll_votes(&state.db, poll_id).await?;
@@ -414,7 +439,16 @@ async fn close_poll(
         .await?;
     }
 
-    queries::close_poll(&state.db, poll_id).await?;
+    // Atomically close the poll — only if still open (prevents double-close race)
+    let result = sqlx::query("UPDATE polls SET closed = true WHERE id = $1 AND closed = false")
+        .bind(poll_id)
+        .execute(&state.db)
+        .await
+        ?;
+
+    if result.rows_affected() == 0 {
+        return Err(ApiError::InvalidInput("Poll is already closed".into()));
+    }
 
     let options = queries::get_poll_options(&state.db, poll_id).await?;
     let votes = queries::get_poll_votes(&state.db, poll_id).await?;

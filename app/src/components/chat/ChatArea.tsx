@@ -13,6 +13,7 @@ import { BookmarksPanel } from './BookmarksPanel';
 import { ScheduledMessagesPanel } from './ScheduledMessagesPanel';
 import { LinkCollectionPanel } from './LinkCollectionPanel';
 import { Markdown } from './Markdown';
+import { formatTime, getAuthorName } from '../../utils/formatting';
 import type { Message, User } from '../../types';
 import { AddGroupDmMembersModal } from '../dm/AddGroupDmMembersModal';
 import { CreateGroupDmModal } from '../dm/CreateGroupDmModal';
@@ -43,12 +44,8 @@ export function ChatArea() {
   const bannerUrl = activeServer?.banner_url;
   const bannerPosition = activeServer?.banner_position ?? 50;
 
-  const [showSearch, setShowSearch] = useState(false);
-  const [showPins, setShowPins] = useState(false);
-  const [showBookmarks, setShowBookmarks] = useState(false);
-  const [showScheduled, setShowScheduled] = useState(false);
-  const [showLinks, setShowLinks] = useState(false);
-  const [showAddMembers, setShowAddMembers] = useState(false);
+  type PanelType = 'search' | 'pins' | 'bookmarks' | 'scheduled' | 'links' | 'addMembers' | 'createGroupDm' | null;
+  const [activePanel, setActivePanel] = useState<PanelType>(null);
 
   // If connected to voice and no text channel selected, show voice panel full-width
   if (voiceChannelId && !activeChannelId) {
@@ -122,9 +119,9 @@ export function ChatArea() {
           <span className="chat-header-name">{channelName}</span>
           <div style={{ flex: 1 }} />
           <button
-            className={`chat-header-action ${showLinks ? 'active' : ''}`}
+            className={`chat-header-action ${activePanel === 'links' ? 'active' : ''}`}
             title="Links"
-            onClick={() => { setShowLinks(!showLinks); if (showBookmarks) setShowBookmarks(false); if (showPins) setShowPins(false); if (showScheduled) setShowScheduled(false); }}
+            onClick={() => setActivePanel(activePanel === 'links' ? null : 'links')}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
@@ -132,21 +129,21 @@ export function ChatArea() {
             </svg>
           </button>
           <button
-            className={`chat-header-action ${showScheduled ? 'active' : ''}`}
+            className={`chat-header-action ${activePanel === 'scheduled' ? 'active' : ''}`}
             title="Scheduled Messages"
-            onClick={() => { setShowScheduled(!showScheduled); if (showBookmarks) setShowBookmarks(false); if (showPins) setShowPins(false); if (showLinks) setShowLinks(false); }}
+            onClick={() => setActivePanel(activePanel === 'scheduled' ? null : 'scheduled')}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill={showScheduled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill={activePanel === 'scheduled' ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10" />
               <polyline points="12 6 12 12 16 14" />
             </svg>
           </button>
           <button
-            className={`chat-header-action ${showBookmarks ? 'active' : ''}`}
+            className={`chat-header-action ${activePanel === 'bookmarks' ? 'active' : ''}`}
             title="Bookmarks"
-            onClick={() => { setShowBookmarks(!showBookmarks); if (showPins) setShowPins(false); if (showScheduled) setShowScheduled(false); if (showLinks) setShowLinks(false); }}
+            onClick={() => setActivePanel(activePanel === 'bookmarks' ? null : 'bookmarks')}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill={showBookmarks ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill={activePanel === 'bookmarks' ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
               <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
             </svg>
           </button>
@@ -174,7 +171,7 @@ export function ChatArea() {
               <button
                 className="chat-header-action"
                 title="Add Members"
-                onClick={() => setShowAddMembers(true)}
+                onClick={() => setActivePanel('addMembers')}
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
@@ -185,9 +182,9 @@ export function ChatArea() {
           {!isDm && (
             <>
               <button
-                className={`chat-header-action ${showPins ? 'active' : ''}`}
+                className={`chat-header-action ${activePanel === 'pins' ? 'active' : ''}`}
                 title="Pinned Messages"
-                onClick={() => { setShowPins(!showPins); if (showBookmarks) setShowBookmarks(false); }}
+                onClick={() => setActivePanel(activePanel === 'pins' ? null : 'pins')}
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z" />
@@ -196,7 +193,7 @@ export function ChatArea() {
               <button
                 className="chat-header-action"
                 title="Search"
-                onClick={() => setShowSearch(true)}
+                onClick={() => setActivePanel('search')}
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
@@ -253,41 +250,41 @@ export function ChatArea() {
 
       {activeThreadId && <ThreadPanel threadId={activeThreadId} />}
 
-      {showPins && activeChannelId && (
-        <PinnedMessagesPanel channelId={activeChannelId} onClose={() => setShowPins(false)} />
+      {activePanel === 'pins' && activeChannelId && (
+        <PinnedMessagesPanel channelId={activeChannelId} onClose={() => setActivePanel(null)} />
       )}
 
-      {showBookmarks && (
-        <BookmarksPanel onClose={() => setShowBookmarks(false)} />
+      {activePanel === 'bookmarks' && (
+        <BookmarksPanel onClose={() => setActivePanel(null)} />
       )}
 
-      {showScheduled && (
-        <ScheduledMessagesPanel onClose={() => setShowScheduled(false)} />
+      {activePanel === 'scheduled' && (
+        <ScheduledMessagesPanel onClose={() => setActivePanel(null)} />
       )}
 
-      {showLinks && activeChannelId && (
-        <LinkCollectionPanel channelId={activeChannelId} onClose={() => setShowLinks(false)} />
+      {activePanel === 'links' && activeChannelId && (
+        <LinkCollectionPanel channelId={activeChannelId} onClose={() => setActivePanel(null)} />
       )}
 
-      {showSearch && (
+      {activePanel === 'search' && (
         <SearchModal
           serverId={activeServerId || undefined}
-          onClose={() => setShowSearch(false)}
+          onClose={() => setActivePanel(null)}
         />
       )}
 
-      {showAddMembers && isDm && activeChannelId && dm?.channel_type === 'groupdm' && (
+      {activePanel === 'addMembers' && isDm && activeChannelId && dm?.channel_type === 'groupdm' && (
         <AddGroupDmMembersModal
           channelId={activeChannelId}
           currentRecipients={dmRecipients.get(activeChannelId) || []}
-          onClose={() => setShowAddMembers(false)}
+          onClose={() => setActivePanel(null)}
         />
       )}
 
-      {showAddMembers && isDm && activeChannelId && dm?.channel_type !== 'groupdm' && (
+      {activePanel === 'addMembers' && isDm && activeChannelId && dm?.channel_type !== 'groupdm' && (
         <CreateGroupDmModal
           initialSelection={dmOtherUsers}
-          onClose={() => setShowAddMembers(false)}
+          onClose={() => setActivePanel(null)}
         />
       )}
     </div>
@@ -328,19 +325,6 @@ function PinnedMessagesPanel({ channelId, onClose }: { channelId: string; onClos
     loadPins();
   }, [loadPins]);
 
-  const getAuthorName = (msg: Message) => {
-    if (!msg.author_id) return 'Deleted User';
-    if (msg.author) return msg.author.display_name || msg.author.username;
-    const cached = users.get(msg.author_id);
-    return cached?.display_name || cached?.username || 'Unknown User';
-  };
-
-  const formatTime = (iso: string) => {
-    const d = new Date(iso);
-    return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) +
-      ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-
   return (
     <div className="pinned-panel">
       <div className="pinned-panel-header">
@@ -352,7 +336,7 @@ function PinnedMessagesPanel({ channelId, onClose }: { channelId: string; onClos
         {!loading && pins.length === 0 && <p className="pinned-empty">No pinned messages</p>}
         {pins.map((msg) => (
           <div key={msg.id} className="pinned-message">
-            <div className="pinned-message-author">{getAuthorName(msg)}</div>
+            <div className="pinned-message-author">{getAuthorName({ author: msg.author, authorId: msg.author_id, users })}</div>
             <div className="pinned-message-content">
               <Markdown content={msg.content || ''} />
             </div>

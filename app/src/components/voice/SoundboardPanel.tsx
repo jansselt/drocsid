@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import * as api from '../../api/client';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
+import { useClickOutside } from '../../hooks/useClickOutside';
 import { measureAudioDuration, preloadSounds, getSoundboardVolume, setSoundboardVolume } from '../../utils/soundboardAudio';
 import type { SoundboardSound } from '../../types';
 import './SoundboardPanel.css';
@@ -36,27 +38,10 @@ export function SoundboardPanel({ serverId, onClose }: SoundboardPanelProps) {
   }, [sounds]);
 
   // Close on click outside
-  useEffect(() => {
-    const handle = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
-    const timer = setTimeout(() => document.addEventListener('mousedown', handle), 0);
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener('mousedown', handle);
-    };
-  }, [onClose]);
+  useClickOutside(panelRef, onClose);
 
   // Close on Escape
-  useEffect(() => {
-    const handle = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handle);
-    return () => document.removeEventListener('keydown', handle);
-  }, [onClose]);
+  useEscapeKey(onClose);
 
   // Close context menu on outside click
   useEffect(() => {

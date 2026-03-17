@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useServerStore } from '../../stores/serverStore';
 import { Markdown } from './Markdown';
+import { formatTime, getAuthorName } from '../../utils/formatting';
 import type { Bookmark } from '../../types';
 import * as api from '../../api/client';
 
@@ -98,19 +99,6 @@ export function BookmarksPanel({ onClose }: BookmarksPanelProps) {
     }
   }, []);
 
-  const getAuthorName = (bookmark: Bookmark) => {
-    if (bookmark.author) return bookmark.author.display_name || bookmark.author.username;
-    if (!bookmark.author_id) return 'Deleted User';
-    const cached = users.get(bookmark.author_id);
-    return cached?.display_name || cached?.username || 'Unknown User';
-  };
-
-  const formatTime = (iso: string) => {
-    const d = new Date(iso);
-    return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) +
-      ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-
   const getContext = (bookmark: Bookmark) => {
     const parts: string[] = [];
     if (bookmark.channel_name) parts.push(`#${bookmark.channel_name}`);
@@ -161,7 +149,7 @@ export function BookmarksPanel({ onClose }: BookmarksPanelProps) {
             onClick={() => navigateToMessage(bookmark)}
           >
             <div className="bookmark-card-header">
-              <span className="bookmark-card-author">{getAuthorName(bookmark)}</span>
+              <span className="bookmark-card-author">{getAuthorName({ author: bookmark.author, authorId: bookmark.author_id, users })}</span>
               <button
                 className="bookmark-remove-btn settings-close"
                 title="Remove bookmark"

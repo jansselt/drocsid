@@ -235,7 +235,7 @@ function createMainWindow(): void {
   // Auto-grant microphone and camera permissions
   mainWindow.webContents.session.setPermissionRequestHandler(
     (_webContents, permission, callback) => {
-      const allowed = ['media', 'mediaKeySystem', 'display-capture', 'notifications'];
+      const allowed = ['media', 'mediaKeySystem', 'notifications'];
       callback(allowed.includes(permission));
     }
   );

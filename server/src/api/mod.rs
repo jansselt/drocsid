@@ -252,7 +252,7 @@ async fn delete_me(
     // Disconnect from gateway
     state.gateway.disconnect_user(user.user_id);
 
-    Ok(axum::Json(serde_json::json!({ "deleted": true })))
+    Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
 async fn request_avatar_upload(

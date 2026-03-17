@@ -40,7 +40,7 @@ pub fn routes() -> Router<AppState> {
 fn generate_code() -> String {
     const CHARS: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
     let mut rng = rand::rng();
-    (0..8)
+    (0..12)
         .map(|_| CHARS[rng.random_range(0..CHARS.len())] as char)
         .collect()
 }
@@ -138,7 +138,7 @@ async fn delete_registration_code(
 ) -> Result<impl IntoResponse, ApiError> {
     require_admin(&state, user.user_id).await?;
     queries::delete_registration_code(&state.db, &code).await?;
-    Ok(Json(serde_json::json!({ "deleted": true })))
+    Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
 #[derive(serde::Deserialize)]
@@ -198,7 +198,7 @@ async fn admin_delete_user(
     queries::delete_user(&state.db, target_user_id).await?;
     state.gateway.disconnect_user(target_user_id);
 
-    Ok(Json(serde_json::json!({ "deleted": true })))
+    Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
 async fn admin_purge_channel(

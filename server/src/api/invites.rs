@@ -37,7 +37,7 @@ pub fn resolve_routes() -> Router<AppState> {
 fn generate_invite_code() -> String {
     const CHARS: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
     let mut rng = rand::rng();
-    (0..8)
+    (0..12)
         .map(|_| CHARS[rng.random_range(0..CHARS.len())] as char)
         .collect()
 }

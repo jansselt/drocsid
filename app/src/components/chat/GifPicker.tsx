@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import * as api from '../../api/client';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
+import { useClickOutside } from '../../hooks/useClickOutside';
 import type { GifItem } from '../../types';
 import './GifPicker.css';
 
@@ -19,30 +21,10 @@ export function GifPicker({ onSelect, onClose, initialQuery = '' }: GifPickerPro
   const searchTimeout = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Click-outside to dismiss
-  useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
-    // Use setTimeout so the click that opened the picker doesn't immediately close it
-    const timer = setTimeout(() => {
-      document.addEventListener('mousedown', handleClick);
-    }, 0);
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener('mousedown', handleClick);
-    };
-  }, [onClose]);
+  useClickOutside(pickerRef, onClose);
 
   // Escape to dismiss
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
-  }, [onClose]);
+  useEscapeKey(onClose);
 
   const loadTrending = useCallback(async () => {
     setLoading(true);
