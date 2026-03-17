@@ -23,7 +23,7 @@ interface PresenceStoreState {
 
 const TYPING_TIMEOUT = 8000;
 
-export const usePresenceStore = create<PresenceStoreState>((set, get) => ({
+export const usePresenceStore = create<PresenceStoreState>((set) => ({
   presences: new Map(),
   typingUsers: new Map(),
 
