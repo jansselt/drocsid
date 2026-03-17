@@ -52,6 +52,9 @@ export function MemberSidebar() {
   const loadMembers = useServerStore((s) => s.loadMembers);
   const tick = useMinuteTick();
 
+  const memberCount = members ? members.length : 0;
+  const [visibleCount, sentinelRef] = useInfiniteScroll(memberCount);
+
   useEffect(() => {
     if (activeServerId && !members) {
       loadMembers(activeServerId);
@@ -118,7 +121,6 @@ export function MemberSidebar() {
   ];
 
   const totalMembers = allGroups.reduce((sum, g) => sum + g.members.length, 0);
-  const [visibleCount, sentinelRef] = useInfiniteScroll(totalMembers);
 
   // Slice groups to only show visibleCount members total
   let remaining = visibleCount;

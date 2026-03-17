@@ -277,7 +277,7 @@ function createMainWindow(): void {
         'Content-Security-Policy': [
           [
             "default-src 'self'",
-            "script-src 'self'",
+            "script-src 'self' 'unsafe-inline'",
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' data: blob: https: http:",
             "media-src 'self' blob: https: http:",
