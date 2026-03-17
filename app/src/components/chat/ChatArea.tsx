@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useServerStore } from '../../stores/serverStore';
+import { useVoiceStore } from '../../stores/voiceStore';
+import { usePresenceStore } from '../../stores/presenceStore';
+import { useUiStore } from '../../stores/uiStore';
 import { useAuthStore } from '../../stores/authStore';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
@@ -24,17 +27,17 @@ export function ChatArea() {
   const channels = useServerStore((s) => s.channels);
   const dmRecipients = useServerStore((s) => s.dmRecipients);
   const dmChannels = useServerStore((s) => s.dmChannels);
-  const voiceChannelId = useServerStore((s) => s.voiceChannelId);
-  const voiceVideoActive = useServerStore((s) => s.voiceVideoActive);
-  const voiceStates = useServerStore((s) => s.voiceStates);
+  const voiceChannelId = useVoiceStore((s) => s.voiceChannelId);
+  const voiceVideoActive = useVoiceStore((s) => s.voiceVideoActive);
+  const voiceStates = useVoiceStore((s) => s.voiceStates);
   const users = useServerStore((s) => s.users);
   const currentUser = useAuthStore((s) => s.user);
 
   const servers = useServerStore((s) => s.servers);
-  const showChannelSidebar = useServerStore((s) => s.showChannelSidebar);
-  const toggleChannelSidebar = useServerStore((s) => s.toggleChannelSidebar);
-  const showMemberSidebar = useServerStore((s) => s.showMemberSidebar);
-  const toggleMemberSidebar = useServerStore((s) => s.toggleMemberSidebar);
+  const showChannelSidebar = useUiStore((s) => s.showChannelSidebar);
+  const toggleChannelSidebar = useUiStore((s) => s.toggleChannelSidebar);
+  const showMemberSidebar = useUiStore((s) => s.showMemberSidebar);
+  const toggleMemberSidebar = useUiStore((s) => s.toggleMemberSidebar);
 
   const activeServer = activeServerId ? servers.find((s) => s.id === activeServerId) : null;
   const bannerUrl = activeServer?.banner_url;
@@ -154,9 +157,9 @@ export function ChatArea() {
                 title={voiceChannelId === activeChannelId ? 'Leave Call' : 'Start Voice Call'}
                 onClick={() => {
                   if (voiceChannelId === activeChannelId) {
-                    useServerStore.getState().voiceLeave();
+                    useVoiceStore.getState().voiceLeave();
                   } else {
-                    useServerStore.getState().voiceJoin(activeChannelId);
+                    useVoiceStore.getState().voiceJoin(activeChannelId);
                   }
                 }}
               >
@@ -236,7 +239,7 @@ export function ChatArea() {
               </div>
               <button
                 className="dm-call-banner-join"
-                onClick={() => useServerStore.getState().voiceJoin(activeChannelId)}
+                onClick={() => useVoiceStore.getState().voiceJoin(activeChannelId)}
               >
                 Join Call
               </button>
@@ -293,9 +296,9 @@ export function ChatArea() {
 
 /** Voice panel wrapper: compact bar normally, full-height when video/screenshare is active */
 function VoicePanelCompact({ fullHeight }: { fullHeight?: boolean }) {
-  const voiceChannelId = useServerStore((s) => s.voiceChannelId);
-  const voiceToken = useServerStore((s) => s.voiceToken);
-  const voiceUrl = useServerStore((s) => s.voiceUrl);
+  const voiceChannelId = useVoiceStore((s) => s.voiceChannelId);
+  const voiceToken = useVoiceStore((s) => s.voiceToken);
+  const voiceUrl = useVoiceStore((s) => s.voiceUrl);
   if (!voiceToken || !voiceUrl || !voiceChannelId) return null;
 
   return (
@@ -315,8 +318,8 @@ function PinnedMessagesPanel({ channelId, onClose }: { channelId: string; onClos
     try {
       const result = await api.getPinnedMessages(channelId);
       setPins(result);
-    } catch {
-      // ignore
+    } catch (err) {
+      console.error('Failed to load pinned messages:', err);
     }
     setLoading(false);
   }, [channelId]);
@@ -362,7 +365,7 @@ function PinnedMessagesPanel({ channelId, onClose }: { channelId: string; onClos
 }
 
 function TypingIndicator({ channelId }: { channelId: string }) {
-  const typingUsers = useServerStore((s) => s.typingUsers);
+  const typingUsers = usePresenceStore((s) => s.typingUsers);
   const users = useServerStore((s) => s.users);
   const currentUser = useAuthStore((s) => s.user);
 

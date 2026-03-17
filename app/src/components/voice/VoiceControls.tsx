@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import { useServerStore } from '../../stores/serverStore';
+import { useVoiceStore } from '../../stores/voiceStore';
 import { SoundboardPanel } from './SoundboardPanel';
 import './VoiceControls.css';
 
 export function VoiceControls() {
-  const voiceChannelId = useServerStore((s) => s.voiceChannelId);
-  const voiceSelfMute = useServerStore((s) => s.voiceSelfMute);
-  const voiceSelfDeaf = useServerStore((s) => s.voiceSelfDeaf);
-  const voiceLeave = useServerStore((s) => s.voiceLeave);
-  const voiceToggleMute = useServerStore((s) => s.voiceToggleMute);
-  const voiceToggleDeaf = useServerStore((s) => s.voiceToggleDeaf);
+  const voiceChannelId = useVoiceStore((s) => s.voiceChannelId);
+  const voiceSelfMute = useVoiceStore((s) => s.voiceSelfMute);
+  const voiceSelfDeaf = useVoiceStore((s) => s.voiceSelfDeaf);
+  const voiceLeave = useVoiceStore((s) => s.voiceLeave);
+  const voiceToggleMute = useVoiceStore((s) => s.voiceToggleMute);
+  const voiceToggleDeaf = useVoiceStore((s) => s.voiceToggleDeaf);
   const channels = useServerStore((s) => s.channels);
   const [showSoundboard, setShowSoundboard] = useState(false);
   if (!voiceChannelId) return null;

@@ -24,7 +24,6 @@ import type {
   TypingStartEvent,
   ThreadMetadata,
   SearchResult,
-  VoiceState,
   VoiceStateUpdateEvent,
   PresenceUpdateEvent,
   ServerMemberWithUser,
@@ -43,9 +42,11 @@ import type {
   PollCloseEvent,
 } from '../types';
 import * as api from '../api/client';
-import { getApiUrl } from '../api/instance';
 import { gateway } from '../api/gateway';
 import { useAuthStore } from './authStore';
+import { useVoiceStore } from './voiceStore';
+import { usePresenceStore } from './presenceStore';
+import { useUiStore } from './uiStore';
 import {
   playMessageSound,
   playMentionSound,
@@ -55,11 +56,6 @@ import {
 import { showBrowserNotification } from '../utils/browserNotifications';
 
 type ViewMode = 'servers' | 'home';
-
-interface TypingUser {
-  userId: string;
-  timeout: ReturnType<typeof setTimeout>;
-}
 
 interface ServerState {
   // View mode
@@ -88,40 +84,18 @@ interface ServerState {
   threadMetadata: Map<string, ThreadMetadata>; // channel_id -> metadata
   activeThreadId: string | null;
 
-  // Typing indicators
-  typingUsers: Map<string, TypingUser[]>; // channel_id -> typing users
-
   // Search
   searchResults: SearchResult[] | null;
   searchQuery: string;
 
-  // Members & Presence
+  // Members
   members: Map<string, ServerMemberWithUser[]>; // server_id -> enriched members
-  presences: Map<string, string>; // user_id -> status (online/idle/dnd/offline)
-
-  // UI: sidebar visibility
-  showChannelSidebar: boolean;
-  showMemberSidebar: boolean;
 
   // Read states (unread tracking)
   readStates: Map<string, ReadState>; // channel_id -> ReadState
 
   // Notification preferences
   notificationPrefs: Map<string, NotificationPreference>; // target_id -> pref
-
-  // Reply
-  replyingTo: Message | null;
-
-  // Voice
-  voiceChannelId: string | null; // channel we're connected to
-  voiceToken: string | null;
-  voiceUrl: string | null;
-  voiceSelfMute: boolean;
-  voiceSelfDeaf: boolean;
-  voiceAudioSharing: boolean;
-  voiceVideoActive: boolean; // true when camera, screenshare, or remote video is active
-  voiceStates: Map<string, VoiceState[]>; // channel_id -> voice states
-  speakingUsers: Set<string>; // user_ids currently speaking (from LiveKit)
 
   // Soundboard
   soundboardSounds: Map<string, SoundboardSound[]>; // server_id -> sounds
@@ -137,7 +111,6 @@ interface ServerState {
   loadChannels: (serverId: string) => Promise<void>;
   loadMessages: (channelId: string) => Promise<void>;
   loadMoreMessages: (channelId: string) => Promise<boolean>;
-  setReplyingTo: (msg: Message | null) => void;
   sendMessage: (channelId: string, content: string, replyToId?: string) => Promise<void>;
   addMessage: (message: MessageCreateEvent) => void;
   updateMessage: (event: MessageUpdateEvent) => void;
@@ -179,22 +152,8 @@ interface ServerState {
   search: (query: string, serverId?: string) => Promise<void>;
   clearSearch: () => void;
 
-  // Typing
-  sendTyping: (channelId: string) => void;
-
-  // Member & Presence actions
+  // Member actions
   loadMembers: (serverId: string) => Promise<void>;
-  updateMyStatus: (status: string) => Promise<void>;
-
-  // Voice actions
-  voiceJoin: (channelId: string) => Promise<void>;
-  voiceLeave: () => Promise<void>;
-  voiceToggleMute: () => Promise<void>;
-  voiceToggleDeaf: () => Promise<void>;
-  voiceSetAudioSharing: (sharing: boolean) => Promise<void>;
-  voiceSetVideoActive: (active: boolean) => void;
-  loadVoiceStates: (channelId: string) => Promise<void>;
-  setSpeakingUsers: (userIds: Set<string>) => void;
 
   // Soundboard actions
   loadSoundboard: (serverId: string) => Promise<void>;
@@ -248,25 +207,12 @@ interface ServerState {
   retractVote: (channelId: string, pollId: string) => Promise<void>;
   closePoll: (channelId: string, pollId: string) => Promise<void>;
 
-  toggleChannelSidebar: () => void;
-  toggleMemberSidebar: () => void;
-
   restoreNavigation: () => void;
 
   initGatewayHandlers: () => () => void;
 }
 
-const TYPING_TIMEOUT = 8000;
 const MAX_CACHED_CHANNELS = 5;
-
-// Track the beforeunload handler for voice cleanup on tab close
-let voiceBeforeUnloadHandler: (() => void) | null = null;
-function removeVoiceBeforeUnload() {
-  if (voiceBeforeUnloadHandler) {
-    window.removeEventListener('beforeunload', voiceBeforeUnloadHandler);
-    voiceBeforeUnloadHandler = null;
-  }
-}
 
 function touchLru(order: string[], channelId: string): string[] {
   const filtered = order.filter((id) => id !== channelId);
@@ -333,43 +279,28 @@ export const useServerStore = create<ServerState>((set, get) => ({
   reactions: new Map(),
   channelAccessOrder: [],
   users: new Map(),
-  showChannelSidebar: JSON.parse(localStorage.getItem('drocsid_show_channel_sidebar') ?? 'true'),
-  showMemberSidebar: JSON.parse(localStorage.getItem('drocsid_show_member_sidebar') ?? 'true'),
   readStates: new Map(),
   notificationPrefs: new Map(),
-  replyingTo: null,
-  voiceChannelId: null,
-  voiceToken: null,
-  voiceUrl: null,
-  voiceSelfMute: false,
-  voiceSelfDeaf: false,
-  voiceAudioSharing: false,
-  voiceVideoActive: false,
-  voiceStates: new Map(),
-  speakingUsers: new Set(),
   soundboardSounds: new Map(),
   bookmarkedMessageIds: new Set(),
   scheduledMessages: [],
   polls: new Map(),
   members: new Map(),
-  presences: new Map(),
   dmChannels: [],
   dmRecipients: new Map(),
   relationships: [],
   threads: new Map(),
   threadMetadata: new Map(),
   activeThreadId: null,
-  typingUsers: new Map(),
   searchResults: null,
   searchQuery: '',
 
   setView: (view) => {
-    const updates: Partial<ServerState> = { view, activeServerId: null, activeChannelId: null, activeThreadId: null };
+    set({ view, activeServerId: null, activeChannelId: null, activeThreadId: null });
     // Always show the sidebar in DM/home view (no collapse toggle there)
     if (view === 'home') {
-      updates.showChannelSidebar = true;
+      useUiStore.getState().setShowChannelSidebar(true);
     }
-    set(updates);
     if (view === 'home') {
       get().loadDmChannels();
       get().loadRelationships();
@@ -476,8 +407,6 @@ export const useServerStore = create<ServerState>((set, get) => ({
     return true;
   },
 
-  setReplyingTo: (msg) => set({ replyingTo: msg }),
-
   sendMessage: async (channelId, content, replyToId) => {
     await api.sendMessage(channelId, content, replyToId);
   },
@@ -519,7 +448,7 @@ export const useServerStore = create<ServerState>((set, get) => ({
       const level = effectivePref?.notification_level ?? 'all';
 
       // DND suppresses all notifications
-      const myPresence = state.presences.get(currentUser.id);
+      const myPresence = usePresenceStore.getState().presences.get(currentUser.id);
       const isDnd = myPresence === 'dnd';
 
       // Determine if we should notify
@@ -967,13 +896,7 @@ export const useServerStore = create<ServerState>((set, get) => ({
 
   clearSearch: () => set({ searchResults: null, searchQuery: '' }),
 
-  // ── Typing ───────────────────────────────────────────
-
-  sendTyping: (channelId) => {
-    api.sendTyping(channelId).catch(() => {});
-  },
-
-  // ── Member & Presence Actions ──────────────────────
+  // ── Member Actions ──────────────────────────────────
 
   loadMembers: async (serverId) => {
     try {
@@ -981,131 +904,21 @@ export const useServerStore = create<ServerState>((set, get) => ({
       set((state) => {
         const members = new Map(state.members);
         members.set(serverId, memberList);
-        // Also cache user data and presence
+        // Also cache user data
         const users = new Map(state.users);
-        const presences = new Map(state.presences);
         for (const m of memberList) {
           users.set(m.user_id, m.user);
-          presences.set(m.user_id, m.status);
         }
-        return { members, users, presences };
+        return { members, users };
       });
+      // Cache presence data in the presence store
+      usePresenceStore.getState().setPresences(
+        memberList.map((m) => ({ userId: m.user_id, status: m.status })),
+      );
     } catch {
       // ignore
     }
   },
-
-  updateMyStatus: async (status) => {
-    try {
-      await api.updateMe({ status });
-      gateway.sendPresenceUpdate(status);
-      // Set own presence locally so the UI reflects the chosen status immediately
-      // (the server broadcasts "offline" for invisible, so we must set it here)
-      const userId = useAuthStore.getState().user?.id;
-      if (userId) {
-        set((state) => {
-          const presences = new Map(state.presences);
-          presences.set(userId, status);
-          return { presences };
-        });
-      }
-    } catch {
-      // ignore
-    }
-  },
-
-  // ── Voice Actions ──────────────────────────────────
-
-  voiceJoin: async (channelId) => {
-    // Leave current voice channel if any
-    const current = get().voiceChannelId;
-    if (current) {
-      await api.voiceLeave(current).catch(() => {});
-    }
-
-    const resp = await api.voiceJoin(channelId, get().voiceSelfMute, get().voiceSelfDeaf);
-    set({
-      voiceChannelId: channelId,
-      voiceToken: resp.token,
-      voiceUrl: resp.url,
-    });
-    playVoiceJoinSound();
-
-    // Register beforeunload handler so closing the tab sends a leave beacon
-    removeVoiceBeforeUnload();
-    const handler = () => {
-      const chId = get().voiceChannelId;
-      if (chId) {
-        const token = api.getAccessToken();
-        if (token) {
-          // sendBeacon is guaranteed to fire during page unload
-          navigator.sendBeacon(
-            `${getApiUrl()}/channels/${chId}/voice/leave?token=${encodeURIComponent(token)}`,
-          );
-        }
-      }
-    };
-    voiceBeforeUnloadHandler = handler;
-    window.addEventListener('beforeunload', handler);
-
-    // Load current voice states for this channel
-    get().loadVoiceStates(channelId);
-  },
-
-  voiceLeave: async () => {
-    removeVoiceBeforeUnload();
-    const channelId = get().voiceChannelId;
-    if (channelId) {
-      // Retry the leave API call to avoid ghost users in voice
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          await api.voiceLeave(channelId);
-          break;
-        } catch {
-          if (attempt < 2) await new Promise((r) => setTimeout(r, 500));
-        }
-      }
-      playVoiceLeaveSound();
-    }
-    set({
-      voiceChannelId: null,
-      voiceToken: null,
-      voiceUrl: null,
-      voiceSelfMute: false,
-      voiceSelfDeaf: false,
-      voiceAudioSharing: false,
-      voiceVideoActive: false,
-    });
-  },
-
-  voiceToggleMute: async () => {
-    const channelId = get().voiceChannelId;
-    if (!channelId) return;
-    const newMute = !get().voiceSelfMute;
-    set({ voiceSelfMute: newMute });
-    await api.voiceUpdateState(channelId, newMute, undefined).catch(() => {});
-  },
-
-  voiceToggleDeaf: async () => {
-    const channelId = get().voiceChannelId;
-    if (!channelId) return;
-    const newDeaf = !get().voiceSelfDeaf;
-    // Deafening also mutes
-    const newMute = newDeaf ? true : get().voiceSelfMute;
-    set({ voiceSelfDeaf: newDeaf, voiceSelfMute: newMute });
-    await api.voiceUpdateState(channelId, newMute, newDeaf).catch(() => {});
-  },
-
-  voiceSetAudioSharing: async (sharing) => {
-    const channelId = get().voiceChannelId;
-    if (!channelId) return;
-    set({ voiceAudioSharing: sharing });
-    await api.voiceUpdateState(channelId, undefined, undefined, sharing).catch(() => {});
-  },
-
-  voiceSetVideoActive: (active) => set({ voiceVideoActive: active }),
-
-  setSpeakingUsers: (userIds) => set({ speakingUsers: userIds }),
 
   loadSoundboard: async (serverId) => {
     try {
@@ -1125,19 +938,6 @@ export const useServerStore = create<ServerState>((set, get) => ({
       await api.playSoundboardSound(serverId, soundId);
     } catch (e) {
       console.error('[soundboard] Failed to play sound:', e);
-    }
-  },
-
-  loadVoiceStates: async (channelId) => {
-    try {
-      const states = await api.voiceGetStates(channelId);
-      set((state) => {
-        const voiceStates = new Map(state.voiceStates);
-        voiceStates.set(channelId, states);
-        return { voiceStates };
-      });
-    } catch {
-      // ignore
     }
   },
 
@@ -1342,22 +1142,6 @@ export const useServerStore = create<ServerState>((set, get) => ({
       const polls = new Map(state.polls);
       polls.set(poll.message_id, poll);
       return { polls };
-    });
-  },
-
-  toggleChannelSidebar: () => {
-    set((state) => {
-      const next = !state.showChannelSidebar;
-      localStorage.setItem('drocsid_show_channel_sidebar', JSON.stringify(next));
-      return { showChannelSidebar: next };
-    });
-  },
-
-  toggleMemberSidebar: () => {
-    set((state) => {
-      const next = !state.showMemberSidebar;
-      localStorage.setItem('drocsid_show_member_sidebar', JSON.stringify(next));
-      return { showMemberSidebar: next };
     });
   },
 
@@ -1685,45 +1469,18 @@ export const useServerStore = create<ServerState>((set, get) => ({
         }
         case 'TYPING_START': {
           const ev = data as TypingStartEvent;
-          set((state) => {
-            const typingUsers = new Map(state.typingUsers);
-            const channelTyping = (typingUsers.get(ev.channel_id) || []).filter(
-              (t) => t.userId !== ev.user_id,
-            );
-
-            const existing = (typingUsers.get(ev.channel_id) || []).find(
-              (t) => t.userId === ev.user_id,
-            );
-            if (existing) {
-              clearTimeout(existing.timeout);
-            }
-
-            const timeout = setTimeout(() => {
-              set((s) => {
-                const tu = new Map(s.typingUsers);
-                const ct = (tu.get(ev.channel_id) || []).filter(
-                  (t) => t.userId !== ev.user_id,
-                );
-                tu.set(ev.channel_id, ct);
-                return { typingUsers: tu };
-              });
-            }, TYPING_TIMEOUT);
-
-            channelTyping.push({ userId: ev.user_id, timeout });
-            typingUsers.set(ev.channel_id, channelTyping);
-            return { typingUsers };
-          });
+          usePresenceStore.getState().handleTypingStart(ev.channel_id, ev.user_id);
           break;
         }
         case 'VOICE_STATE_UPDATE': {
           const ev = data as VoiceStateUpdateEvent;
+          const voiceState = useVoiceStore.getState();
 
           // Play join/leave sounds for other users in our voice channel
           const currentUser = useAuthStore.getState().user;
-          const myVoiceChannel = get().voiceChannelId;
+          const myVoiceChannel = voiceState.voiceChannelId;
           if (currentUser && ev.user_id !== currentUser.id && myVoiceChannel) {
-            // Was user previously in our channel?
-            const wasInOurChannel = (get().voiceStates.get(myVoiceChannel) || [])
+            const wasInOurChannel = (voiceState.voiceStates.get(myVoiceChannel) || [])
               .some((s) => s.user_id === ev.user_id);
 
             if (ev.channel_id === myVoiceChannel && !wasInOurChannel) {
@@ -1733,14 +1490,13 @@ export const useServerStore = create<ServerState>((set, get) => ({
             }
           }
 
-          set((state) => {
+          useVoiceStore.setState((state) => {
             const voiceStates = new Map(state.voiceStates);
 
             if (ev.channel_id) {
-              // User joined/updated in a channel — update in place to preserve order
               const channelStates = voiceStates.get(ev.channel_id) || [];
               const idx = channelStates.findIndex((s) => s.user_id === ev.user_id);
-              const newState = {
+              const newVs = {
                 user_id: ev.user_id,
                 channel_id: ev.channel_id,
                 self_mute: ev.self_mute,
@@ -1749,14 +1505,13 @@ export const useServerStore = create<ServerState>((set, get) => ({
               };
               if (idx >= 0) {
                 const updated = [...channelStates];
-                updated[idx] = newState;
+                updated[idx] = newVs;
                 voiceStates.set(ev.channel_id, updated);
               } else {
-                voiceStates.set(ev.channel_id, [...channelStates, newState]);
+                voiceStates.set(ev.channel_id, [...channelStates, newVs]);
               }
             }
 
-            // Remove from any other channels (user can only be in one)
             for (const [chId, states] of voiceStates) {
               if (chId !== ev.channel_id) {
                 const filtered = states.filter((s) => s.user_id !== ev.user_id);
@@ -1766,7 +1521,6 @@ export const useServerStore = create<ServerState>((set, get) => ({
               }
             }
 
-            // If channel_id is null, user left voice entirely
             if (!ev.channel_id) {
               for (const [chId, states] of voiceStates) {
                 const filtered = states.filter((s) => s.user_id !== ev.user_id);
@@ -1878,46 +1632,37 @@ export const useServerStore = create<ServerState>((set, get) => ({
         }
         case 'PRESENCE_UPDATE': {
           const ev = data as PresenceUpdateEvent;
-          set((state) => {
-            const myId = useAuthStore.getState().user?.id;
-            // Don't let the server's broadcast overwrite our own invisible status
-            if (ev.user_id === myId && ev.status === 'offline' && state.presences.get(myId) === 'invisible') {
-              return state;
-            }
+          const myId = useAuthStore.getState().user?.id;
+          const presenceState = usePresenceStore.getState();
 
-            const currentStatus = state.presences.get(ev.user_id);
-            const statusChanged = currentStatus !== ev.status;
+          // Don't let the server's broadcast overwrite our own invisible status
+          if (ev.user_id === myId && ev.status === 'offline' && presenceState.presences.get(myId!) === 'invisible') {
+            break;
+          }
 
-            const existingUser = state.users.get(ev.user_id);
-            const newCustomStatus = ev.custom_status ?? null;
-            const customStatusChanged = existingUser && existingUser.custom_status !== newCustomStatus;
+          const currentStatus = presenceState.presences.get(ev.user_id);
+          if (currentStatus !== ev.status) {
+            presenceState.setPresence(ev.user_id, ev.status);
+          }
 
-            if (!statusChanged && !customStatusChanged) return state;
-
-            const result: Partial<ServerState> = {};
-
-            if (statusChanged) {
-              const presences = new Map(state.presences);
-              presences.set(ev.user_id, ev.status);
-              result.presences = presences;
-            }
-
-            if (customStatusChanged) {
+          // Update custom status on the user object in serverStore
+          const existingUser = get().users.get(ev.user_id);
+          const newCustomStatus = ev.custom_status ?? null;
+          if (existingUser && existingUser.custom_status !== newCustomStatus) {
+            set((state) => {
               const users = new Map(state.users);
-              users.set(ev.user_id, { ...existingUser!, custom_status: newCustomStatus });
-              result.users = users;
-            }
+              users.set(ev.user_id, { ...existingUser, custom_status: newCustomStatus });
+              return { users };
+            });
+          }
 
-            // Also update the auth store user if it's us
-            if (ev.user_id === myId) {
-              const authUser = useAuthStore.getState().user;
-              if (authUser) {
-                useAuthStore.setState({ user: { ...authUser, custom_status: newCustomStatus } });
-              }
+          // Also update the auth store user if it's us
+          if (ev.user_id === myId) {
+            const authUser = useAuthStore.getState().user;
+            if (authUser) {
+              useAuthStore.setState({ user: { ...authUser, custom_status: newCustomStatus } });
             }
-
-            return result;
-          });
+          }
           break;
         }
       }

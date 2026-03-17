@@ -19,6 +19,7 @@ import {
   type RoomOptions,
 } from 'livekit-client';
 import { useServerStore } from '../../stores/serverStore';
+import { useVoiceStore } from '../../stores/voiceStore';
 import { getNoiseSuppression } from '../../utils/audioDevices';
 import { isDesktop } from '../../api/instance';
 import { SoundboardPanel } from './SoundboardPanel';
@@ -26,10 +27,10 @@ import { AudioSharePicker } from './AudioSharePicker';
 import './VoicePanel.css';
 
 export function VoicePanel({ compact }: { compact?: boolean } = {}) {
-  const voiceToken = useServerStore((s) => s.voiceToken);
-  const voiceUrl = useServerStore((s) => s.voiceUrl);
-  const voiceChannelId = useServerStore((s) => s.voiceChannelId);
-  const voiceLeave = useServerStore((s) => s.voiceLeave);
+  const voiceToken = useVoiceStore((s) => s.voiceToken);
+  const voiceUrl = useVoiceStore((s) => s.voiceUrl);
+  const voiceChannelId = useVoiceStore((s) => s.voiceChannelId);
+  const voiceLeave = useVoiceStore((s) => s.voiceLeave);
   const channels = useServerStore((s) => s.channels);
 
   // Pass saved device ID + noise suppression directly to getUserMedia via LiveKit.
@@ -112,14 +113,14 @@ function saveVolumes(volumes: Record<string, number>) {
 function VoicePanelContent({ channelName, compact }: { channelName: string; compact?: boolean }) {
   const participants = useParticipants();
   const { localParticipant } = useLocalParticipant();
-  const voiceToggleMute = useServerStore((s) => s.voiceToggleMute);
-  const voiceToggleDeaf = useServerStore((s) => s.voiceToggleDeaf);
-  const voiceLeave = useServerStore((s) => s.voiceLeave);
-  const voiceSelfMute = useServerStore((s) => s.voiceSelfMute);
-  const voiceSelfDeaf = useServerStore((s) => s.voiceSelfDeaf);
+  const voiceToggleMute = useVoiceStore((s) => s.voiceToggleMute);
+  const voiceToggleDeaf = useVoiceStore((s) => s.voiceToggleDeaf);
+  const voiceLeave = useVoiceStore((s) => s.voiceLeave);
+  const voiceSelfMute = useVoiceStore((s) => s.voiceSelfMute);
+  const voiceSelfDeaf = useVoiceStore((s) => s.voiceSelfDeaf);
   const users = useServerStore((s) => s.users);
-  const setSpeakingUsers = useServerStore((s) => s.setSpeakingUsers);
-  const speakingUsers = useServerStore((s) => s.speakingUsers);
+  const setSpeakingUsers = useVoiceStore((s) => s.setSpeakingUsers);
+  const speakingUsers = useVoiceStore((s) => s.speakingUsers);
   const activeServerId = useServerStore((s) => s.activeServerId);
   const room = useRoomContext();
 
@@ -140,8 +141,8 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
     room.on(RoomEvent.MediaDevicesError, onMediaError);
     return () => { room.off(RoomEvent.MediaDevicesError, onMediaError); };
   }, [room]);
-  const voiceSetAudioSharing = useServerStore((s) => s.voiceSetAudioSharing);
-  const voiceSetVideoActive = useServerStore((s) => s.voiceSetVideoActive);
+  const voiceSetAudioSharing = useVoiceStore((s) => s.voiceSetAudioSharing);
+  const voiceSetVideoActive = useVoiceStore((s) => s.voiceSetVideoActive);
 
   // Per-user volume control
   const [volumeMenu, setVolumeMenu] = useState<{ identity: string; x: number; y: number } | null>(null);
@@ -220,7 +221,7 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
     const pttKey = localStorage.getItem('drocsid_ptt_key') || 'Space';
 
     // Start muted for PTT mode
-    if (!useServerStore.getState().voiceSelfMute) {
+    if (!useVoiceStore.getState().voiceSelfMute) {
       voiceToggleMute();
       localParticipant.setMicrophoneEnabled(false);
     }
@@ -231,7 +232,7 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
       e.preventDefault();
       pttActiveRef.current = true;
       // Unmute
-      if (useServerStore.getState().voiceSelfMute) {
+      if (useVoiceStore.getState().voiceSelfMute) {
         voiceToggleMute();
         localParticipant.setMicrophoneEnabled(true);
       }
@@ -242,7 +243,7 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
       e.preventDefault();
       pttActiveRef.current = false;
       // Mute
-      if (!useServerStore.getState().voiceSelfMute) {
+      if (!useVoiceStore.getState().voiceSelfMute) {
         voiceToggleMute();
         localParticipant.setMicrophoneEnabled(false);
       }

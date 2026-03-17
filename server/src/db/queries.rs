@@ -1732,6 +1732,22 @@ pub async fn count_users(pool: &PgPool) -> Result<i64, sqlx::Error> {
     Ok(row.0)
 }
 
+pub async fn count_servers_owned_by(pool: &PgPool, owner_id: Uuid) -> Result<i64, sqlx::Error> {
+    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM servers WHERE owner_id = $1")
+        .bind(owner_id)
+        .fetch_one(pool)
+        .await?;
+    Ok(row.0)
+}
+
+pub async fn count_server_channels(pool: &PgPool, server_id: Uuid) -> Result<i64, sqlx::Error> {
+    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM channels WHERE server_id = $1")
+        .bind(server_id)
+        .fetch_one(pool)
+        .await?;
+    Ok(row.0)
+}
+
 pub async fn set_user_admin(pool: &PgPool, user_id: Uuid, is_admin: bool) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE users SET is_admin = $2 WHERE id = $1")
         .bind(user_id)

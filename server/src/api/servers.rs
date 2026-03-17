@@ -14,6 +14,38 @@ use crate::types::entities::{
 };
 use crate::types::permissions::Permissions;
 
+/// Helper: verify server exists and user is a member.
+/// Returns the `Server` on success.
+pub(crate) async fn resolve_server_member(
+    db: &sqlx::PgPool,
+    server_id: Uuid,
+    user_id: Uuid,
+) -> Result<crate::types::entities::Server, ApiError> {
+    let server = queries::get_server_by_id(db, server_id)
+        .await?
+        .ok_or(ApiError::NotFound("Server"))?;
+    queries::get_server_member(db, server_id, user_id)
+        .await?
+        .ok_or(ApiError::NotFound("Server"))?;
+    Ok(server)
+}
+
+/// Helper: verify server exists and user is the owner.
+/// Returns the `Server` on success, `Forbidden` if not owner.
+pub(crate) async fn resolve_server_owner(
+    db: &sqlx::PgPool,
+    server_id: Uuid,
+    user_id: Uuid,
+) -> Result<crate::types::entities::Server, ApiError> {
+    let server = queries::get_server_by_id(db, server_id)
+        .await?
+        .ok_or(ApiError::NotFound("Server"))?;
+    if server.owner_id != user_id {
+        return Err(ApiError::Forbidden);
+    }
+    Ok(server)
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", post(create_server))
@@ -39,6 +71,15 @@ async fn create_server(
     if body.name.is_empty() || body.name.len() > 100 {
         return Err(ApiError::InvalidInput(
             "Server name must be 1-100 characters".into(),
+        ));
+    }
+
+    // Limit: a user can own at most 20 servers
+    let owned_count = queries::count_servers_owned_by(&state.db, user.user_id).await
+        .map_err(|e| ApiError::Internal(e.into()))?;
+    if owned_count >= 20 {
+        return Err(ApiError::InvalidInput(
+            "You can own at most 20 servers".into(),
         ));
     }
 
@@ -108,14 +149,7 @@ async fn get_server(
     user: AuthUser,
     Path(server_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, ApiError> {
-    queries::get_server_member(&state.db, server_id, user.user_id)
-        .await?
-        .ok_or(ApiError::NotFound("Server"))?;
-
-    let server = queries::get_server_by_id(&state.db, server_id)
-        .await?
-        .ok_or(ApiError::NotFound("Server"))?;
-
+    let server = resolve_server_member(&state.db, server_id, user.user_id).await?;
     Ok(Json(server))
 }
 
@@ -124,14 +158,7 @@ async fn delete_server_handler(
     user: AuthUser,
     Path(server_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let server = queries::get_server_by_id(&state.db, server_id)
-        .await?
-        .ok_or(ApiError::NotFound("Server"))?;
-
-    // Only the owner can delete a server
-    if server.owner_id != user.user_id {
-        return Err(ApiError::Forbidden);
-    }
+    resolve_server_owner(&state.db, server_id, user.user_id).await?;
 
     queries::delete_server(&state.db, server_id).await?;
 
@@ -150,13 +177,7 @@ async fn get_channels(
     user: AuthUser,
     Path(server_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, ApiError> {
-    queries::get_server_member(&state.db, server_id, user.user_id)
-        .await?
-        .ok_or(ApiError::NotFound("Server"))?;
-
-    let server = queries::get_server_by_id(&state.db, server_id)
-        .await?
-        .ok_or(ApiError::NotFound("Server"))?;
+    let server = resolve_server_member(&state.db, server_id, user.user_id).await?;
 
     let channels = queries::get_server_channels(&state.db, server_id).await?;
 
@@ -209,6 +230,15 @@ async fn create_channel(
         ));
     }
 
+    // Limit: a server can have at most 100 channels
+    let channel_count = queries::count_server_channels(&state.db, server_id).await
+        .map_err(|e| ApiError::Internal(e.into()))?;
+    if channel_count >= 100 {
+        return Err(ApiError::InvalidInput(
+            "A server can have at most 100 channels".into(),
+        ));
+    }
+
     let instance_id =
         queries::ensure_local_instance(&state.db, &state.config.instance.domain).await?;
 
@@ -244,9 +274,7 @@ async fn get_members(
     user: AuthUser,
     Path(server_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, ApiError> {
-    queries::get_server_member(&state.db, server_id, user.user_id)
-        .await?
-        .ok_or(ApiError::NotFound("Server"))?;
+    resolve_server_member(&state.db, server_id, user.user_id).await?;
 
     let members = queries::get_server_members(&state.db, server_id).await?;
 

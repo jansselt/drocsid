@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuthStore } from '../../stores/authStore';
-import { useServerStore } from '../../stores/serverStore';
+import { usePresenceStore } from '../../stores/presenceStore';
 import { StatusIndicator } from '../common/StatusIndicator';
 import * as api from '../../api/client';
 import './UserPanel.css';
@@ -18,8 +18,8 @@ interface UserPanelProps {
 
 export function UserPanel({ onOpenSettings }: UserPanelProps) {
   const user = useAuthStore((s) => s.user);
-  const presences = useServerStore((s) => s.presences);
-  const updateMyStatus = useServerStore((s) => s.updateMyStatus);
+  const presences = usePresenceStore((s) => s.presences);
+  const updateMyStatus = usePresenceStore((s) => s.updateMyStatus);
   const [showPicker, setShowPicker] = useState(false);
   const [customStatusInput, setCustomStatusInput] = useState('');
 

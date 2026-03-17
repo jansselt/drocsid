@@ -5,6 +5,7 @@ use axum::{Json, Router};
 use uuid::Uuid;
 
 use crate::api::auth::AuthUser;
+use crate::api::servers::resolve_server_member;
 use crate::db::queries;
 use crate::error::ApiError;
 use crate::services::permissions as perm_service;
@@ -37,10 +38,7 @@ async fn list_roles(
     user: AuthUser,
     Path(server_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, ApiError> {
-    // Verify membership
-    queries::get_server_member(&state.db, server_id, user.user_id)
-        .await?
-        .ok_or(ApiError::NotFound("Server"))?;
+    resolve_server_member(&state.db, server_id, user.user_id).await?;
 
     let roles = queries::get_server_roles(&state.db, server_id).await?;
     Ok(Json(roles))
@@ -51,9 +49,7 @@ async fn get_role(
     user: AuthUser,
     Path((server_id, role_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, ApiError> {
-    queries::get_server_member(&state.db, server_id, user.user_id)
-        .await?
-        .ok_or(ApiError::NotFound("Server"))?;
+    resolve_server_member(&state.db, server_id, user.user_id).await?;
 
     let role = queries::get_role_by_id(&state.db, role_id)
         .await?
@@ -72,11 +68,8 @@ async fn create_role(
     Path(server_id): Path<Uuid>,
     Json(body): Json<CreateRoleRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let server = queries::get_server_by_id(&state.db, server_id)
-        .await?
-        .ok_or(ApiError::NotFound("Server"))?;
+    let server = resolve_server_member(&state.db, server_id, user.user_id).await?;
 
-    // Check MANAGE_ROLES permission
     if !perm_service::has_server_permission(
         &state.db,
         server_id,
@@ -247,9 +240,7 @@ async fn get_member_roles(
     user: AuthUser,
     Path((server_id, target_user_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, ApiError> {
-    queries::get_server_member(&state.db, server_id, user.user_id)
-        .await?
-        .ok_or(ApiError::NotFound("Server"))?;
+    resolve_server_member(&state.db, server_id, user.user_id).await?;
 
     let roles = queries::get_member_roles(&state.db, server_id, target_user_id).await?;
     Ok(Json(roles))

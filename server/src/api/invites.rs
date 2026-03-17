@@ -7,6 +7,7 @@ use rand::Rng;
 use uuid::Uuid;
 
 use crate::api::auth::AuthUser;
+use crate::api::servers::resolve_server_member;
 use crate::db::queries;
 use crate::error::ApiError;
 use crate::services::permissions as perm_service;
@@ -47,9 +48,7 @@ async fn create_invite(
     Path(server_id): Path<Uuid>,
     Json(body): Json<CreateInviteRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let server = queries::get_server_by_id(&state.db, server_id)
-        .await?
-        .ok_or(ApiError::NotFound("Server"))?;
+    let server = resolve_server_member(&state.db, server_id, user.user_id).await?;
 
     if !perm_service::has_server_permission(
         &state.db,
@@ -111,9 +110,7 @@ async fn get_invites(
     user: AuthUser,
     Path(server_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let server = queries::get_server_by_id(&state.db, server_id)
-        .await?
-        .ok_or(ApiError::NotFound("Server"))?;
+    let server = resolve_server_member(&state.db, server_id, user.user_id).await?;
 
     if !perm_service::has_server_permission(
         &state.db,
@@ -262,9 +259,7 @@ async fn delete_invite(
     user: AuthUser,
     Path((server_id, code)): Path<(Uuid, String)>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let server = queries::get_server_by_id(&state.db, server_id)
-        .await?
-        .ok_or(ApiError::NotFound("Server"))?;
+    let server = resolve_server_member(&state.db, server_id, user.user_id).await?;
 
     if !perm_service::has_server_permission(
         &state.db,

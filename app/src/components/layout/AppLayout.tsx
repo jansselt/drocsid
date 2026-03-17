@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useServerStore } from '../../stores/serverStore';
+import { useVoiceStore } from '../../stores/voiceStore';
+import { useUiStore } from '../../stores/uiStore';
 import { gateway } from '../../api/gateway';
 import { initAudio } from '../../utils/notificationSounds';
 import { initSoundboardPlayback } from '../../utils/soundboardAudio';
@@ -28,10 +30,10 @@ export function AppLayout() {
   const setBookmarkedIds = useServerStore((s) => s.setBookmarkedIds);
   const restoreNavigation = useServerStore((s) => s.restoreNavigation);
   const activeServerId = useServerStore((s) => s.activeServerId);
-  const showChannelSidebar = useServerStore((s) => s.showChannelSidebar);
-  const showMemberSidebar = useServerStore((s) => s.showMemberSidebar);
-  const toggleChannelSidebar = useServerStore((s) => s.toggleChannelSidebar);
-  const toggleMemberSidebar = useServerStore((s) => s.toggleMemberSidebar);
+  const showChannelSidebar = useUiStore((s) => s.showChannelSidebar);
+  const showMemberSidebar = useUiStore((s) => s.showMemberSidebar);
+  const toggleChannelSidebar = useUiStore((s) => s.toggleChannelSidebar);
+  const toggleMemberSidebar = useUiStore((s) => s.toggleMemberSidebar);
   const [showSwitcher, setShowSwitcher] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [bugReport, setBugReport] = useState<{ open: boolean; prefill: string }>({ open: false, prefill: '' });
@@ -61,7 +63,7 @@ export function AppLayout() {
     // Set up dispatch event handlers
     const cleanup = initGatewayHandlers();
     const cleanupSoundboard = initSoundboardPlayback(
-      () => useServerStore.getState().voiceSelfDeaf,
+      () => useVoiceStore.getState().voiceSelfDeaf,
     );
 
     return () => {
@@ -152,7 +154,7 @@ export function AppLayout() {
   useEffect(() => {
     const goIdle = () => {
       // Never go idle while in a voice channel
-      if (useServerStore.getState().voiceChannelId) return;
+      if (useVoiceStore.getState().voiceChannelId) return;
       if (!isIdleRef.current) {
         isIdleRef.current = true;
         gateway.sendPresenceUpdate('idle');

@@ -13,6 +13,26 @@ use crate::db::queries;
 use crate::error::ApiError;
 use crate::types::entities::{AuthResponse, PublicUser, TokenResponse};
 
+/// Basic email format validation without pulling in a heavy crate.
+fn is_valid_email(email: &str) -> bool {
+    if email.len() > 254 {
+        return false;
+    }
+    let parts: Vec<&str> = email.split('@').collect();
+    if parts.len() != 2 {
+        return false;
+    }
+    let local = parts[0];
+    let domain = parts[1];
+    if local.is_empty() || domain.is_empty() {
+        return false;
+    }
+    if !domain.contains('.') {
+        return false;
+    }
+    true
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JwtClaims {
     pub sub: Uuid,
@@ -39,6 +59,11 @@ pub async fn register(
     if password.len() < 8 {
         return Err(ApiError::InvalidInput(
             "Password must be at least 8 characters".into(),
+        ));
+    }
+    if !is_valid_email(email) {
+        return Err(ApiError::InvalidInput(
+            "Invalid email address".into(),
         ));
     }
 

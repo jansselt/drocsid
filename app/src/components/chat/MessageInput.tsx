@@ -1,45 +1,26 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useServerStore } from '../../stores/serverStore';
-import type { ServerMemberWithUser } from '../../types';
+import { usePresenceStore } from '../../stores/presenceStore';
+import { useUiStore } from '../../stores/uiStore';
 import { GifPicker } from './GifPicker';
 import { EmojiPicker } from './EmojiPicker';
 import { SchedulePicker } from './SchedulePicker';
 import { PollCreator } from './PollCreator';
+import { SlashCommandDropdown } from './SlashCommandDropdown';
+import { MentionDropdown } from './MentionDropdown';
+import { UploadPreviews } from './UploadPreviews';
+import { useSlashCommands, SLASH_COMMANDS } from './hooks/useSlashCommands';
+import { useMentions } from './hooks/useMentions';
+import { useFileUpload } from './hooks/useFileUpload';
 import * as api from '../../api/client';
 import './MessageInput.css';
-
-type MentionItem =
-  | { kind: 'member'; member: ServerMemberWithUser }
-  | { kind: 'special'; label: string };
 
 interface MessageInputProps {
   channelId: string;
 }
 
-interface PendingUpload {
-  file: File;
-  name: string;
-  progress: 'pending' | 'uploading' | 'done' | 'error';
-}
-
-// Slash commands that transform into text
-const SLASH_COMMANDS: Record<string, string | null> = {
-  '/shrug':     '¯\\_(ツ)_/¯',
-  '/tableflip': '(╯°□°)╯︵ ┻━┻',
-  '/unflip':    '┬─┬ ノ( ゜-゜ノ)',
-  '/lenny':     '( ͡° ͜ʖ ͡°)',
-  '/disapprove': 'ಠ_ಠ',
-  '/sparkles':  '✨',
-  '/spoiler':   null, // special: wraps text in ||spoiler||
-  '/gif':       null, // special: opens GIF picker
-  '/bug':       null, // special: opens bug report modal
-  '/poll':      null, // special: opens poll creator
-};
-
 export function MessageInput({ channelId }: MessageInputProps) {
   const [content, setContent] = useState('');
-  const [uploads, setUploads] = useState<PendingUpload[]>([]);
-  const [isDragging, setIsDragging] = useState(false);
   const [showGifs, setShowGifs] = useState(false);
   const [gifQuery, setGifQuery] = useState('');
   const [showEmojis, setShowEmojis] = useState(false);
@@ -48,19 +29,23 @@ export function MessageInput({ channelId }: MessageInputProps) {
   const [showPoll, setShowPoll] = useState(false);
   const sendMessage = useServerStore((s) => s.sendMessage);
   const scheduleMessage = useServerStore((s) => s.scheduleMessage);
-  const replyingTo = useServerStore((s) => s.replyingTo);
-  const setReplyingTo = useServerStore((s) => s.setReplyingTo);
-  const sendTypingAction = useServerStore((s) => s.sendTyping);
+  const replyingTo = useUiStore((s) => s.replyingTo);
+  const setReplyingTo = useUiStore((s) => s.setReplyingTo);
+  const sendTypingAction = usePresenceStore((s) => s.sendTyping);
   const activeServerId = useServerStore((s) => s.activeServerId);
   const members = useServerStore((s) => activeServerId ? s.members.get(activeServerId) : undefined);
   const users = useServerStore((s) => s.users);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const [mentionQuery, setMentionQuery] = useState<{ query: string; startPos: number } | null>(null);
-  const [mentionIndex, setMentionIndex] = useState(0);
-  const [slashIndex, setSlashIndex] = useState(0);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const lastTypingRef = useRef(0);
-  const dragCounterRef = useRef(0);
+
+  const focusInput = useCallback(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  // Hooks
+  const slash = useSlashCommands(content);
+  const mentions = useMentions(content, setContent, members, users, focusInput);
+  const fileUpload = useFileUpload();
 
   // Reset typing timer when channel changes
   useEffect(() => {
@@ -74,7 +59,7 @@ export function MessageInput({ channelId }: MessageInputProps) {
 
   const handleSubmit = async () => {
     let trimmed = content.trim();
-    if (!trimmed && uploads.length === 0) return;
+    if (!trimmed && fileUpload.uploads.length === 0) return;
 
     // Process slash commands
     if (trimmed.startsWith('/')) {
@@ -115,11 +100,11 @@ export function MessageInput({ channelId }: MessageInputProps) {
     }
 
     // Upload any pending files first
-    for (let i = 0; i < uploads.length; i++) {
-      const upload = uploads[i];
+    for (let i = 0; i < fileUpload.uploads.length; i++) {
+      const upload = fileUpload.uploads[i];
       if (upload.progress !== 'pending') continue;
 
-      setUploads((prev) =>
+      fileUpload.setUploads((prev) =>
         prev.map((u, idx) => (idx === i ? { ...u, progress: 'uploading' as const } : u)),
       );
 
@@ -131,7 +116,7 @@ export function MessageInput({ channelId }: MessageInputProps) {
           ? `${trimmed}\n${file_url}`
           : file_url;
 
-        setUploads([]);
+        fileUpload.setUploads([]);
         setContent('');
         const replyId = replyingTo?.id;
         setReplyingTo(null);
@@ -139,7 +124,7 @@ export function MessageInput({ channelId }: MessageInputProps) {
         return;
       } catch (err) {
         console.error('Upload failed:', err);
-        setUploads((prev) =>
+        fileUpload.setUploads((prev) =>
           prev.map((u, idx) => (idx === i ? { ...u, progress: 'error' as const } : u)),
         );
         return;
@@ -168,171 +153,15 @@ export function MessageInput({ channelId }: MessageInputProps) {
     }
   };
 
-  const addFiles = useCallback((files: FileList) => {
-    const newUploads: PendingUpload[] = Array.from(files).map((file) => ({
-      file,
-      name: file.name,
-      progress: 'pending' as const,
-    }));
-    setUploads((prev) => [...prev, ...newUploads]);
-  }, []);
-
-  const handleDragEnter = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    dragCounterRef.current++;
-    if (e.dataTransfer.types.includes('Files')) {
-      setIsDragging(true);
-    }
-  }, []);
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    dragCounterRef.current--;
-    if (dragCounterRef.current === 0) {
-      setIsDragging(false);
-    }
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounterRef.current = 0;
-    setIsDragging(false);
-    if (e.dataTransfer.files.length > 0) {
-      addFiles(e.dataTransfer.files);
-    }
-  }, [addFiles]);
-
-  const handlePaste = useCallback((e: React.ClipboardEvent) => {
-    const files = e.clipboardData.files;
-    if (files.length > 0) {
-      e.preventDefault();
-      addFiles(files);
-      return;
-    }
-    // Fallback: webkit2gtk older versions return empty clipboardData.files
-    // for pasted images. Use the async Clipboard API to read image blobs.
-    if (navigator.clipboard?.read) {
-      navigator.clipboard.read().then((items) => {
-        const promises = items.map(async (item) => {
-          const imageType = item.types.find((t) => t.startsWith('image/'));
-          if (!imageType) return null;
-          const blob = await item.getType(imageType);
-          const ext = imageType.split('/')[1] || 'png';
-          return new File([blob], `pasted-image.${ext}`, { type: imageType });
-        });
-        return Promise.all(promises);
-      }).then((results) => {
-        const imageFiles = results.filter((f): f is File => f !== null);
-        if (imageFiles.length > 0) {
-          const dt = new DataTransfer();
-          imageFiles.forEach((f) => dt.items.add(f));
-          addFiles(dt.files);
-        }
-      }).catch(() => {
-        // Clipboard API unavailable or denied — no-op
-      });
-    }
-  }, [addFiles]);
-
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      addFiles(e.target.files);
-      e.target.value = '';
-    }
-  }, [addFiles]);
-
-  const removeUpload = useCallback((index: number) => {
-    setUploads((prev) => prev.filter((_, i) => i !== index));
-  }, []);
-
-  const formatSize = (bytes: number): string => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  // Slash command suggestions — only while typing the command name (before any space)
-  const slashSuggestions = content.startsWith('/') && !content.includes(' ')
-    ? Object.keys(SLASH_COMMANDS).filter((cmd) =>
-        cmd.startsWith(content.toLowerCase()),
-      )
-    : [];
-
-  // Mention suggestions - filtered member list + @everyone/@here
-  const mentionSuggestions: MentionItem[] = useMemo(() => {
-    if (!mentionQuery) return [];
-    const q = mentionQuery.query.toLowerCase();
-    const items: MentionItem[] = [];
-    // Add @everyone / @here when they match
-    for (const label of ['everyone', 'here']) {
-      if (label.startsWith(q)) {
-        items.push({ kind: 'special', label });
-      }
-    }
-    if (members) {
-      for (const m of members) {
-        if (items.length >= 10) break;
-        const name = m.nickname || m.user.display_name || m.user.username;
-        if (name.toLowerCase().includes(q) || m.user.username.toLowerCase().includes(q)) {
-          items.push({ kind: 'member', member: m });
-        }
-      }
-    }
-    return items.slice(0, 10);
-  }, [mentionQuery, members]);
-
-  // Detect @mention trigger from cursor position
-  const updateMentionQuery = useCallback((text: string, cursorPos: number) => {
-    // Look backwards from cursor for an unmatched @
-    const before = text.slice(0, cursorPos);
-    const atIdx = before.lastIndexOf('@');
-    if (atIdx === -1) { setMentionQuery(null); return; }
-    // @ must be at start or after a space/newline
-    if (atIdx > 0 && !/\s/.test(before[atIdx - 1])) { setMentionQuery(null); return; }
-    const query = before.slice(atIdx + 1);
-    // No spaces in mention query (user hasn't finished typing the name)
-    if (/\s/.test(query)) { setMentionQuery(null); return; }
-    setMentionQuery({ query, startPos: atIdx });
-    setMentionIndex(0);
-  }, []);
-
-  const insertMention = useCallback((userId: string, displayName: string) => {
-    if (!mentionQuery) return;
-    const before = content.slice(0, mentionQuery.startPos);
-    const after = content.slice(mentionQuery.startPos + mentionQuery.query.length + 1);
-    // Use @username format — readable in the textarea and handled by both backend
-    // mention parser and frontend Markdown renderer
-    const user = users.get(userId);
-    const username = user?.username || displayName;
-    setContent(before + `@${username} ` + after);
-    setMentionQuery(null);
-    inputRef.current?.focus();
-  }, [mentionQuery, content, users]);
-
-  const insertSpecialMention = useCallback((label: string) => {
-    if (!mentionQuery) return;
-    const before = content.slice(0, mentionQuery.startPos);
-    const after = content.slice(mentionQuery.startPos + mentionQuery.query.length + 1);
-    setContent(before + `@${label} ` + after);
-    setMentionQuery(null);
-    inputRef.current?.focus();
-  }, [mentionQuery, content]);
-
   return (
     <div
-      className={`message-input-wrapper ${isDragging ? 'dragging' : ''}`}
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      className={`message-input-wrapper ${fileUpload.isDragging ? 'dragging' : ''}`}
+      onDragEnter={fileUpload.handleDragEnter}
+      onDragOver={fileUpload.handleDragOver}
+      onDragLeave={fileUpload.handleDragLeave}
+      onDrop={fileUpload.handleDrop}
     >
-      {isDragging && (
+      {fileUpload.isDragging && (
         <div className="drop-overlay">
           Drop files to upload
         </div>
@@ -349,132 +178,47 @@ export function MessageInput({ channelId }: MessageInputProps) {
         </div>
       )}
 
-      {uploads.length > 0 && (
-        <div className="upload-previews">
-          {uploads.map((upload, i) => (
-            <div key={i} className={`upload-preview ${upload.progress}`}>
-              {upload.file.type.startsWith('image/') && (
-                <img
-                  className="upload-thumb"
-                  src={URL.createObjectURL(upload.file)}
-                  alt=""
-                  onLoad={(e) => URL.revokeObjectURL((e.target as HTMLImageElement).src)}
-                />
-              )}
-              <span className="upload-name">{upload.name}</span>
-              <span className="upload-size">{formatSize(upload.file.size)}</span>
-              {upload.progress === 'pending' && (
-                <button className="upload-remove" onClick={() => removeUpload(i)}>x</button>
-              )}
-              {upload.progress === 'uploading' && (
-                <span className="upload-status">Uploading...</span>
-              )}
-              {upload.progress === 'error' && (
-                <span className="upload-status error">Failed</span>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+      <UploadPreviews uploads={fileUpload.uploads} onRemove={fileUpload.removeUpload} />
 
-      {slashSuggestions.length > 0 && (
-        <div className="slash-suggestions">
-          {slashSuggestions.map((cmd, i) => (
-            <button
-              key={cmd}
-              className={`slash-suggestion ${i === slashIndex ? 'active' : ''}`}
-              ref={i === slashIndex ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                setContent(cmd + ' ');
-                inputRef.current?.focus();
-              }}
-              onMouseEnter={() => setSlashIndex(i)}
-            >
-              <span className="slash-cmd-name">{cmd}</span>
-              <span className="slash-cmd-desc">
-                {cmd === '/spoiler' ? 'Hide text behind spoiler' : cmd === '/gif' ? 'Open GIF picker' : cmd === '/bug' ? 'Report a bug' : cmd === '/poll' ? 'Create a poll' : SLASH_COMMANDS[cmd]}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
+      <SlashCommandDropdown
+        commands={slash.filteredCommands}
+        selectedIndex={slash.slashIndex}
+        onSelect={(cmd) => slash.handleSelect(cmd, setContent, focusInput)}
+        onHover={slash.setSlashIndex}
+      />
 
-      {mentionSuggestions.length > 0 && (
-        <div className="slash-suggestions">
-          {mentionSuggestions.map((item, i) => {
-            if (item.kind === 'special') {
-              return (
-                <button
-                  key={item.label}
-                  className={`slash-suggestion ${i === mentionIndex ? 'active' : ''}`}
-                  ref={i === mentionIndex ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    insertSpecialMention(item.label);
-                  }}
-                  onMouseEnter={() => setMentionIndex(i)}
-                >
-                  <span className="mention-avatar">@</span>
-                  <span className="slash-cmd-name">@{item.label}</span>
-                  <span className="slash-cmd-desc">{item.label === 'everyone' ? 'Notify all members' : 'Notify online members'}</span>
-                </button>
-              );
-            }
-            const m = item.member;
-            const name = m.nickname || m.user.display_name || m.user.username;
-            return (
-              <button
-                key={m.user_id}
-                className={`slash-suggestion ${i === mentionIndex ? 'active' : ''}`}
-                ref={i === mentionIndex ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  insertMention(m.user_id, name);
-                }}
-                onMouseEnter={() => setMentionIndex(i)}
-              >
-                <span className="mention-avatar">
-                  {m.user.avatar_url ? (
-                    <img src={m.user.avatar_url} alt="" />
-                  ) : (
-                    name[0].toUpperCase()
-                  )}
-                </span>
-                <span className="slash-cmd-name">{name}</span>
-                {m.user.username !== name && (
-                  <span className="slash-cmd-desc">{m.user.username}</span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      <MentionDropdown
+        suggestions={mentions.mentionSuggestions}
+        selectedIndex={mentions.mentionIndex}
+        onSelectMember={mentions.insertMention}
+        onSelectSpecial={mentions.insertSpecialMention}
+        onHover={mentions.setMentionIndex}
+      />
 
       <div className="message-input-container">
         <button
           className="upload-btn"
-          onClick={() => fileInputRef.current?.click()}
+          onClick={fileUpload.openFilePicker}
           title="Upload file"
         >
           +
         </button>
         <input
-          ref={fileInputRef}
+          ref={fileUpload.fileInputRef}
           type="file"
           multiple
           style={{ display: 'none' }}
-          onChange={handleFileSelect}
+          onChange={fileUpload.handleFileSelect}
         />
         <textarea
           ref={inputRef}
           className="message-input"
           value={content}
-          onPaste={handlePaste}
+          onPaste={fileUpload.handlePaste}
           onChange={(e) => {
             setContent(e.target.value);
-            setSlashIndex(0);
-            updateMentionQuery(e.target.value, e.target.selectionStart ?? e.target.value.length);
+            slash.resetIndex();
+            mentions.updateMentionQuery(e.target.value, e.target.selectionStart ?? e.target.value.length);
             // Send typing indicator (throttled to every 5s)
             const now = Date.now();
             if (now - lastTypingRef.current > 5000 && e.target.value.trim()) {
@@ -484,57 +228,9 @@ export function MessageInput({ channelId }: MessageInputProps) {
           }}
           onKeyDown={(e) => {
             // Handle slash command keyboard nav
-            if (slashSuggestions.length > 0) {
-              if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                setSlashIndex((i) => (i + 1) % slashSuggestions.length);
-                return;
-              }
-              if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                setSlashIndex((i) => (i - 1 + slashSuggestions.length) % slashSuggestions.length);
-                return;
-              }
-              if (e.key === 'Tab' || e.key === 'Enter') {
-                e.preventDefault();
-                setContent(slashSuggestions[slashIndex] + ' ');
-                inputRef.current?.focus();
-                return;
-              }
-              if (e.key === 'Escape') {
-                e.preventDefault();
-                setContent('');
-                return;
-              }
-            }
+            if (slash.handleKeyDown(e, setContent, focusInput)) return;
             // Handle mention keyboard nav
-            if (mentionSuggestions.length > 0) {
-              if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                setMentionIndex((i) => (i + 1) % mentionSuggestions.length);
-                return;
-              }
-              if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                setMentionIndex((i) => (i - 1 + mentionSuggestions.length) % mentionSuggestions.length);
-                return;
-              }
-              if (e.key === 'Tab' || e.key === 'Enter') {
-                e.preventDefault();
-                const item = mentionSuggestions[mentionIndex];
-                if (item.kind === 'special') {
-                  insertSpecialMention(item.label);
-                } else {
-                  const m = item.member;
-                  insertMention(m.user_id, m.nickname || m.user.display_name || m.user.username);
-                }
-                return;
-              }
-              if (e.key === 'Escape') {
-                setMentionQuery(null);
-                return;
-              }
-            }
+            if (mentions.handleKeyDown(e)) return;
             handleKeyDown(e);
           }}
           placeholder="Send a message..."

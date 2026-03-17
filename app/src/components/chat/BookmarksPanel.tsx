@@ -29,8 +29,8 @@ export function BookmarksPanel({ onClose }: BookmarksPanelProps) {
       ]);
       setBookmarks(bookmarkResults);
       setTags(tagResults);
-    } catch {
-      // ignore
+    } catch (err) {
+      console.error('Failed to load bookmarks:', err);
     }
     setLoading(false);
   }, [activeTag, searchQuery]);
@@ -93,8 +93,8 @@ export function BookmarksPanel({ onClose }: BookmarksPanelProps) {
         ids.delete(messageId);
         return { bookmarkedMessageIds: ids };
       });
-    } catch {
-      // ignore
+    } catch (err) {
+      console.error('Failed to remove bookmark:', err);
     }
   }, []);
 

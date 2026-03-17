@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useServerStore } from '../../stores/serverStore';
+import { useVoiceStore } from '../../stores/voiceStore';
 import { useAuthStore } from '../../stores/authStore';
 import * as api from '../../api/client';
 import './VoiceChannel.css';
@@ -11,14 +12,14 @@ interface VoiceChannelProps {
 }
 
 export function VoiceChannel({ channelId, channelName, canManage }: VoiceChannelProps) {
-  const voiceChannelId = useServerStore((s) => s.voiceChannelId);
-  const voiceStates = useServerStore((s) => s.voiceStates);
-  const voiceJoin = useServerStore((s) => s.voiceJoin);
-  const loadVoiceStates = useServerStore((s) => s.loadVoiceStates);
+  const voiceChannelId = useVoiceStore((s) => s.voiceChannelId);
+  const voiceStates = useVoiceStore((s) => s.voiceStates);
+  const voiceJoin = useVoiceStore((s) => s.voiceJoin);
+  const loadVoiceStates = useVoiceStore((s) => s.loadVoiceStates);
   const users = useServerStore((s) => s.users);
   const currentUser = useAuthStore((s) => s.user);
 
-  const speakingUsers = useServerStore((s) => s.speakingUsers);
+  const speakingUsers = useVoiceStore((s) => s.speakingUsers);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(channelName);

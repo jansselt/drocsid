@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useServerStore } from '../../stores/serverStore';
+import { useUiStore } from '../../stores/uiStore';
 import { useAuthStore } from '../../stores/authStore';
 import type { Message, ReactionGroup } from '../../types';
 import { Markdown } from './Markdown';
@@ -26,7 +27,7 @@ export function MessageList({ channelId }: MessageListProps) {
   const pinMessage = useServerStore((s) => s.pinMessage);
   const unpinMessage = useServerStore((s) => s.unpinMessage);
   const loadMoreMessages = useServerStore((s) => s.loadMoreMessages);
-  const setReplyingTo = useServerStore((s) => s.setReplyingTo);
+  const setReplyingTo = useUiStore((s) => s.setReplyingTo);
   const activeServerId = useServerStore((s) => s.activeServerId);
   const members = useServerStore((s) => activeServerId ? s.members.get(activeServerId) : undefined);
   const roles = useServerStore((s) => activeServerId ? s.roles.get(activeServerId) : undefined);

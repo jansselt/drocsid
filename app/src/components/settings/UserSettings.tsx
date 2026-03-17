@@ -80,7 +80,7 @@ export function UserSettings({ onClose }: UserSettingsProps) {
         setTimezone(detected);
         api.updateMe({ timezone: detected }).then((updated) => {
           useAuthStore.setState({ user: updated });
-        }).catch(() => {});
+        }).catch((err: unknown) => { console.error('Failed to auto-detect timezone:', err); });
       }
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -109,8 +109,8 @@ export function UserSettings({ onClose }: UserSettingsProps) {
 
       const updated = await api.updateMe(updates);
       useAuthStore.setState({ user: updated });
-    } catch {
-      // Error handled silently
+    } catch (err) {
+      console.error('Failed to save profile:', err);
     }
     setSaving(false);
   };
@@ -145,8 +145,8 @@ export function UserSettings({ onClose }: UserSettingsProps) {
         users.set(updated.id, updated);
         return { users };
       });
-    } catch {
-      // Error handled silently
+    } catch (err) {
+      console.error('Failed to upload avatar:', err);
     }
     setUploading(false);
   };

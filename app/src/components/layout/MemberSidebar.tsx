@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useServerStore } from '../../stores/serverStore';
+import { usePresenceStore } from '../../stores/presenceStore';
 import { useAuthStore } from '../../stores/authStore';
 import { StatusIndicator } from '../common/StatusIndicator';
 import * as api from '../../api/client';
@@ -45,7 +46,7 @@ function getRoleColor(roleIds: string[], roles: Role[] | undefined): string | un
 export function MemberSidebar() {
   const activeServerId = useServerStore((s) => s.activeServerId);
   const members = useServerStore((s) => activeServerId ? s.members.get(activeServerId) : undefined);
-  const presences = useServerStore((s) => s.presences);
+  const presences = usePresenceStore((s) => s.presences);
   const roles = useServerStore((s) => activeServerId ? s.roles.get(activeServerId) : undefined);
   const loadMembers = useServerStore((s) => s.loadMembers);
   const tick = useMinuteTick();
