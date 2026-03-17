@@ -277,7 +277,13 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
     if (!room) return;
 
     const onActiveSpeakers = (speakers: Participant[]) => {
-      const nowSpeaking = new Set(speakers.map((s) => s.identity));
+      // Filter out muted participants — LiveKit's server VAD can report
+      // a muted participant as speaking due to residual audio signal
+      const nowSpeaking = new Set(
+        speakers
+          .filter((s) => s.isMicrophoneEnabled !== false)
+          .map((s) => s.identity)
+      );
       const next = new Set(speakingRef.current);
 
       // Add new speakers immediately
@@ -319,8 +325,9 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
   // Local audio level monitoring for the local participant.
   // LiveKit's server-side VAD has round-trip latency; this detects local speaking
   // instantly using the same AnalyserNode approach as the mic test.
+  // Don't run when muted — the MediaStream may still carry residual signal.
   useEffect(() => {
-    if (!localParticipant) return;
+    if (!localParticipant || voiceSelfMute) return;
     const audioTrack = localParticipant.getTrackPublication(Track.Source.Microphone)?.track;
     const mediaStream = audioTrack?.mediaStream;
     if (!mediaStream) return;
@@ -381,7 +388,7 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
       if (holdTimer) clearTimeout(holdTimer);
       ctx.close();
     };
-  }, [localParticipant, localParticipant?.getTrackPublication(Track.Source.Microphone)?.track?.mediaStream, updateSpeakingStore]);
+  }, [localParticipant, localParticipant?.getTrackPublication(Track.Source.Microphone)?.track?.mediaStream, voiceSelfMute, updateSpeakingStore]);
 
   // Apply saved audio output device selection
   useEffect(() => {
