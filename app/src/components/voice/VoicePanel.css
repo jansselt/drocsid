@@ -63,6 +63,8 @@
   padding: 0.5rem;
   min-height: 0;
   overflow: hidden;
+  /* Prevent video from growing beyond the available flex space */
+  grid-template-rows: 1fr;
 }
 
 .voice-video-tile {
@@ -71,6 +73,7 @@
   border-radius: 8px;
   overflow: hidden;
   min-height: 0;
+  max-height: 100%;
 }
 
 .voice-video-tile video,
@@ -78,6 +81,7 @@
   width: 100%;
   height: 100%;
   object-fit: contain;
+  max-height: 100%;
 }
 
 .voice-video-tile.screen-share {
