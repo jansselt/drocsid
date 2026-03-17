@@ -58,7 +58,7 @@ impl GatewayPayload {
     pub fn ready(data: ReadyPayload, seq: u64) -> Self {
         Self {
             op: GatewayOpcode::Dispatch as u8,
-            d: Some(serde_json::to_value(data).unwrap()),
+            d: Some(serde_json::to_value(data).expect("ReadyPayload must be serializable")),
             s: Some(seq),
             t: Some("READY".into()),
         }
@@ -67,7 +67,7 @@ impl GatewayPayload {
     pub fn dispatch(event: &str, data: impl Serialize, seq: u64) -> Self {
         Self {
             op: GatewayOpcode::Dispatch as u8,
-            d: Some(serde_json::to_value(data).unwrap()),
+            d: Some(serde_json::to_value(data).expect("dispatch data must be serializable")),
             s: Some(seq),
             t: Some(event.into()),
         }

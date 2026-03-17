@@ -20,8 +20,12 @@ pub async fn handle_connection(state: AppState, socket: WebSocket) {
 
     // Send Hello
     let hello = GatewayPayload::hello(state.gateway.heartbeat_interval());
+    let hello_text = match serde_json::to_string(&hello) {
+        Ok(t) => t,
+        Err(_) => return,
+    };
     if ws_sender
-        .send(Message::Text(serde_json::to_string(&hello).unwrap().into()))
+        .send(Message::Text(hello_text.into()))
         .await
         .is_err()
     {

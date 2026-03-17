@@ -72,7 +72,8 @@ impl PushService {
         let builder = WebPushBuilder::new(endpoint_uri, ua_public, ua_auth)
             .with_vapid(&self.vapid_keypair, &self.vapid_subject);
 
-        let payload_json = serde_json::to_vec(payload).unwrap();
+        let payload_json = serde_json::to_vec(payload)
+            .map_err(|e| PushError::Encryption(e.to_string()))?;
         let request = builder
             .build(payload_json)
             .map_err(|e| PushError::Encryption(e.to_string()))?;

@@ -1986,6 +1986,24 @@ pub async fn get_password_reset_token_by_hash(
     .await
 }
 
+/// Atomically delete a password reset token by hash (if valid and not expired)
+/// and return it. Prevents race conditions with concurrent reset requests.
+pub async fn consume_password_reset_token(
+    pool: &PgPool,
+    token_hash: &str,
+) -> Result<Option<PasswordResetToken>, sqlx::Error> {
+    sqlx::query_as::<_, PasswordResetToken>(
+        r#"
+        DELETE FROM password_reset_tokens
+        WHERE token_hash = $1 AND expires_at > now()
+        RETURNING id, user_id, token_hash, expires_at, created_at
+        "#,
+    )
+    .bind(token_hash)
+    .fetch_optional(pool)
+    .await
+}
+
 pub async fn delete_password_reset_token(
     pool: &PgPool,
     id: Uuid,

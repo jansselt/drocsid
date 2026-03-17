@@ -292,23 +292,23 @@ async fn get_messages(
 
     let result: Vec<serde_json::Value> = messages
         .iter()
-        .map(|msg| {
-            let mut val = serde_json::to_value(msg).unwrap();
-            let obj = val.as_object_mut().unwrap();
+        .filter_map(|msg| {
+            let mut val = serde_json::to_value(msg).ok()?;
+            let obj = val.as_object_mut()?;
             obj.insert(
                 "reactions".to_string(),
                 serde_json::to_value(
                     reaction_map.get(&msg.id).unwrap_or(&Vec::new()),
                 )
-                .unwrap(),
+                .ok()?,
             );
             if let Some(poll_results) = poll_map.get(&msg.id) {
                 obj.insert(
                     "poll".to_string(),
-                    serde_json::to_value(poll_results).unwrap(),
+                    serde_json::to_value(poll_results).ok()?,
                 );
             }
-            val
+            Some(val)
         })
         .collect();
 
@@ -1158,9 +1158,9 @@ async fn ack_message(
 // ── Helpers ───────────────────────────────────────────
 
 static RE_MENTION_ID: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"<@([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})>").unwrap());
+    LazyLock::new(|| Regex::new(r"<@([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})>").expect("RE_MENTION_ID is a valid regex"));
 static RE_MENTION_NAME: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"@(\w{2,32})").unwrap());
+    LazyLock::new(|| Regex::new(r"@(\w{2,32})").expect("RE_MENTION_NAME is a valid regex"));
 
 /// Parse `<@uuid>`, `@username`, `@everyone`, and `@here` mentions from message content.
 /// Returns a deduplicated list of mentioned user IDs (excluding the author).

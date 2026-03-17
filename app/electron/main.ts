@@ -269,6 +269,27 @@ function createMainWindow(): void {
     }
   );
 
+  // Inject Content-Security-Policy headers into all responses
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          [
+            "default-src 'self'",
+            "script-src 'self'",
+            "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' data: blob: https: http:",
+            "media-src 'self' blob: https: http:",
+            "connect-src 'self' https: wss: http: ws:",
+            "frame-src https://www.youtube.com https://open.spotify.com https://embed.bsky.app https://www.tiktok.com https://www.instagram.com https://www.threads.net",
+            "font-src 'self' https://cdn.jsdelivr.net",
+          ].join('; '),
+        ],
+      },
+    });
+  });
+
   if (isDev) {
     mainWindow.loadURL(DEV_URL);
   } else {

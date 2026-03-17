@@ -313,7 +313,8 @@ pub async fn complete_password_reset(
 
     let token_hash = hash_token(raw_token);
 
-    let reset_token = queries::get_password_reset_token_by_hash(pool, &token_hash)
+    // Atomically consume the token (DELETE ... RETURNING) to prevent race conditions
+    let reset_token = queries::consume_password_reset_token(pool, &token_hash)
         .await?
         .ok_or(ApiError::InvalidInput(
             "Invalid or expired reset token".into(),
@@ -327,7 +328,7 @@ pub async fn complete_password_reset(
         .map_err(|e| anyhow::anyhow!("Failed to hash password: {}", e))?
         .to_string();
 
-    // Update password and clean up tokens
+    // Update password and clean up any remaining tokens for this user
     queries::update_user_password_hash(pool, reset_token.user_id, &password_hash).await?;
     queries::delete_user_password_reset_tokens(pool, reset_token.user_id).await?;
 

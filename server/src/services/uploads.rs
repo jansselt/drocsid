@@ -41,10 +41,17 @@ pub async fn extract_multipart_file(
         .map_err(|e| ApiError::InvalidInput(format!("Multipart error: {e}")))?
         .ok_or_else(|| ApiError::InvalidInput("No file provided".into()))?;
 
-    let filename = field
+    let original_name = field
         .file_name()
         .unwrap_or("upload")
         .to_string();
+    let ext = std::path::Path::new(&original_name)
+        .extension()
+        .and_then(|e| e.to_str());
+    let filename = match ext {
+        Some(e) => format!("{}.{}", uuid::Uuid::now_v7(), e),
+        None => uuid::Uuid::now_v7().to_string(),
+    };
     let content_type = field
         .content_type()
         .unwrap_or("application/octet-stream")

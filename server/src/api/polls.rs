@@ -558,7 +558,9 @@ fn compute_instant_runoff(options: &[PollOption], votes: &[PollVote]) -> Vec<Ran
             // Find the first remaining candidate in this ballot
             for (option_id, _rank) in ballot {
                 if remaining.contains(option_id) {
-                    *first_choice_counts.get_mut(option_id).unwrap() += 1;
+                    if let Some(count) = first_choice_counts.get_mut(option_id) {
+                        *count += 1;
+                    }
                     break;
                 }
             }
@@ -599,7 +601,9 @@ fn compute_instant_runoff(options: &[PollOption], votes: &[PollVote]) -> Vec<Ran
     for ballot in user_ballots.values() {
         for (option_id, _rank) in ballot {
             if remaining.contains(option_id) {
-                *final_counts.get_mut(option_id).unwrap() += 1;
+                if let Some(count) = final_counts.get_mut(option_id) {
+                    *count += 1;
+                }
                 break;
             }
         }

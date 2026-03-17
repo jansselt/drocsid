@@ -8,6 +8,7 @@ import { ServerSidebar } from './ServerSidebar';
 import { ChannelSidebar } from './ChannelSidebar';
 import { ChatArea } from '../chat/ChatArea';
 import { MemberSidebar } from './MemberSidebar';
+import { ErrorBoundary } from '../ErrorBoundary';
 import { QuickSwitcher } from '../common/QuickSwitcher';
 import { BugReportModal } from '../feedback/BugReportModal';
 import { KeyboardShortcutsDialog } from '../common/KeyboardShortcutsDialog';
@@ -220,10 +221,22 @@ export function AppLayout() {
 
   return (
     <div className="app-layout">
-      <ServerSidebar />
-      {showChannelSidebar && <ChannelSidebar />}
-      <ChatArea />
-      {activeServerId && showMemberSidebar && <MemberSidebar />}
+      <ErrorBoundary>
+        <ServerSidebar />
+      </ErrorBoundary>
+      {showChannelSidebar && (
+        <ErrorBoundary>
+          <ChannelSidebar />
+        </ErrorBoundary>
+      )}
+      <ErrorBoundary>
+        <ChatArea />
+      </ErrorBoundary>
+      {activeServerId && showMemberSidebar && (
+        <ErrorBoundary>
+          <MemberSidebar />
+        </ErrorBoundary>
+      )}
       {showSwitcher && <QuickSwitcher onClose={() => setShowSwitcher(false)} />}
       {bugReport.open && (
         <BugReportModal
