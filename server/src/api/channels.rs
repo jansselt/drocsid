@@ -487,9 +487,9 @@ async fn edit_message(
     let reactions = build_reaction_groups(&state, message_id, user.user_id).await?;
 
     let event = MessageUpdateEvent {
-        message: updated.clone(),
-        attachments: attachments.clone(),
-        reactions: reactions.clone(),
+        message: updated,
+        attachments,
+        reactions,
     };
 
     if let Some(sid) = channel.server_id {

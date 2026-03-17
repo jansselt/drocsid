@@ -383,9 +383,9 @@ async fn retract_vote(
         channel_id,
         message_id: poll.message_id,
         poll_id,
-        options: results.options.clone(),
+        options: results.options,
         total_votes: results.total_votes,
-        ranked_results: results.ranked_results.clone(),
+        ranked_results: results.ranked_results,
     };
     if let Some(sid) = server_id {
         state

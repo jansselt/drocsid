@@ -143,7 +143,7 @@ async fn create_group_dm(
 
     let event = DmChannelCreateEvent {
         channel: channel.clone(),
-        recipients: recipients.clone(),
+        recipients,
     };
 
     // Notify all members
@@ -240,7 +240,7 @@ async fn add_group_dm_recipients(
     let all_public: Vec<PublicUser> = all_members.iter().map(|m| PublicUser::from(m.clone())).collect();
 
     let event = DmChannelCreateEvent {
-        channel: channel.clone(),
+        channel,
         recipients: all_public.clone(),
     };
 

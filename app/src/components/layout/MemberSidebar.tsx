@@ -3,6 +3,7 @@ import { useServerStore } from '../../stores/serverStore';
 import { usePresenceStore } from '../../stores/presenceStore';
 import { useAuthStore } from '../../stores/authStore';
 import { StatusIndicator } from '../common/StatusIndicator';
+import { useInfiniteScroll } from '../../hooks/useInfiniteScroll';
 import * as api from '../../api/client';
 import type { ServerMemberWithUser } from '../../types';
 import type { Role } from '../../types';
@@ -105,39 +106,43 @@ export function MemberSidebar() {
     }
   }
 
+  // Build a flat ordered list of all groups for windowed rendering
+  const allGroups: { label: string; total: number; members: (ServerMemberWithUser & { status: string })[] }[] = [
+    ...grouped.map((g) => ({ label: g.label, total: g.members.length, members: g.members })),
+    ...(ungroupedOnline.length > 0
+      ? [{ label: 'Online', total: ungroupedOnline.length, members: ungroupedOnline }]
+      : []),
+    ...(offline.length > 0
+      ? [{ label: 'Offline', total: offline.length, members: offline }]
+      : []),
+  ];
+
+  const totalMembers = allGroups.reduce((sum, g) => sum + g.members.length, 0);
+  const [visibleCount, sentinelRef] = useInfiniteScroll(totalMembers);
+
+  // Slice groups to only show visibleCount members total
+  let remaining = visibleCount;
+  const visibleGroups = allGroups.map((group) => {
+    if (remaining <= 0) return { ...group, visibleMembers: [] as typeof group.members };
+    const slice = group.members.slice(0, remaining);
+    remaining -= slice.length;
+    return { ...group, visibleMembers: slice };
+  }).filter((g) => g.visibleMembers.length > 0);
+
   return (
     <div className="member-sidebar">
-      {grouped.map((group) => (
+      {visibleGroups.map((group) => (
         <div key={group.label} className="member-group">
           <div className="member-group-label">
-            {group.label} — {group.members.length}
+            {group.label} — {group.total}
           </div>
-          {group.members.map((m) => (
+          {group.visibleMembers.map((m) => (
             <MemberItem key={m.user_id} member={m} tick={tick} />
           ))}
         </div>
       ))}
-
-      {ungroupedOnline.length > 0 && (
-        <div className="member-group">
-          <div className="member-group-label">
-            Online — {ungroupedOnline.length}
-          </div>
-          {ungroupedOnline.map((m) => (
-            <MemberItem key={m.user_id} member={m} tick={tick} />
-          ))}
-        </div>
-      )}
-
-      {offline.length > 0 && (
-        <div className="member-group">
-          <div className="member-group-label">
-            Offline — {offline.length}
-          </div>
-          {offline.map((m) => (
-            <MemberItem key={m.user_id} member={m} tick={tick} />
-          ))}
-        </div>
+      {visibleCount < totalMembers && (
+        <div ref={sentinelRef} style={{ height: 1 }} />
       )}
     </div>
   );
