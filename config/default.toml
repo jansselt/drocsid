@@ -12,7 +12,7 @@ url = "redis://localhost:6379"
 [auth]
 jwt_secret = "change-me-in-production"
 access_token_ttl_secs = 900
-refresh_token_ttl_secs = 2592000
+refresh_token_ttl_secs = 7776000
 
 [instance]
 domain = "localhost:8080"

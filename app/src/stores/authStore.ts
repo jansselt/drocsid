@@ -49,6 +49,9 @@ export const useAuthStore = create<AuthState>((set) => ({
       // If the token expired while the app was closed, this refreshes it first.
       const valid = await api.ensureValidToken();
       if (!valid) {
+        // ensureValidToken only returns false if tokens were cleared (auth
+        // rejection) or if there's a network error. If tokens still exist
+        // in localStorage, a future retry may succeed.
         set({ isLoading: false });
         return;
       }
@@ -58,7 +61,12 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ user, isAuthenticated: true, isLoading: false });
       gateway.connect();
     } catch {
-      api.clearTokens();
+      // getMe failed — could be network error or server issue.
+      // Only clear tokens if we're sure they're invalid.
+      // If the access token is still present, keep it for retry.
+      if (api.isTokenExpired() && !api.getAccessToken()) {
+        api.clearTokens();
+      }
       set({ isLoading: false });
     }
   },

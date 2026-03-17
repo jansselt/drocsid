@@ -48,9 +48,17 @@ function scheduleProactiveRefresh() {
     return;
   }
 
-  refreshTimer = setTimeout(() => {
+  refreshTimer = setTimeout(async () => {
     refreshTimer = null;
-    refreshAccessToken().catch(() => {});
+    const ok = await refreshAccessToken().catch(() => false);
+    if (!ok && refreshToken) {
+      // Refresh failed but we still have tokens (network error, not auth rejection).
+      // Retry in 30 seconds instead of waiting for the next full cycle.
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        refreshAccessToken().catch(() => {});
+      }, 30_000);
+    }
   }, delay);
 }
 
@@ -171,7 +179,12 @@ async function doRefresh(): Promise<boolean> {
     });
 
     if (!response.ok) {
-      clearTokens();
+      // Only clear tokens on definitive auth rejection (401/403).
+      // Other errors (500, 502, etc.) might be transient server issues —
+      // keep tokens so the next proactive refresh can retry.
+      if (response.status === 401 || response.status === 403) {
+        clearTokens();
+      }
       return false;
     }
 
@@ -179,7 +192,9 @@ async function doRefresh(): Promise<boolean> {
     setTokens(data.access_token, data.refresh_token);
     return true;
   } catch {
-    clearTokens();
+    // Network error (server unreachable, DNS failure, etc.)
+    // Do NOT clear tokens — the server may just be temporarily down.
+    // The proactive refresh timer will retry on the next cycle.
     return false;
   }
 }

@@ -214,12 +214,14 @@ pub async fn refresh(
         .await?
         .ok_or(ApiError::Unauthorized)?;
 
-    // Delete old session
-    queries::delete_session(pool, session.id).await?;
-
-    // Create new tokens
+    // Create new tokens BEFORE deleting old session — if this fails,
+    // the old session remains valid so the user doesn't get locked out.
     let (access_token, new_refresh_token) =
         create_tokens(pool, config, session.user_id).await?;
+
+    // Now safe to delete old session (if this fails, we have a stale
+    // session but the user still has valid new tokens)
+    queries::delete_session(pool, session.id).await.ok();
 
     Ok(TokenResponse {
         access_token,
