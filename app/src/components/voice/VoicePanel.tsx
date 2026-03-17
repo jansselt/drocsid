@@ -339,7 +339,8 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
     const tick = () => {
       analyser.getByteFrequencyData(data);
       const avg = data.reduce((a, b) => a + b, 0) / data.length;
-      const nowSpeaking = avg > LOCAL_SPEAK_THRESHOLD;
+      const isMuted = useVoiceStore.getState().voiceSelfMute;
+      const nowSpeaking = !isMuted && avg > LOCAL_SPEAK_THRESHOLD;
 
       if (nowSpeaking && !localSpeaking) {
         localSpeaking = true;
@@ -348,6 +349,16 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
         next.add(localParticipant.identity);
         updateSpeakingStore(next);
       } else if (!nowSpeaking && localSpeaking) {
+        // If muted, clear speaking immediately (no hold delay)
+        if (isMuted) {
+          localSpeaking = false;
+          if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+          const next = new Set(speakingRef.current);
+          next.delete(localParticipant.identity);
+          updateSpeakingStore(next);
+          raf = requestAnimationFrame(tick);
+          return;
+        }
         if (!holdTimer) {
           holdTimer = setTimeout(() => {
             localSpeaking = false;
