@@ -269,25 +269,30 @@ function createMainWindow(): void {
     }
   );
 
-  // Inject Content-Security-Policy headers into all responses
+  // Inject Content-Security-Policy headers only on our own pages (not third-party iframes)
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': [
-          [
-            "default-src 'self'",
-            "script-src 'self' 'unsafe-inline'",
-            "style-src 'self' 'unsafe-inline'",
-            "img-src 'self' data: blob: https: http:",
-            "media-src 'self' blob: https: http:",
-            "connect-src 'self' https: wss: http: ws:",
-            "frame-src https://www.youtube.com https://open.spotify.com https://embed.bsky.app https://www.tiktok.com https://www.instagram.com https://www.threads.net",
-            "font-src 'self' https://cdn.jsdelivr.net",
-          ].join('; '),
-        ],
-      },
-    });
+    const url = details.url;
+    if (url.startsWith('http://127.0.0.1:') || url.startsWith('http://localhost:')) {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [
+            [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-inline'",
+              "style-src 'self' 'unsafe-inline'",
+              "img-src 'self' data: blob: https: http:",
+              "media-src 'self' blob: https: http:",
+              "connect-src 'self' https: wss: http: ws:",
+              "frame-src https://www.youtube.com https://open.spotify.com https://embed.bsky.app https://www.tiktok.com https://www.instagram.com https://www.threads.net",
+              "font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com",
+            ].join('; '),
+          ],
+        },
+      });
+    } else {
+      callback({ responseHeaders: details.responseHeaders });
+    }
   });
 
   if (isDev) {
