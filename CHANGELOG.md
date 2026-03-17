@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.5](https://github.com/jansselt/drocsid/compare/drocsid-v1.1.4...drocsid-v1.1.5) (2026-03-17)
+
+
+### Bug Fixes
+
+* voice/video settings persistence, fast device loading, and mic test audio ([e12e43c](https://github.com/jansselt/drocsid/commit/e12e43c795b882630427f15c426facfdef661190))
+
 ## [1.1.4](https://github.com/jansselt/drocsid/compare/drocsid-v1.1.3...drocsid-v1.1.4) (2026-03-16)
 
 

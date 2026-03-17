@@ -1,6 +1,6 @@
 [package]
 name = "drocsid-server"
-version = "1.1.4" # x-release-please-version
+version = "1.1.5" # x-release-please-version
 edition = "2024"
 license = "MIT"
 
