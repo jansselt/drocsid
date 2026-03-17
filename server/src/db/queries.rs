@@ -102,6 +102,34 @@ pub async fn get_user_last_login(
     Ok(row.map(|r| r.0))
 }
 
+pub async fn get_users_by_ids(
+    pool: &PgPool,
+    ids: &[Uuid],
+) -> Result<Vec<User>, sqlx::Error> {
+    sqlx::query_as::<_, User>(
+        r#"
+        SELECT id, instance_id, username, display_name, email, password_hash,
+               avatar_url, bio, status, custom_status, timezone, theme_preference, is_admin, bot, created_at, updated_at
+        FROM users WHERE id = ANY($1)
+        "#,
+    )
+    .bind(ids)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn get_last_logins_by_user_ids(
+    pool: &PgPool,
+    user_ids: &[Uuid],
+) -> Result<Vec<(Uuid, chrono::DateTime<chrono::Utc>)>, sqlx::Error> {
+    sqlx::query_as::<_, (Uuid, chrono::DateTime<chrono::Utc>)>(
+        "SELECT user_id, MAX(created_at) FROM sessions WHERE user_id = ANY($1) GROUP BY user_id",
+    )
+    .bind(user_ids)
+    .fetch_all(pool)
+    .await
+}
+
 // ── Sessions ───────────────────────────────────────────
 
 pub async fn create_session(

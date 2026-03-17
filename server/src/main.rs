@@ -9,7 +9,7 @@ mod types;
 
 use std::sync::Arc;
 
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowHeaders, AllowMethods, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -111,10 +111,41 @@ async fn main() -> anyhow::Result<()> {
         services::log_broadcast::spawn_docker_log_tailer(sender.clone(), "drocsid-livekit");
     }
 
+    // Build CORS layer — allow the configured domain (https + http for dev)
+    let domain = &config.instance.domain;
+    let cors = {
+        let mut origins: Vec<axum::http::HeaderValue> = Vec::new();
+        // Production origin
+        if let Ok(v) = format!("https://{domain}").parse() {
+            origins.push(v);
+        }
+        // Development origins (localhost Vite dev server + Electron)
+        for port in [5173, 5174] {
+            if let Ok(v) = format!("http://localhost:{port}").parse() {
+                origins.push(v);
+            }
+            if let Ok(v) = format!("http://127.0.0.1:{port}").parse() {
+                origins.push(v);
+            }
+        }
+        // Electron production (serves from local http server)
+        if let Ok(v) = "http://localhost:5175".parse() {
+            origins.push(v);
+        }
+        if let Ok(v) = "http://127.0.0.1:5175".parse() {
+            origins.push(v);
+        }
+        CorsLayer::new()
+            .allow_origin(origins)
+            .allow_methods(AllowMethods::mirror_request())
+            .allow_headers(AllowHeaders::mirror_request())
+            .allow_credentials(true)
+    };
+
     // Build router
     let app = api::router()
         .layer(TraceLayer::new_for_http())
-        .layer(CorsLayer::permissive())
+        .layer(cors)
         .with_state(state);
 
     // Start server

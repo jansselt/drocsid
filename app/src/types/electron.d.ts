@@ -8,7 +8,6 @@ export interface AudioApp {
 export interface ElectronAPI {
   updateTrayBadge(count: number): Promise<void>;
   getSystemIdleMs(): Promise<number>;
-  readFile(path: string): Promise<ArrayBuffer>;
   createVoicePopout(): Promise<void>;
   closeVoicePopout(): Promise<void>;
   checkForUpdates(): Promise<{ version: string; notes: string } | null>;

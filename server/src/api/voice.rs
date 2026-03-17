@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use livekit_api::access_token;
 
-use crate::api::auth::AuthUser;
+use crate::api::auth::{AuthUser, BeaconAuthUser};
 use crate::db::queries;
 use crate::error::ApiError;
 use crate::services::permissions as perm_service;
@@ -172,9 +172,10 @@ async fn voice_join(
 }
 
 /// POST /channels/:channel_id/voice/leave
+/// Uses BeaconAuthUser because sendBeacon (page unload) can't set Authorization headers.
 async fn voice_leave(
     State(state): State<AppState>,
-    user: AuthUser,
+    user: BeaconAuthUser,
     Path(_channel_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, ApiError> {
     state.gateway.voice_leave(user.user_id);

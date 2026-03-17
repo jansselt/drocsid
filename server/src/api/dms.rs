@@ -123,19 +123,22 @@ async fn create_group_dm(
     // Add creator
     queries::add_dm_member(&state.db, channel_id, user.user_id).await?;
 
-    // Add recipients
-    let mut recipients = vec![];
-    let me = queries::get_user_by_id(&state.db, user.user_id)
-        .await?
+    // Batch-fetch all users (creator + recipients) in one query
+    let mut all_user_ids = vec![user.user_id];
+    all_user_ids.extend_from_slice(&body.recipient_ids);
+    let fetched_users = queries::get_users_by_ids(&state.db, &all_user_ids).await?;
+    let user_map: std::collections::HashMap<Uuid, _> =
+        fetched_users.into_iter().map(|u| (u.id, u)).collect();
+
+    let me = user_map
+        .get(&user.user_id)
         .ok_or(ApiError::NotFound("User"))?;
-    recipients.push(PublicUser::from(me));
+    let mut recipients = vec![PublicUser::from(me.clone())];
 
     for rid in &body.recipient_ids {
-        let u = queries::get_user_by_id(&state.db, *rid)
-            .await?
-            .ok_or(ApiError::NotFound("User"))?;
+        let u = user_map.get(rid).ok_or(ApiError::NotFound("User"))?;
         queries::add_dm_member(&state.db, channel_id, *rid).await?;
-        recipients.push(PublicUser::from(u));
+        recipients.push(PublicUser::from(u.clone()));
     }
 
     let event = DmChannelCreateEvent {

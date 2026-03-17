@@ -8,7 +8,7 @@ use chrono::Utc;
 use regex::Regex;
 use uuid::Uuid;
 
-use crate::api::auth::AuthUser;
+use crate::api::auth::{check_rate_limit, AuthUser};
 use crate::db::queries;
 use crate::error::ApiError;
 use crate::services::permissions as perm_service;
@@ -321,6 +321,11 @@ async fn send_message(
     Path(channel_id): Path<Uuid>,
     Json(body): Json<SendMessageRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
+    // Rate limit: 10 messages per 10 seconds per user
+    let mut redis = state.redis.clone();
+    let rate_key = format!("msg_send:{}", user.user_id);
+    check_rate_limit(&mut redis, &rate_key, 10, 10).await?;
+
     if body.content.is_empty() || body.content.len() > 4000 {
         return Err(ApiError::InvalidInput(
             "Message must be 1-4000 characters".into(),

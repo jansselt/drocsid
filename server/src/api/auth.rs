@@ -16,16 +16,19 @@ use crate::types::entities::{LoginRequest, RefreshRequest, RegisterRequest};
 use crate::types::events::ServerMemberAddEvent;
 
 /// Extract client IP from X-Real-IP header (set by nginx) or fall back to peer addr.
+/// Only trust X-Real-IP when the connection comes from loopback (i.e. through nginx).
 fn client_ip(headers: &HeaderMap, connect_info: &ConnectInfo<SocketAddr>) -> String {
-    headers
-        .get("x-real-ip")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| connect_info.0.ip().to_string())
+    let peer_ip = connect_info.0.ip();
+    if peer_ip.is_loopback() {
+        if let Some(real_ip) = headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
+            return real_ip.to_string();
+        }
+    }
+    peer_ip.to_string()
 }
 
 /// Check a Redis rate limit counter. Returns Err(RateLimited) if exceeded.
-async fn check_rate_limit(
+pub async fn check_rate_limit(
     redis: &mut redis::aio::ConnectionManager,
     key: &str,
     max_attempts: i64,
@@ -168,8 +171,9 @@ async fn reset_password(
     })))
 }
 
-// ── Auth Extractor ─────────────────────────────────────
+// ── Auth Extractors ───────────────────────────────────
 
+/// Extract user from Authorization header only (standard API requests).
 pub struct AuthUser {
     pub user_id: Uuid,
 }
@@ -188,33 +192,55 @@ where
         async move {
             let app_state = <AppState as FromRef<S>>::from_ref(state);
 
-            // Try Authorization header first, then fall back to ?token= query param
-            // (needed for sendBeacon which can't set custom headers)
-            let token = if let Some(auth_header) = parts
+            let auth_header = parts
                 .headers
                 .get("authorization")
                 .and_then(|v| v.to_str().ok())
-            {
-                auth_header
-                    .strip_prefix("Bearer ")
-                    .ok_or(ApiError::Unauthorized)?
-                    .to_string()
-            } else {
-                // Check query string for token parameter
-                parts
-                    .uri
-                    .query()
-                    .and_then(|q| {
-                        q.split('&')
-                            .find_map(|pair| pair.strip_prefix("token="))
-                            .map(|v| v.to_string())
-                    })
-                    .ok_or(ApiError::Unauthorized)?
-            };
+                .ok_or(ApiError::Unauthorized)?;
 
-            let user_id = auth_service::validate_access_token(&app_state.config, &token)?;
+            let token = auth_header
+                .strip_prefix("Bearer ")
+                .ok_or(ApiError::Unauthorized)?;
+
+            let user_id = auth_service::validate_access_token(&app_state.config, token)?;
 
             Ok(AuthUser { user_id })
+        }
+    }
+}
+
+/// Extract user from ?token= query parameter (for sendBeacon which can't set headers).
+/// Only use this on specific endpoints that need it (e.g. voice/leave).
+pub struct BeaconAuthUser {
+    pub user_id: Uuid,
+}
+
+impl<S> axum::extract::FromRequestParts<S> for BeaconAuthUser
+where
+    AppState: axum::extract::FromRef<S>,
+    S: Send + Sync,
+{
+    type Rejection = ApiError;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        state: &S,
+    ) -> impl std::future::Future<Output = Result<Self, Self::Rejection>> + Send {
+        async move {
+            let app_state = <AppState as FromRef<S>>::from_ref(state);
+
+            let token = parts
+                .uri
+                .query()
+                .and_then(|q| {
+                    q.split('&')
+                        .find_map(|pair| pair.strip_prefix("token="))
+                })
+                .ok_or(ApiError::Unauthorized)?;
+
+            let user_id = auth_service::validate_access_token(&app_state.config, token)?;
+
+            Ok(BeaconAuthUser { user_id })
         }
     }
 }

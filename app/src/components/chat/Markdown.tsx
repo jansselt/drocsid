@@ -124,7 +124,7 @@ function tokenize(text: string): Token[] {
       const threadsInfo = getThreadsInfo(url);
       const bskyInfo = getBlueskyInfo(url);
 
-      if (ytId) {
+      if (ytId && /^[a-zA-Z0-9_-]{11}$/.test(ytId)) {
         tokens.push({ type: 'youtube', text: ytId, href: url });
       } else if (tweetId) {
         tokens.push({ type: 'twitter', text: tweetId, href: url });
@@ -235,18 +235,20 @@ export function Markdown({ content }: MarkdownProps) {
                 <code>{token.text}</code>
               </pre>
             );
-          case 'image':
+          case 'image': {
+            const sanitizedImgUrl = encodeURI(token.href!);
             return (
-              <a key={i} className="md-image-link" href={token.href} target="_blank" rel="noopener noreferrer">
-                <img className="md-embedded-image" src={token.href} alt="" />
+              <a key={i} className="md-image-link" href={sanitizedImgUrl} target="_blank" rel="noopener noreferrer">
+                <img className="md-embedded-image" src={sanitizedImgUrl} alt="" />
               </a>
             );
+          }
           case 'youtube':
             return (
               <div key={i} className="md-embed">
                 <iframe
                   className="md-youtube"
-                  src={`https://www.youtube.com/embed/${token.text}`}
+                  src={`https://www.youtube.com/embed/${encodeURIComponent(token.text)}`}
                   title="YouTube"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   allowFullScreen
@@ -379,7 +381,7 @@ function SocialEmbed({ src, title, className, width, height, href, sandbox }: {
       {href && <a className="md-link md-embed-source" href={href} target="_blank" rel="noopener noreferrer">{href}</a>}
       <iframe
         className={className}
-        src={src}
+        src={encodeURI(src)}
         title={title}
         scrolling="no"
         style={{ width, height }}
@@ -446,7 +448,7 @@ function BlueskyEmbed({ handle, rkey, href }: { handle: string; rkey: string; hr
   return (
     <SocialEmbed
       className="md-social-embed md-bluesky"
-      src={`https://embed.bsky.app/embed/${resolvedDid}/app.bsky.feed.post/${rkey}`}
+      src={`https://embed.bsky.app/embed/${encodeURIComponent(resolvedDid)}/app.bsky.feed.post/${encodeURIComponent(rkey)}`}
       title="Bluesky"
       width={400}
       height={400}

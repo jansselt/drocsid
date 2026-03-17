@@ -363,11 +363,6 @@ function registerIpcHandlers(): void {
     return powerMonitor.getSystemIdleTime() * 1000;
   });
 
-  ipcMain.handle('read-file', (_event, filePath: string) => {
-    const buf = fs.readFileSync(filePath);
-    return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-  });
-
   // Return a desktop capturer source ID for system audio capture.
   ipcMain.handle('get-desktop-audio-source-id', async () => {
     const sources = await desktopCapturer.getSources({

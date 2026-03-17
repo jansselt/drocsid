@@ -83,16 +83,19 @@ async fn admin_search_users(
     }
 
     let users = queries::search_users_by_username(&state.db, q, 20).await?;
+    let user_ids: Vec<Uuid> = users.iter().map(|u| u.id).collect();
+    let last_logins = queries::get_last_logins_by_user_ids(&state.db, &user_ids).await?;
+    let login_map: std::collections::HashMap<Uuid, _> =
+        last_logins.into_iter().collect();
     let mut results = Vec::with_capacity(users.len());
     for u in users {
-        let last_login = queries::get_user_last_login(&state.db, u.id).await?;
         results.push(AdminUserInfo {
             id: u.id,
             username: u.username,
             email: u.email,
             is_admin: u.is_admin,
             created_at: u.created_at,
-            last_login,
+            last_login: login_map.get(&u.id).copied(),
         });
     }
 

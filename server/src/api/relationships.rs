@@ -28,14 +28,19 @@ async fn list_relationships(
 ) -> Result<impl IntoResponse, ApiError> {
     let rels = queries::get_user_relationships(&state.db, user.user_id).await?;
 
+    let target_ids: Vec<Uuid> = rels.iter().map(|r| r.target_id).collect();
+    let users = queries::get_users_by_ids(&state.db, &target_ids).await?;
+    let user_map: std::collections::HashMap<Uuid, _> =
+        users.into_iter().map(|u| (u.id, u)).collect();
+
     let mut result = Vec::with_capacity(rels.len());
     for rel in rels {
-        let target = queries::get_user_by_id(&state.db, rel.target_id)
-            .await?
+        let target = user_map
+            .get(&rel.target_id)
             .ok_or(ApiError::NotFound("User"))?;
         result.push(RelationshipWithUser {
             relationship: rel,
-            user: PublicUser::from(target),
+            user: PublicUser::from(target.clone()),
         });
     }
 

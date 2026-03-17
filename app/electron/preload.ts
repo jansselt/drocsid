@@ -9,10 +9,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('get-system-idle-ms');
   },
 
-  readFile(path: string): Promise<ArrayBuffer> {
-    return ipcRenderer.invoke('read-file', path);
-  },
-
   createVoicePopout(): Promise<void> {
     return ipcRenderer.invoke('create-voice-popout');
   },
