@@ -128,12 +128,14 @@ async fn main() -> anyhow::Result<()> {
                 origins.push(v);
             }
         }
-        // Electron production (serves from local http server)
-        if let Ok(v) = "http://localhost:5175".parse() {
-            origins.push(v);
-        }
-        if let Ok(v) = "http://127.0.0.1:5175".parse() {
-            origins.push(v);
+        // Electron production (serves from local http server on fixed port)
+        for port in [5175, 47847] {
+            if let Ok(v) = format!("http://localhost:{port}").parse() {
+                origins.push(v);
+            }
+            if let Ok(v) = format!("http://127.0.0.1:{port}").parse() {
+                origins.push(v);
+            }
         }
         CorsLayer::new()
             .allow_origin(origins)
