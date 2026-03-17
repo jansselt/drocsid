@@ -132,7 +132,7 @@ export function VoiceChannel({ channelId, channelName, canManage }: VoiceChannel
           {channelVoiceStates.map((vs) => {
             const user = users.get(vs.user_id);
             const isMe = vs.user_id === currentUser?.id;
-            const isSpeaking = speakingUsers.has(vs.user_id);
+            const isSpeaking = speakingUsers.has(vs.user_id) && !vs.self_mute;
             return (
               <div key={vs.user_id} className={`voice-user ${isMe ? 'me' : ''} ${isSpeaking ? 'speaking' : ''}`}>
                 <div className={`voice-user-avatar ${isSpeaking ? 'speaking' : ''}`}>

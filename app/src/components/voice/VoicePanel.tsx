@@ -322,73 +322,12 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
     };
   }, [room, setSpeakingUsers, updateSpeakingStore]);
 
-  // Local audio level monitoring for the local participant.
-  // LiveKit's server-side VAD has round-trip latency; this detects local speaking
-  // instantly using the same AnalyserNode approach as the mic test.
-  // Don't run when muted — the MediaStream may still carry residual signal.
-  useEffect(() => {
-    if (!localParticipant || voiceSelfMute) return;
-    const audioTrack = localParticipant.getTrackPublication(Track.Source.Microphone)?.track;
-    const mediaStream = audioTrack?.mediaStream;
-    if (!mediaStream) return;
-
-    const ctx = new AudioContext();
-    const source = ctx.createMediaStreamSource(mediaStream);
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 256;
-    source.connect(analyser);
-    const data = new Uint8Array(analyser.frequencyBinCount);
-    const LOCAL_SPEAK_THRESHOLD = 8; // average frequency bin value (0-255)
-    let localSpeaking = false;
-    let holdTimer: ReturnType<typeof setTimeout> | null = null;
-    let raf = 0;
-
-    const tick = () => {
-      analyser.getByteFrequencyData(data);
-      const avg = data.reduce((a, b) => a + b, 0) / data.length;
-      const isMuted = useVoiceStore.getState().voiceSelfMute;
-      const nowSpeaking = !isMuted && avg > LOCAL_SPEAK_THRESHOLD;
-
-      if (nowSpeaking && !localSpeaking) {
-        localSpeaking = true;
-        if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
-        const next = new Set(speakingRef.current);
-        next.add(localParticipant.identity);
-        updateSpeakingStore(next);
-      } else if (!nowSpeaking && localSpeaking) {
-        // If muted, clear speaking immediately (no hold delay)
-        if (isMuted) {
-          localSpeaking = false;
-          if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
-          const next = new Set(speakingRef.current);
-          next.delete(localParticipant.identity);
-          updateSpeakingStore(next);
-          raf = requestAnimationFrame(tick);
-          return;
-        }
-        if (!holdTimer) {
-          holdTimer = setTimeout(() => {
-            localSpeaking = false;
-            holdTimer = null;
-            // Only remove if server VAD also says not speaking
-            if (!localParticipant.isSpeaking) {
-              const next = new Set(speakingRef.current);
-              next.delete(localParticipant.identity);
-              updateSpeakingStore(next);
-            }
-          }, SPEAKING_HOLD_MS);
-        }
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    tick();
-
-    return () => {
-      cancelAnimationFrame(raf);
-      if (holdTimer) clearTimeout(holdTimer);
-      ctx.close();
-    };
-  }, [localParticipant, localParticipant?.getTrackPublication(Track.Source.Microphone)?.track?.mediaStream, voiceSelfMute, updateSpeakingStore]);
+  // NOTE: Local audio level monitoring (client-side VAD) was removed.
+  // It read from the raw MediaStream which doesn't reflect system-level
+  // mutes (PipeWire/PulseAudio mute flags). LiveKit's server-side VAD
+  // (ActiveSpeakersChanged event above) is the authoritative source for
+  // speaking state — it only reports participants whose audio is actually
+  // being received by the server.
 
   // Apply saved audio output device selection
   useEffect(() => {
@@ -748,7 +687,7 @@ function VoicePanelContent({ channelName, compact }: { channelName: string; comp
       <div className="voice-participants">
         {participants.map((p) => {
           const user = users.get(p.identity);
-          const isSpeaking = speakingUsers.has(p.identity);
+          const isSpeaking = speakingUsers.has(p.identity) && p.isMicrophoneEnabled !== false;
           const isLocal = p.identity === localParticipant?.identity;
           const customVolume = userVolumes[p.identity];
           return (
