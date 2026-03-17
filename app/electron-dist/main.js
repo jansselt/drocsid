@@ -37,24 +37,22 @@ const electron_1 = require("electron");
 const electron_updater_1 = require("electron-updater");
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
-const url_1 = require("url");
+const http = __importStar(require("http"));
 const pipewire_1 = require("./pipewire");
 const isDev = !!process.env.ELECTRON_DEV;
 const DEV_URL = 'http://localhost:5174';
-// Register custom protocol scheme so production builds have an HTTP-like origin.
-// YouTube embeds (and others) refuse to load inside file:// origins.
-electron_1.protocol.registerSchemesAsPrivileged([
-    {
-        scheme: 'app',
-        privileges: {
-            standard: true,
-            secure: true,
-            supportFetchAPI: true,
-            corsEnabled: true,
-            stream: true,
-        },
-    },
-]);
+// In production, we serve the app via a local HTTP server on a fixed port.
+// This gives the page a proper http:// origin so YouTube embeds (and other
+// third-party iframes) work correctly — they reject file:// and custom
+// protocol origins.  A fixed port ensures the origin stays the same across
+// restarts so localStorage (settings, tokens, etc.) persists.
+const PROD_PORT = 47847;
+let prodServerUrl = '';
+// Suppress EPIPE errors on stdout/stderr — when running as an AppImage
+// there's no terminal, so console.log (e.g. from electron-updater) causes
+// a broken pipe crash.
+process.stdout?.on?.('error', () => { });
+process.stderr?.on?.('error', () => { });
 let mainWindow = null;
 let voicePopout = null;
 let tray = null;
@@ -248,34 +246,19 @@ function createMainWindow() {
             callback({});
         }
     });
-    // Fix YouTube embeds — YouTube blocks Electron's user-agent and rejects
-    // non-http(s) origins/referrers. Strip Electron tokens from UA and replace
-    // app:// referrer/origin with a neutral https one.
+    // YouTube blocks Electron's default user-agent. Strip Electron/app tokens
+    // so requests look like regular Chrome.
     mainWindow.webContents.session.webRequest.onBeforeSendHeaders({ urls: ['*://*.youtube.com/*', '*://*.googlevideo.com/*'] }, (details, callback) => {
         details.requestHeaders['User-Agent'] = details.requestHeaders['User-Agent']
             .replace(/Electron\/[\d.]+ /, '')
             .replace(/drocsid\/[\d.]+ /, '');
-        // YouTube rejects embeds with non-http origins (file://, app://, etc.)
-        if (details.requestHeaders['Referer']?.startsWith('app://')) {
-            details.requestHeaders['Referer'] = 'https://drocsid.app/';
-        }
-        if (details.requestHeaders['Origin']?.startsWith('app://')) {
-            details.requestHeaders['Origin'] = 'https://drocsid.app';
-        }
         callback({ requestHeaders: details.requestHeaders });
-    });
-    // Remove X-Frame-Options from YouTube responses so embeds render in our app
-    mainWindow.webContents.session.webRequest.onHeadersReceived({ urls: ['*://*.youtube.com/*', '*://*.googlevideo.com/*'] }, (details, callback) => {
-        const headers = { ...details.responseHeaders };
-        delete headers['X-Frame-Options'];
-        delete headers['x-frame-options'];
-        callback({ responseHeaders: headers });
     });
     if (isDev) {
         mainWindow.loadURL(DEV_URL);
     }
     else {
-        mainWindow.loadURL('app://drocsid/index.html');
+        mainWindow.loadURL(prodServerUrl);
     }
     // Minimize to tray on close instead of quitting
     mainWindow.on('close', (e) => {
@@ -310,7 +293,7 @@ function createVoicePopout() {
     });
     const popoutUrl = isDev
         ? `${DEV_URL}?popout=voice`
-        : 'app://drocsid/index.html?popout=voice';
+        : `${prodServerUrl}?popout=voice`;
     voicePopout.loadURL(popoutUrl);
     voicePopout.on('closed', () => {
         voicePopout = null;
@@ -497,19 +480,64 @@ function registerIpcHandlers() {
     });
 }
 // ── App lifecycle ───────────────────────────────────────────────────────
-electron_1.app.whenReady().then(() => {
-    // Serve app files via app:// protocol so embeds (YouTube, etc.) work in production.
-    // file:// origins are blocked by most embed providers.
+electron_1.app.whenReady().then(async () => {
+    // In production, start a local HTTP server to serve the built app.
+    // This gives the renderer a real http:// origin so third-party embeds
+    // (YouTube, Twitter, etc.) work — they reject file:// and custom schemes.
     if (!isDev) {
         const distPath = path.join(__dirname, '..', 'dist');
-        electron_1.protocol.handle('app', (req) => {
-            const url = new URL(req.url);
-            let filePath = path.join(distPath, decodeURIComponent(url.pathname));
-            // Serve index.html for SPA routes
+        const mimeTypes = {
+            '.html': 'text/html',
+            '.js': 'application/javascript',
+            '.css': 'text/css',
+            '.json': 'application/json',
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.gif': 'image/gif',
+            '.svg': 'image/svg+xml',
+            '.ico': 'image/x-icon',
+            '.woff': 'font/woff',
+            '.woff2': 'font/woff2',
+            '.ttf': 'font/ttf',
+            '.webp': 'image/webp',
+            '.webm': 'video/webm',
+            '.mp4': 'video/mp4',
+            '.wav': 'audio/wav',
+            '.mp3': 'audio/mpeg',
+            '.ogg': 'audio/ogg',
+        };
+        const server = http.createServer((req, res) => {
+            let urlPath = decodeURIComponent(new URL(req.url ?? '/', 'http://localhost').pathname);
+            let filePath = path.join(distPath, urlPath);
+            // SPA fallback: serve index.html for routes without file extensions
             if (!path.extname(filePath)) {
                 filePath = path.join(distPath, 'index.html');
             }
-            return electron_1.net.fetch((0, url_1.pathToFileURL)(filePath).toString());
+            try {
+                const data = fs.readFileSync(filePath);
+                const ext = path.extname(filePath).toLowerCase();
+                res.writeHead(200, { 'Content-Type': mimeTypes[ext] ?? 'application/octet-stream' });
+                res.end(data);
+            }
+            catch {
+                // Fallback to index.html for SPA routing
+                try {
+                    const index = fs.readFileSync(path.join(distPath, 'index.html'));
+                    res.writeHead(200, { 'Content-Type': 'text/html' });
+                    res.end(index);
+                }
+                catch {
+                    res.writeHead(404);
+                    res.end('Not found');
+                }
+            }
+        });
+        await new Promise((resolve) => {
+            server.listen(PROD_PORT, '127.0.0.1', () => {
+                prodServerUrl = `http://127.0.0.1:${PROD_PORT}/index.html`;
+                resolve();
+            });
         });
     }
     registerIpcHandlers();

@@ -87,3 +87,4 @@ export function saveNoiseSuppression(enabled: boolean): void {
   localStorage.setItem('drocsid_noise_suppression', String(enabled));
   window.dispatchEvent(new CustomEvent('drocsid-noise-suppression-changed'));
 }
+

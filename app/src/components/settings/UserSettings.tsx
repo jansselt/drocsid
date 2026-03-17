@@ -800,27 +800,39 @@ function VoiceVideoSettings() {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animFrameRef = useRef<number>(0);
+  const micTestAudioRef = useRef<HTMLAudioElement | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
 
   const loadDevices = useCallback(async () => {
-    if (navigator.mediaDevices) {
-      // Request getUserMedia to unlock device labels, then enumerate video devices.
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true }).catch(
-          () => navigator.mediaDevices.getUserMedia({ audio: true }),
-        );
-        stream?.getTracks().forEach((t) => t.stop());
-      } catch {
-        // Permission denied — enumerate anyway for whatever labels we can get
-      }
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
+    if (!navigator.mediaDevices) return;
+
+    // First try enumerating without getUserMedia — if the user has already
+    // granted mic permission (e.g. from a voice channel), labels are available
+    // immediately and we skip the slow getUserMedia round-trip entirely.
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const hasLabels = devices.some((d) => d.label);
+
+      if (!hasLabels) {
+        // No labels yet — need getUserMedia to unlock them.
+        // Only request audio to avoid activating the camera.
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          stream.getTracks().forEach((t) => t.stop());
+        } catch {
+          // Permission denied — enumerate anyway with whatever we can get
+        }
+        // Re-enumerate after permission grant
+        const updated = await navigator.mediaDevices.enumerateDevices();
+        setVideoInputs(updated.filter((d) => d.kind === 'videoinput'));
+      } else {
         setVideoInputs(devices.filter((d) => d.kind === 'videoinput'));
-      } catch {
-        // enumerateDevices not available
       }
+    } catch {
+      // enumerateDevices not available
     }
+
     const [inputs, outputs] = await Promise.all([listAudioInputs(), listAudioOutputs()]);
     setAudioInputs(inputs);
     setAudioOutputs(outputs);
@@ -846,14 +858,26 @@ function VoiceVideoSettings() {
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       micStreamRef.current = stream;
 
+      // Use an <audio> element for playback — connecting a MediaStreamSource
+      // directly to AudioContext.destination causes choppy/glitchy audio.
+      // The <audio> element uses the browser's own buffering pipeline.
+      const audio = new Audio();
+      audio.srcObject = stream;
+      // Respect selected speaker device if the browser supports setSinkId
+      const speakerId = localStorage.getItem('drocsid_speaker');
+      if (speakerId && 'setSinkId' in audio) {
+        try { await (audio as any).setSinkId(speakerId); } catch { /* fallback to default */ }
+      }
+      audio.play().catch(() => {});
+      micTestAudioRef.current = audio;
+
+      // Separate AudioContext just for the level meter (no playback)
       const ctx = new AudioContext();
       audioCtxRef.current = ctx;
       const source = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
       source.connect(analyser);
-      // Play mic audio through speakers so user can hear themselves
-      source.connect(ctx.destination);
       analyserRef.current = analyser;
 
       setMicTesting(true);
@@ -872,6 +896,11 @@ function VoiceVideoSettings() {
   };
 
   const stopMicTest = async () => {
+    if (micTestAudioRef.current) {
+      micTestAudioRef.current.pause();
+      micTestAudioRef.current.srcObject = null;
+      micTestAudioRef.current = null;
+    }
     micStreamRef.current?.getTracks().forEach((t) => t.stop());
     micStreamRef.current = null;
     audioCtxRef.current?.close().catch(() => {});

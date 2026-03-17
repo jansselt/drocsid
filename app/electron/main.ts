@@ -27,10 +27,12 @@ import {
 const isDev = !!process.env.ELECTRON_DEV;
 const DEV_URL = 'http://localhost:5174';
 
-// In production, we serve the app via a local HTTP server on a random port.
+// In production, we serve the app via a local HTTP server on a fixed port.
 // This gives the page a proper http:// origin so YouTube embeds (and other
 // third-party iframes) work correctly — they reject file:// and custom
-// protocol origins.
+// protocol origins.  A fixed port ensures the origin stays the same across
+// restarts so localStorage (settings, tokens, etc.) persists.
+const PROD_PORT = 47847;
 let prodServerUrl = '';
 
 // Suppress EPIPE errors on stdout/stderr — when running as an AppImage
@@ -600,9 +602,8 @@ app.whenReady().then(async () => {
     });
 
     await new Promise<void>((resolve) => {
-      server.listen(0, '127.0.0.1', () => {
-        const addr = server.address() as import('net').AddressInfo;
-        prodServerUrl = `http://127.0.0.1:${addr.port}/index.html`;
+      server.listen(PROD_PORT, '127.0.0.1', () => {
+        prodServerUrl = `http://127.0.0.1:${PROD_PORT}/index.html`;
         resolve();
       });
     });
