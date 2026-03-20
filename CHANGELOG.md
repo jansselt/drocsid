@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/jansselt/drocsid/compare/drocsid-v1.1.6...drocsid-v1.2.0) (2026-03-20)
+
+
+### Features
+
+* add /roll slash command for dice rolling ([d6e45f3](https://github.com/jansselt/drocsid/commit/d6e45f349e204f97255cd76184ba63ec08fc679b))
+
 ## [1.1.6](https://github.com/jansselt/drocsid/compare/drocsid-v1.1.5...drocsid-v1.1.6) (2026-03-17)
 
 
