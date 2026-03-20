@@ -21,7 +21,7 @@
     "electron:dev": "npm run electron:compile && ELECTRON_DEV=1 electron .",
     "electron:build": "npm run electron:compile && npm run build && electron-builder --publish never",
     "electron:build:linux": "npm run electron:compile && npm run build && electron-builder --linux AppImage deb rpm --publish never",
-    "electron:build:win": "npm run electron:compile && npm run build && electron-builder --win nsis --publish never"
+    "electron:build:win": "npm run electron:compile && npm run build && electron-builder --win nsis portable --publish never"
   },
   "dependencies": {
     "@livekit/components-react": "^2.9.19",
