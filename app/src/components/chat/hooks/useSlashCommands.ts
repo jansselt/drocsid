@@ -12,7 +12,35 @@ export const SLASH_COMMANDS: Record<string, string | null> = {
   '/gif':       null, // special: opens GIF picker
   '/bug':       null, // special: opens bug report modal
   '/poll':      null, // special: opens poll creator
+  '/roll':      null, // special: dice roller (e.g. /roll 2d6+3)
 };
+
+/**
+ * Parse and evaluate a dice expression like "2d6+3", "d20", "4d6-1"
+ * Returns null if the expression is invalid.
+ */
+export function rollDice(expr: string): string | null {
+  const match = expr.trim().toLowerCase().match(/^(\d*)d(\d+)([+-]\d+)?$/);
+  if (!match) return null;
+
+  const count = parseInt(match[1] || '1', 10);
+  const sides = parseInt(match[2], 10);
+  const modifier = match[3] ? parseInt(match[3], 10) : 0;
+
+  if (count < 1 || count > 100 || sides < 2 || sides > 1000) return null;
+
+  const rolls: number[] = [];
+  for (let i = 0; i < count; i++) {
+    rolls.push(Math.floor(Math.random() * sides) + 1);
+  }
+
+  const sum = rolls.reduce((a, b) => a + b, 0) + modifier;
+  const rollList = rolls.length > 1 ? `[${rolls.join(', ')}]` : `${rolls[0]}`;
+  const modStr = modifier !== 0 ? ` ${modifier > 0 ? '+' : ''}${modifier}` : '';
+  const total = count > 1 || modifier !== 0 ? ` = **${sum}**` : '';
+
+  return `🎲 rolled \`${expr.trim()}\` → ${rollList}${modStr}${total}`;
+}
 
 export function useSlashCommands(content: string) {
   const [slashIndex, setSlashIndex] = useState(0);

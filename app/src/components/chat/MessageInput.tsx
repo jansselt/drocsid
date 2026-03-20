@@ -9,7 +9,7 @@ import { PollCreator } from './PollCreator';
 import { SlashCommandDropdown } from './SlashCommandDropdown';
 import { MentionDropdown } from './MentionDropdown';
 import { UploadPreviews } from './UploadPreviews';
-import { useSlashCommands, SLASH_COMMANDS } from './hooks/useSlashCommands';
+import { useSlashCommands, SLASH_COMMANDS, rollDice } from './hooks/useSlashCommands';
 import { useMentions } from './hooks/useMentions';
 import { useFileUpload } from './hooks/useFileUpload';
 import * as api from '../../api/client';
@@ -92,6 +92,14 @@ export function MessageInput({ channelId }: MessageInputProps) {
           setContent('');
           setShowPoll(true);
           return;
+        }
+        if (cmd === '/roll') {
+          const result = rest ? rollDice(rest) : null;
+          if (!result) {
+            setContent('/roll ');
+            return;
+          }
+          trimmed = result;
         }
         if (replacement !== null) {
           trimmed = rest ? `${rest} ${replacement}` : replacement;
