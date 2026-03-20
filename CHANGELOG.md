@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/jansselt/drocsid/compare/drocsid-v1.2.0...drocsid-v1.2.1) (2026-03-20)
+
+
+### Bug Fixes
+
+* include portable exe in Windows build script ([7ff5fc2](https://github.com/jansselt/drocsid/commit/7ff5fc2874ecbfe34f5a178b2ea8f713f7e3d78c))
+
 ## [1.2.0](https://github.com/jansselt/drocsid/compare/drocsid-v1.1.6...drocsid-v1.2.0) (2026-03-20)
 
 
