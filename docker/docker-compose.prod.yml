@@ -26,7 +26,7 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     volumes:
       - redis_data:/data
     ports:
@@ -78,7 +78,7 @@ services:
   # Host networking is required so LiveKit can discover its public IP via STUN
   # and so ICE candidates use real interface IPs (not Docker bridge IPs).
   livekit:
-    image: livekit/livekit-server:v1.9.11
+    image: livekit/livekit-server:v1.11.0
     container_name: drocsid-livekit
     network_mode: host
     environment:
